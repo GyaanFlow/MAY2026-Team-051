@@ -1,0 +1,79 @@
+from flask import Flask
+from flask_cors import CORS
+from flask_restful import Api
+from flask_jwt_extended import JWTManager
+from werkzeug.security import generate_password_hash
+
+from config import Config
+from models import db, User, MembershipPlan
+from resources.auth import LoginResource
+from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
+from resources.membership import MembershipPlanListResource, MembershipPlanResource
+from resources.students import (
+    StudentListResource, StudentResource, VerifyMembershipResource,
+    ApproveStudentResource, RejectStudentResource, DisapproveStudentResource
+)
+from resources.profile import ProfileResource, ResetPasswordResource
+
+
+def create_app(config_class=Config):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+
+    CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+    db.init_app(app)
+    JWTManager(app)
+
+    api = Api(app, prefix="/api")
+
+    api.add_resource(LoginResource, "/auth/login")
+
+    api.add_resource(StaffListResource, "/staff")
+    api.add_resource(StaffResource, "/staff/<int:user_id>")
+    api.add_resource(DeactivateStaffResource, "/staff/<int:user_id>/deactivate")
+
+    api.add_resource(MembershipPlanListResource, "/membership-plans")
+    api.add_resource(MembershipPlanResource, "/membership-plans/<int:plan_id>")
+
+    api.add_resource(StudentListResource, "/students")
+    api.add_resource(StudentResource, "/students/<int:student_id>")
+    api.add_resource(VerifyMembershipResource, "/students/<int:student_id>/verify")
+    api.add_resource(ApproveStudentResource, "/students/<int:student_id>/approve")
+    api.add_resource(RejectStudentResource, "/students/<int:student_id>/reject")
+    api.add_resource(DisapproveStudentResource, "/students/<int:student_id>/disapprove")
+
+    api.add_resource(ProfileResource, "/profile")
+    api.add_resource(ResetPasswordResource, "/auth/reset-password")
+
+    with app.app_context():
+        db.create_all()
+        _seed()
+
+    return app
+
+
+def _seed():
+    if not User.query.filter_by(role="Admin").first():
+        admin = User(
+            username="admin",
+            password_hash=generate_password_hash("admin123"),
+            email="admin@library.com",
+            role="Admin",
+            status=True,
+        )
+        db.session.add(admin)
+
+    if not MembershipPlan.query.first():
+        db.session.add_all([
+            MembershipPlan(plan_name="Weekly"),
+            MembershipPlan(plan_name="Monthly"),
+            MembershipPlan(plan_name="Yearly"),
+        ])
+
+    db.session.commit()
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run(debug=True)
