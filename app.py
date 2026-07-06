@@ -10,8 +10,12 @@ from resources.auth import LoginResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
 from resources.students import (
-    StudentListResource, StudentResource, VerifyMembershipResource,
-    ApproveStudentResource, RejectStudentResource, DisapproveStudentResource
+    StudentListResource,
+    StudentResource,
+    VerifyMembershipResource,
+    ApproveStudentResource,
+    RejectStudentResource,
+    DisapproveStudentResource,
 )
 from resources.profile import ProfileResource, ResetPasswordResource
 
@@ -48,13 +52,14 @@ def create_app(config_class=Config):
 
     with app.app_context():
         db.create_all()
-        _seed()
+        seed_data()
 
     return app
 
 
-def _seed():
-    if not User.query.filter_by(role="Admin").first():
+def seed_data():
+    admin = User.query.filter_by(role="Admin").first()
+    if not admin:
         admin = User(
             username="admin",
             password_hash=generate_password_hash("admin123"),
@@ -64,11 +69,12 @@ def _seed():
         )
         db.session.add(admin)
 
-    if not MembershipPlan.query.first():
+    first_plan = MembershipPlan.query.first()
+    if not first_plan:
         db.session.add_all([
-            MembershipPlan(plan_name="Weekly"),
-            MembershipPlan(plan_name="Monthly"),
-            MembershipPlan(plan_name="Yearly"),
+            MembershipPlan(plan_name="Weekly", duration_days=7, price=100),
+            MembershipPlan(plan_name="Monthly", duration_days=30, price=300),
+            MembershipPlan(plan_name="Yearly", duration_days=365, price=3000),
         ])
 
     db.session.commit()

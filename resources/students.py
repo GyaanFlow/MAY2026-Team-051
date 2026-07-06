@@ -1,6 +1,6 @@
-#from here gaurav code continues
 from datetime import date, timedelta
-from flask_restful import Resource, reqparse
+from flask import request
+from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from werkzeug.security import generate_password_hash
 from models import db, User, Student, MembershipPlan
@@ -12,33 +12,41 @@ class StudentListResource(Resource):
     def get(self):
         claims = get_jwt()
         if claims.get("role") not in ("Staff", "Admin"):
-            return {"message": "not allowed"}, 403
+            return {"message": "Not allowed"}, 403
 
         students = Student.query.all()
-        result = []
-        for s in students:
-            result.append(s.to_dict())
-        return result, 200
+        return [s.to_dict() for s in students], 200
 
     @staff_or_admin_required
     def post(self):
-        parser = reqparse.RequestParser()
-        parser.add_argument("username", type=str, required=True)
-        parser.add_argument("password", type=str, required=True)
-        parser.add_argument("email", type=str, required=True)
-        parser.add_argument("full_name", type=str, required=True)
-        parser.add_argument("address", type=str, store_missing=False)
-        parser.add_argument("plan_id", type=int, store_missing=False)
-        args = parser.parse_args()
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
 
-        old_user = User.query.filter_by(username=args["username"]).first()
-        if old_user:
-            return {"message": "username already taken"}, 409
+        username = data.get("username")
+        password = data.get("password")
+        email = data.get("email")
+        full_name = data.get("full_name")
+
+        if not username or not password or not email or not full_name:
+            return {"message": "Username, password, email and full_name are required"}, 400
+
+        if User.query.filter_by(username=username).first():
+            return {"message": "Username already taken"}, 409
+
+        plan_id = data.get("plan_id")
+        if plan_id is not None:
+            plan = db.session.get(MembershipPlan, plan_id)
+            if not plan:
+                return {"message": "Membership plan not found"}, 404
 
         new_user = User(
-            username=args["username"],
-            password_hash=generate_password_hash(args["password"]),
-            email=args["email"],
+            username=username,
+            password_hash=generate_password_hash(password),
+            email=email,
+            id_type=data.get("id_type"),
+            id_number=data.get("id_number"),
+            phone=data.get("phone"),
             role="Student",
             status=True,
         )
@@ -47,10 +55,10 @@ class StudentListResource(Resource):
 
         new_student = Student(
             user_id=new_user.user_id,
-            full_name=args["full_name"],
-            address=args.get("address"),
+            full_name=full_name,
+            address=data.get("address"),
             membership_status="Pending",
-            plan_id=args.get("plan_id"),
+            plan_id=plan_id,
         )
         db.session.add(new_student)
         db.session.commit()
@@ -62,13 +70,13 @@ class StudentResource(Resource):
     def get(self, student_id):
         student = Student.query.filter_by(student_id=student_id).first()
         if not student:
-            return {"message": "student not found"}, 404
+            return {"message": "Student not found"}, 404
 
         claims = get_jwt()
         if claims.get("role") == "Student":
             my_id = get_jwt_identity()
             if str(student.user_id) != my_id:
-                return {"message": "not allowed"}, 403
+                return {"message": "Not allowed"}, 403
 
         return student.to_dict(), 200
 
@@ -78,14 +86,18 @@ class VerifyMembershipResource(Resource):
     def get(self, student_id):
         student = Student.query.filter_by(student_id=student_id).first()
         if not student:
-            return {"message": "student not found"}, 404
+            return {"message": "Student not found"}, 404
 
         valid = False
         if student.membership_status == "Active" and student.membership_expiry:
             if student.membership_expiry >= date.today():
                 valid = True
 
-        return {"status": student.membership_status, "valid": valid}, 200
+        return {
+            "status": student.membership_status,
+            "valid": valid,
+            "membership_expiry": str(student.membership_expiry) if student.membership_expiry else None,
+        }, 200
 
 
 class ApproveStudentResource(Resource):
@@ -93,20 +105,23 @@ class ApproveStudentResource(Resource):
     def patch(self, student_id):
         student = Student.query.filter_by(student_id=student_id).first()
         if not student:
-            return {"message": "student not found"}, 404
+            return {"message": "Student not found"}, 404
+
         if student.membership_status == "Active":
-            return {"message": "already active"}, 400
+            return {"message": "Student is already active"}, 400
 
         plan = None
-        if student.plan_id:
-            plan = MembershipPlan.query.get(student.plan_id)
+        if student.plan_id is not None:
+            plan = db.session.get(MembershipPlan, student.plan_id)
+            if not plan:
+                return {"message": "Membership plan not found"}, 404
 
         student.membership_status = "Active"
         if plan and plan.duration_days:
             student.membership_expiry = date.today() + timedelta(days=plan.duration_days)
 
         db.session.commit()
-        return {"message": "approved", "student": student.to_dict()}, 200
+        return {"message": "Student approved", "student": student.to_dict()}, 200
 
 
 class RejectStudentResource(Resource):
@@ -114,11 +129,12 @@ class RejectStudentResource(Resource):
     def patch(self, student_id):
         student = Student.query.filter_by(student_id=student_id).first()
         if not student:
-            return {"message": "student not found"}, 404
+            return {"message": "Student not found"}, 404
 
         student.membership_status = "Rejected"
+        student.membership_expiry = None
         db.session.commit()
-        return {"message": "rejected", "student": student.to_dict()}, 200
+        return {"message": "Student rejected", "student": student.to_dict()}, 200
 
 
 class DisapproveStudentResource(Resource):
@@ -126,11 +142,12 @@ class DisapproveStudentResource(Resource):
     def patch(self, student_id):
         student = Student.query.filter_by(student_id=student_id).first()
         if not student:
-            return {"message": "student not found"}, 404
+            return {"message": "Student not found"}, 404
+
         if student.membership_status != "Active":
-            return {"message": "only active can be disapproved"}, 400
+            return {"message": "Only active memberships can be disapproved"}, 400
 
         student.membership_status = "Disapproved"
         student.membership_expiry = None
         db.session.commit()
-        return {"message": "disapproved", "student": student.to_dict()}, 200
+        return {"message": "Student membership disapproved", "student": student.to_dict()}, 200

@@ -1,4 +1,5 @@
-from flask_restful import Resource, reqparse
+from flask import request
+from flask_restful import Resource
 from werkzeug.security import generate_password_hash
 from models import db, User
 from utils import admin_required
@@ -12,25 +13,28 @@ class StaffListResource(Resource):
 
     @admin_required
     def post(self):
-        parser = reqparse.RequestParser()
-        parser.add_argument("username", type=str, required=True, help="Username is required")
-        parser.add_argument("password", type=str, required=True, help="Password is required")
-        parser.add_argument("email", type=str, required=True, help="Email is required")
-        parser.add_argument("id_type", type=str, store_missing=False)
-        parser.add_argument("id_number", type=str, store_missing=False)
-        parser.add_argument("phone", type=str, store_missing=False)
-        args = parser.parse_args()
+        data = request.get_json(silent=True)
 
-        if User.query.filter_by(username=args["username"]).first():
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
+
+        username = data.get("username")
+        password = data.get("password")
+        email = data.get("email")
+
+        if not username or not password or not email:
+            return {"message": "Username, password and email are required"}, 400
+
+        if User.query.filter_by(username=username).first():
             return {"message": "Username already exists"}, 409
 
         staff = User(
-            username=args["username"],
-            password_hash=generate_password_hash(args["password"]),
-            email=args["email"],
-            id_type=args.get("id_type"),
-            id_number=args.get("id_number"),
-            phone=args.get("phone"),
+            username=username,
+            password_hash=generate_password_hash(password),
+            email=email,
+            id_type=data.get("id_type"),
+            id_number=data.get("id_number"),
+            phone=data.get("phone"),
             role="Staff",
             status=True,
         )
@@ -53,24 +57,28 @@ class StaffResource(Resource):
         if not staff:
             return {"message": "Staff member not found"}, 404
 
-        parser = reqparse.RequestParser()
-        parser.add_argument("email", type=str, store_missing=False)
-        parser.add_argument("id_type", type=str, store_missing=False)
-        parser.add_argument("id_number", type=str, store_missing=False)
-        parser.add_argument("phone", type=str, store_missing=False)
-        parser.add_argument("password", type=str, store_missing=False)
-        args = parser.parse_args()
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
 
-        if "email" in args:
-            staff.email = args["email"]
-        if "id_type" in args:
-            staff.id_type = args["id_type"]
-        if "id_number" in args:
-            staff.id_number = args["id_number"]
-        if "phone" in args:
-            staff.phone = args["phone"]
-        if "password" in args:
-            staff.password_hash = generate_password_hash(args["password"])
+        if "email" in data:
+            if not data.get("email"):
+                return {"message": "Email cannot be empty"}, 400
+            staff.email = data.get("email")
+
+        if "id_type" in data:
+            staff.id_type = data.get("id_type")
+
+        if "id_number" in data:
+            staff.id_number = data.get("id_number")
+
+        if "phone" in data:
+            staff.phone = data.get("phone")
+
+        if "password" in data:
+            if not data.get("password"):
+                return {"message": "Password cannot be empty"}, 400
+            staff.password_hash = generate_password_hash(data.get("password"))
 
         db.session.commit()
         return staff.to_dict(), 200
@@ -82,9 +90,13 @@ class DeactivateStaffResource(Resource):
         staff = User.query.filter_by(user_id=user_id, role="Staff").first()
         if not staff:
             return {"message": "Staff member not found"}, 404
+
         if not staff.status:
             return {"message": "Staff member is already deactivated"}, 400
 
         staff.status = False
         db.session.commit()
-        return {"message": "Staff member deactivated successfully", "user": staff.to_dict()}, 200
+        return {
+            "message": "Staff member deactivated successfully",
+            "user": staff.to_dict()
+        }, 200

@@ -1,6 +1,8 @@
 from flask_sqlalchemy import SQLAlchemy
 
+
 db = SQLAlchemy()
+
 
 class User(db.Model):
     __tablename__ = "users"
@@ -49,12 +51,12 @@ class Student(db.Model):
     __tablename__ = "students"
 
     student_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"))
-    full_name = db.Column(db.String(150))
-    address = db.Column(db.Text)
-    membership_status = db.Column(db.String(20), default="Pending")
-    plan_id = db.Column(db.Integer, db.ForeignKey("membership_plans.plan_id"))
-    membership_expiry = db.Column(db.Date)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=False)
+    full_name = db.Column(db.String(150), nullable=False)
+    address = db.Column(db.Text, nullable=True)
+    membership_status = db.Column(db.String(20), default="Pending", nullable=False)
+    plan_id = db.Column(db.Integer, db.ForeignKey("membership_plans.plan_id"), nullable=True)
+    membership_expiry = db.Column(db.Date, nullable=True)
 
     def to_dict(self):
         return {
