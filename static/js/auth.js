@@ -41,6 +41,7 @@ createApp({
       loginError.value = '';
       // TODO: POST to /api/login once the backend endpoint exists
       console.log('Login submitted:', { ...loginForm });
+      window.location.href = '/dashboard';
     }
 
     function handleRegister() {

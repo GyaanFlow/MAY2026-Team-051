@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Library Management System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body class="dashboard-body">
+  {% raw %}
+  <div id="app">
+    <div class="dash">
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-mark">SLMS</div>
+          <span class="sidebar-brand-name">Study Library</span>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="nav-item"
+            :class="{ active: activeTab === tab.id, disabled: !tab.enabled }"
+            :disabled="!tab.enabled"
+            @click="setActiveTab(tab.id)"
+          >
+            <span class="nav-icon" v-html="tab.icon"></span>
+            <span class="nav-label">{{ tab.label }}</span>
+            <span class="nav-soon" v-if="!tab.enabled">Soon</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button class="nav-item logout" @click="handleLogout">
+            <span class="nav-icon" v-html="icons.logout"></span>
+            <span class="nav-label">Log Out</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main class="main">
+        <header class="main-header">
+          <div>
+            <h1>{{ currentTabLabel }}</h1>
+            <p class="main-subtitle" v-if="activeTab === 'profile'">Manage your personal and library details.</p>
+          </div>
+          <div class="header-user">
+            <div class="header-avatar">{{ initials }}</div>
+            <div class="header-user-info">
+              <span class="header-user-name">{{ profile.fullName || 'Student' }}</span>
+              <span class="header-user-sub">{{ profile.studentId || '—' }}</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- PROFILE MANAGEMENT TAB -->
+        <section class="tab-panel" v-if="activeTab === 'profile'">
+
+          <div class="profile-layout">
+
+            <!-- Avatar / identity card -->
+            <div class="panel-card identity-card">
+              <div class="avatar-wrap">
+                <div class="avatar-circle" :style="avatarStyle">
+                  <span v-if="!profile.avatarUrl">{{ initials }}</span>
+                </div>
+                <label class="avatar-upload-btn">
+                  Change Photo
+                  <input type="file" accept="image/*" @change="handleAvatarChange" hidden>
+                </label>
+                <button class="avatar-remove-btn" v-if="profile.avatarUrl" @click="removeAvatar">Remove</button>
+              </div>
+              <h3 class="identity-name">{{ profile.fullName || 'Unnamed Student' }}</h3>
+              <p class="identity-meta">{{ profile.membershipType || 'No membership set' }}</p>
+              <p class="identity-meta muted">Student ID: {{ profile.studentId || '—' }}</p>
+            </div>
+
+            <!-- Forms -->
+            <div class="forms-col">
+
+              <!-- Personal Information -->
+              <form class="panel-card" @submit.prevent="savePersonal">
+                <div class="panel-card-header">
+                  <h2>Personal Information</h2>
+                  <p class="panel-subtitle">Your basic personal details.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Full Name</span>
+                    <input type="text" v-model.trim="profile.fullName" placeholder="Your full name">
+                  </label>
+
+                  <label class="field">
+                    <span>Date of Birth</span>
+                    <input type="date" v-model="profile.dob">
+                  </label>
+
+                  <label class="field">
+                    <span>Gender</span>
+                    <select v-model="profile.gender">
+                      <option value="" disabled>Select gender</option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Phone</span>
+                    <input type="tel" v-model.trim="profile.phone" placeholder="10-digit phone number">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Address</span>
+                    <input type="text" v-model.trim="profile.address" placeholder="Your address">
+                  </label>
+                </div>
+
+                <p class="form-success" v-if="savedSection === 'personal'">Personal details saved.</p>
+                <button type="submit" class="btn-primary btn-small">Save Changes</button>
+              </form>
+
+              <!-- Library Info -->
+              <form class="panel-card" @submit.prevent="saveLibrary">
+                <div class="panel-card-header">
+                  <h2>Library Information</h2>
+                  <p class="panel-subtitle">Your membership and seating details.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Student / Roll Number</span>
+                    <input type="text" v-model.trim="profile.studentId" placeholder="e.g. STU-2026-0142">
+                  </label>
+
+                  <label class="field">
+                    <span>Membership Type</span>
+                    <select v-model="profile.membershipType">
+                      <option value="" disabled>Select membership</option>
+                      <option value="Regular">Regular</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Day Pass">Day Pass</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Membership Start Date</span>
+                    <input type="date" v-model="profile.membershipStart">
+                  </label>
+
+                  <label class="field">
+                    <span>Membership Valid Until</span>
+                    <input type="date" v-model="profile.membershipValidUntil">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Preferred Seat / Slot</span>
+                    <input type="text" v-model.trim="profile.preferredSeat" placeholder="e.g. Hall B, Seat 14, Morning Slot">
+                  </label>
+                </div>
+
+                <p class="form-success" v-if="savedSection === 'library'">Library details saved.</p>
+                <button type="submit" class="btn-primary btn-small">Save Changes</button>
+              </form>
+
+              <!-- Activity (read-only) -->
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Activity</h2>
+                  <p class="panel-subtitle">Your logged time at the library.</p>
+                </div>
+                <div class="stat-row">
+                  <div class="stat-box">
+                    <span class="stat-value">{{ profile.hoursLogged }}</span>
+                    <span class="stat-label">Hours Logged</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-value">{{ profile.lastVisit || '—' }}</span>
+                    <span class="stat-label">Last Visit</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Account & Security -->
+              <form class="panel-card" @submit.prevent="changePassword">
+                <div class="panel-card-header">
+                  <h2>Account &amp; Security</h2>
+                  <p class="panel-subtitle">Your login credentials.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Username</span>
+                    <input type="text" :value="profile.username" disabled>
+                  </label>
+
+                  <label class="field">
+                    <span>Current Password</span>
+                    <input type="password" v-model="security.currentPassword" placeholder="Enter current password">
+                  </label>
+
+                  <label class="field">
+                    <span>New Password</span>
+                    <input type="password" v-model="security.newPassword" placeholder="Enter new password">
+                  </label>
+
+                  <label class="field">
+                    <span>Confirm New Password</span>
+                    <input type="password" v-model="security.confirmPassword" placeholder="Re-enter new password">
+                  </label>
+                </div>
+
+                <p class="form-error" v-if="securityError">{{ securityError }}</p>
+                <p class="form-success" v-if="savedSection === 'security'">Password updated.</p>
+                <button type="submit" class="btn-primary btn-small">Update Password</button>
+              </form>
+
+              <!-- Danger Zone -->
+              <div class="panel-card danger-card">
+                <div class="panel-card-header">
+                  <h2>Danger Zone</h2>
+                  <p class="panel-subtitle">Request to deactivate your account.</p>
+                </div>
+                <button class="btn-danger" @click="requestDeactivation">Request Account Deactivation</button>
+                <p class="danger-note" v-if="deactivationRequested">
+                  Your deactivation request has been submitted. The library staff will contact you to confirm.
+                </p>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- PLACEHOLDER TABS -->
+        <section class="tab-panel tab-placeholder" v-else>
+          <div class="placeholder-box">
+            <span class="placeholder-icon" v-html="icons.soon"></span>
+            <h2>{{ currentTabLabel }} is coming soon</h2>
+            <p>This section isn't built yet. Check back later.</p>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+  {% endraw %}
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
