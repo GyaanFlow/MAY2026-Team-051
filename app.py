@@ -13,5 +13,15 @@ def dashboard():
     return render_template('dashboard.html')
 
 
+@app.route('/staff/dashboard')
+def staff_dashboard():
+    return render_template('staff_dashboard.html')
+
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    return render_template('admin_dashboard.html')
+
+
 if __name__ == '__main__':
     app.run(debug=True)

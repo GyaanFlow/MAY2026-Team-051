@@ -17,100 +17,38 @@
       </div>
 
       <div class="auth-wrapper">
-        <div class="auth-card" :class="{ flipped: !isLogin }" :style="{ height: isLogin ? '460px' : '660px' }">
+        <div class="auth-card">
+          <form class="auth-form" @submit.prevent="handleLogin" novalidate>
+            <h2>Log In</h2>
+            <p class="form-subtitle">Welcome back. Enter your details to continue.</p>
 
-          <!-- LOGIN FACE -->
-          <div class="card-face card-front">
-            <form class="auth-form" @submit.prevent="handleLogin" novalidate>
-              <h2>Log In</h2>
-              <p class="form-subtitle">Welcome back. Enter your details to continue.</p>
+            <label class="field">
+              <span>Username</span>
+              <input type="text" v-model.trim="loginForm.username" autocomplete="username" placeholder="Enter your username">
+            </label>
 
-              <label class="field">
-                <span>Username</span>
-                <input type="text" v-model.trim="loginForm.username" autocomplete="username" placeholder="Enter your username">
-              </label>
+            <label class="field">
+              <span>Password</span>
+              <input type="password" v-model="loginForm.password" autocomplete="current-password" placeholder="Enter your password">
+            </label>
 
-              <label class="field">
-                <span>Password</span>
-                <input type="password" v-model="loginForm.password" autocomplete="current-password" placeholder="Enter your password">
-              </label>
+            <p class="form-error" v-if="loginError">{{ loginError }}</p>
 
-              <p class="form-error" v-if="loginError">{{ loginError }}</p>
+            <button type="submit" class="btn-primary">Log In</button>
 
-              <button type="submit" class="btn-primary">Log In</button>
-
-              <p class="switch-line">
-                Don't have an account?
-                <a href="#" @click.prevent="switchToRegister">Register here</a>
-              </p>
-            </form>
-          </div>
-
-          <!-- REGISTER FACE -->
-          <div class="card-face card-back">
-            <form class="auth-form auth-form-wide" @submit.prevent="handleRegister" novalidate>
-              <h2>Create Account</h2>
-              <p class="form-subtitle">Join the library. Fill in your details below.</p>
-
-              <div class="field-grid">
-                <label class="field">
-                  <span>Username</span>
-                  <input type="text" v-model.trim="registerForm.username" autocomplete="username" placeholder="Choose a username">
-                </label>
-
-                <label class="field">
-                  <span>Full Name</span>
-                  <input type="text" v-model.trim="registerForm.fullname" autocomplete="name" placeholder="Your full name">
-                </label>
-
-                <label class="field">
-                  <span>Email</span>
-                  <input type="email" v-model.trim="registerForm.email" autocomplete="email" placeholder="you@example.com">
-                </label>
-
-                <label class="field">
-                  <span>Phone</span>
-                  <input type="tel" v-model.trim="registerForm.phone" autocomplete="tel" placeholder="10-digit phone number">
-                </label>
-
-                <label class="field">
-                  <span>Role</span>
-                  <select v-model="registerForm.role">
-                    <option value="" disabled>Select a role</option>
-                    <option value="student">Student</option>
-                    <option value="staff">Staff</option>
-                  </select>
-                </label>
-
-                <label class="field">
-                  <span>Password</span>
-                  <input type="password" v-model="registerForm.password" autocomplete="new-password" placeholder="Create a password">
-                </label>
-
-                <label class="field">
-                  <span>Confirm Password</span>
-                  <input type="password" v-model="registerForm.confirmPassword" autocomplete="new-password" placeholder="Re-enter password">
-                </label>
-
-                <label class="field field-full">
-                  <span>Address</span>
-                  <input type="text" v-model.trim="registerForm.address" autocomplete="street-address" placeholder="Your address">
-                </label>
-              </div>
-
-              <p class="form-error" v-if="registerError">{{ registerError }}</p>
-
-              <button type="submit" class="btn-primary">Create Account</button>
-
-              <p class="switch-line">
-                Already have an account?
-                <a href="#" @click.prevent="switchToLogin">Log in here</a>
-              </p>
-            </form>
-          </div>
-
+            <p class="switch-line muted-note">
+              Don't have an account? Student accounts are created by library staff; staff accounts are created by the admin.
+            </p>
+          </form>
         </div>
       </div>
+
+      <p class="demo-link">
+        Demo only —
+        <a href="/staff/dashboard">preview staff dashboard</a>
+        ·
+        <a href="/admin/dashboard">preview admin dashboard</a>
+      </p>
 
     </div>
   </div>

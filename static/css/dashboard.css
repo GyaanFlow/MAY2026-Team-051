@@ -1,7 +1,4 @@
-/* Dashboard layout — built on top of the tokens defined in style.css */
 
-/* Lock the page to the viewport so the sidebar and main content each
-   scroll independently instead of the whole document scrolling. */
 .dashboard-body {
   height: 100vh;
   height: 100dvh;
@@ -406,34 +403,216 @@
   font-size: 0.9rem;
 }
 
-/* ---------- Scrollbars ---------- */
+/* ---------- Field hint text ---------- */
 
-.main,
-.sidebar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+.field-hint {
+  margin: -0.4rem 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
-.main::-webkit-scrollbar,
-.sidebar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ---------- Simple data list (e.g. recently created accounts) ---------- */
+
+.data-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
 }
 
-.main::-webkit-scrollbar-track,
-.sidebar::-webkit-scrollbar-track {
-  background: transparent;
+.data-list-empty {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 0;
 }
 
-.main::-webkit-scrollbar-thumb,
-.sidebar::-webkit-scrollbar-thumb {
-  background-color: var(--border);
+.data-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg);
+  border-radius: 10px;
+}
+
+.data-row-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.data-row-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.data-row-name {
+  font-size: 0.92rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-row-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.badge {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 999px;
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--accent);
+  white-space: nowrap;
 }
 
-.main::-webkit-scrollbar-thumb:hover,
-.sidebar::-webkit-scrollbar-thumb:hover {
-  background-color: var(--muted);
+.badge-success {
+  background: rgba(22, 163, 74, 0.12);
+  color: #16a34a;
+}
+
+.badge-warning {
+  background: rgba(217, 119, 6, 0.12);
+  color: #d97706;
+}
+
+.badge-danger {
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--error);
+}
+
+.badge-muted {
+  background: var(--border);
+  color: var(--muted);
+}
+
+/* ---------- Outline / ghost buttons for row actions ---------- */
+
+.btn-outline {
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-outline:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-outline-danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.btn-outline-danger:hover {
+  background: var(--error);
+  color: #ffffff;
+}
+
+.btn-ghost {
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 0.4rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+}
+
+/* ---------- Record row list (accounts, memberships, etc.) ---------- */
+
+.record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.record-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.record-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.record-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  flex: 1;
+}
+
+.record-name {
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.record-sub {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.record-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.record-edit-grid input {
+  font-family: inherit;
+  font-size: 0.88rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
 }
 
 /* ---------- Responsive ---------- */

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Library Management System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body class="dashboard-body">
+  {% raw %}
+  <div id="app">
+    <div class="dash">
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-mark">SLMS</div>
+          <span class="sidebar-brand-name">Study Library</span>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="nav-item"
+            :class="{ active: activeTab === tab.id, disabled: !tab.enabled }"
+            :disabled="!tab.enabled"
+            @click="setActiveTab(tab.id)"
+          >
+            <span class="nav-icon" v-html="tab.icon"></span>
+            <span class="nav-label">{{ tab.label }}</span>
+            <span class="nav-soon" v-if="!tab.enabled">Soon</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button class="nav-item logout" @click="handleLogout">
+            <span class="nav-icon" v-html="icons.logout"></span>
+            <span class="nav-label">Log Out</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main class="main">
+        <header class="main-header">
+          <div>
+            <h1>{{ currentTabLabel }}</h1>
+            <p class="main-subtitle" v-if="activeTab === 'createStudent'">Set up login access for a new student.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'verifyMemberships'">Verify student membership details.</p>
+          </div>
+          <div class="header-user">
+            <div class="header-avatar">{{ initials }}</div>
+            <div class="header-user-info">
+              <span class="header-user-name">{{ staff.fullName || 'Staff' }}</span>
+              <span class="header-user-sub">{{ staff.staffId || '—' }}</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- CREATE STUDENT ACCOUNT TAB -->
+        <section class="tab-panel" v-if="activeTab === 'createStudent'">
+
+          <div class="profile-layout">
+
+            <!-- Recently created accounts -->
+            <div class="panel-card identity-card">
+              <div class="panel-card-header" style="text-align:left; width:100%;">
+                <h2>Recently Created</h2>
+                <p class="panel-subtitle">Students you've onboarded this session.</p>
+              </div>
+
+              <div class="data-list" style="width:100%;" v-if="createdStudents.length">
+                <div class="data-row" v-for="student in createdStudents" :key="student.studentId">
+                  <div class="data-row-avatar">{{ initialsOf(student.fullName) }}</div>
+                  <div class="data-row-info">
+                    <span class="data-row-name">{{ student.fullName }}</span>
+                    <span class="data-row-sub">{{ student.username }} · {{ student.studentId }}</span>
+                  </div>
+                  <span class="badge">Student</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No accounts created yet this session.</p>
+            </div>
+
+            <!-- Form -->
+            <div class="forms-col">
+
+              <form class="panel-card" @submit.prevent="createStudentAccount">
+                <div class="panel-card-header">
+                  <h2>Student Details</h2>
+                  <p class="panel-subtitle">Basic personal information for the new student.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Full Name</span>
+                    <input type="text" v-model.trim="newStudent.fullName" placeholder="Student's full name">
+                  </label>
+
+                  <label class="field">
+                    <span>Date of Birth</span>
+                    <input type="date" v-model="newStudent.dob">
+                  </label>
+
+                  <label class="field">
+                    <span>Gender</span>
+                    <select v-model="newStudent.gender">
+                      <option value="" disabled>Select gender</option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Phone</span>
+                    <input type="tel" v-model.trim="newStudent.phone" placeholder="10-digit phone number">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Address</span>
+                    <input type="text" v-model.trim="newStudent.address" placeholder="Student's address">
+                  </label>
+                </div>
+              </form>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Library Information</h2>
+                  <p class="panel-subtitle">Membership and seating details.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Student / Roll Number</span>
+                    <input type="text" v-model.trim="newStudent.studentId" placeholder="e.g. STU-2026-0143">
+                  </label>
+
+                  <label class="field">
+                    <span>Membership Type</span>
+                    <select v-model="newStudent.membershipType">
+                      <option value="" disabled>Select membership</option>
+                      <option value="Regular">Regular</option>
+                      <option value="Premium">Premium</option>
+                      <option value="Day Pass">Day Pass</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Membership Start Date</span>
+                    <input type="date" v-model="newStudent.membershipStart">
+                  </label>
+
+                  <label class="field">
+                    <span>Membership Valid Until</span>
+                    <input type="date" v-model="newStudent.membershipValidUntil">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Preferred Seat / Slot</span>
+                    <input type="text" v-model.trim="newStudent.preferredSeat" placeholder="e.g. Hall B, Seat 14, Morning Slot">
+                  </label>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Login Credentials</h2>
+                  <p class="panel-subtitle">The student will use these to log in. They can change the password later.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Username</span>
+                    <input type="text" v-model.trim="newStudent.username" placeholder="Choose a username">
+                  </label>
+
+                  <label class="field">
+                    <span>Temporary Password</span>
+                    <input type="password" v-model="newStudent.password" placeholder="Set a temporary password">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Confirm Password</span>
+                    <input type="password" v-model="newStudent.confirmPassword" placeholder="Re-enter password">
+                  </label>
+                </div>
+                <p class="field-hint">The student cannot log in until this account is created here.</p>
+
+                <p class="form-error" v-if="createError">{{ createError }}</p>
+                <p class="form-success" v-if="createSuccess">Student account created successfully.</p>
+                <button type="button" class="btn-primary btn-small" @click="createStudentAccount">Create Student Account</button>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- VERIFY MEMBERSHIPS TAB -->
+        <section class="tab-panel" v-else-if="activeTab === 'verifyMemberships'">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Student Memberships</h2>
+              <p class="panel-subtitle">Confirm membership details submitted by students.</p>
+            </div>
+
+            <div class="record-list" v-if="membershipsToVerify.length">
+              <div class="record-row" v-for="m in membershipsToVerify" :key="m.studentId">
+                <div class="record-avatar">{{ initialsOf(m.fullName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ m.fullName }}</span>
+                  <span class="record-sub">{{ m.membershipType }} · {{ m.studentId }} · Seat: {{ m.preferredSeat }}</span>
+                </div>
+                <span class="badge" :class="m.verified ? 'badge-success' : 'badge-warning'">
+                  {{ m.verified ? 'Verified' : 'Unverified' }}
+                </span>
+                <div class="record-actions">
+                  <button class="btn-outline" v-if="!m.verified" @click="verifyMembership(m)">Verify Membership</button>
+                </div>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No student memberships to review.</p>
+          </div>
+        </section>
+
+        <!-- PLACEHOLDER TABS -->
+        <section class="tab-panel tab-placeholder" v-else>
+          <div class="placeholder-box">
+            <span class="placeholder-icon" v-html="icons.soon"></span>
+            <h2>{{ currentTabLabel }} is coming soon</h2>
+            <p>This section isn't built yet. Check back later.</p>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+  {% endraw %}
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/staff_dashboard.js') }}"></script>
+</body>
+</html>
