@@ -49,6 +49,10 @@
             <h1>{{ currentTabLabel }}</h1>
             <p class="main-subtitle" v-if="activeTab === 'staffAccounts'">Create, update, and deactivate library staff accounts.</p>
             <p class="main-subtitle" v-else-if="activeTab === 'memberships'">Approve and manage student memberships.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'operatingHours'">Set the hours students can book and access the library.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'bookingLimits'">Manage seat capacity and booking rules to keep occupancy under control.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'plans'">Create and manage the membership plans students can subscribe to.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'reports'">Occupancy, peak hours, memberships, and revenue at a glance.</p>
           </div>
           <div class="header-user">
             <div class="header-avatar">{{ initials }}</div>
@@ -287,7 +291,383 @@
           </div>
         </section>
 
-        <!-- PLACEHOLDER TABS -->
+        
+        <section class="tab-panel" v-else-if="activeTab === 'operatingHours'">
+          <div class="profile-layout">
+
+            <div class="panel-card identity-card">
+              <div class="panel-card-header" style="text-align:left; width:100%;">
+                <h2>Weekly Summary</h2>
+                <p class="panel-subtitle">Days the library is currently open.</p>
+              </div>
+              <div class="stat-row" style="width:100%;">
+                <div class="stat-box">
+                  <span class="stat-value">{{ openDaysCount }} / 7</span>
+                  <span class="stat-label">Open Days</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-value">{{ holidayClosures.length }}</span>
+                  <span class="stat-label">Upcoming Closures</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="forms-col">
+
+              <form class="panel-card" @submit.prevent="saveOperatingHours">
+                <div class="panel-card-header">
+                  <h2>Weekly Operating Hours</h2>
+                  <p class="panel-subtitle">Students can only book and access the library within these windows.</p>
+                </div>
+
+                <div class="hours-list">
+                  <div class="hours-row" v-for="d in operatingHours" :key="d.day">
+                    <span class="hours-day">{{ d.day }}</span>
+                    <toggle-switch v-model="d.isOpen" on-label="Open" off-label="Closed"></toggle-switch>
+                    <template v-if="d.isOpen">
+                      <input type="time" v-model="d.openTime" class="hours-time-input">
+                      <span class="hours-sep">to</span>
+                      <input type="time" v-model="d.closeTime" class="hours-time-input">
+                      <button type="button" class="btn-ghost hours-apply-all" @click="applyToAllDays(d)">Apply to all</button>
+                    </template>
+                    <span class="hours-closed-note" v-else>Not bookable this day</span>
+                  </div>
+                </div>
+
+                <p class="form-error" v-if="hoursError">{{ hoursError }}</p>
+                <p class="form-success" v-if="hoursSuccess">Operating hours updated successfully.</p>
+                <button type="submit" class="btn-primary btn-small">Save Operating Hours</button>
+              </form>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Holiday &amp; Special Closures</h2>
+                  <p class="panel-subtitle">Dates the library is fully closed, overriding the weekly schedule.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Date</span>
+                    <input type="date" v-model="newHoliday.date">
+                  </label>
+                  <label class="field">
+                    <span>Reason</span>
+                    <input type="text" v-model.trim="newHoliday.reason" placeholder="e.g. Festival holiday">
+                  </label>
+                </div>
+                <button type="button" class="btn-outline" style="align-self:flex-start;" @click="addHolidayClosure">Add Closure</button>
+
+                <div class="record-list" v-if="holidayClosures.length" style="margin-top:0.5rem;">
+                  <div class="record-row" v-for="(h, idx) in holidayClosures" :key="h.date + h.reason">
+                    <div class="record-info">
+                      <span class="record-name">{{ h.date }}</span>
+                      <span class="record-sub">{{ h.reason }}</span>
+                    </div>
+                    <div class="record-actions">
+                      <button class="btn-ghost" @click="removeHolidayClosure(idx)">Remove</button>
+                    </div>
+                  </div>
+                </div>
+                <p class="data-list-empty" v-else>No upcoming closures scheduled.</p>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+      
+        <section class="tab-panel" v-else-if="activeTab === 'bookingLimits'">
+          <div class="profile-layout">
+
+            <div class="panel-card identity-card">
+              <div class="panel-card-header" style="text-align:left; width:100%;">
+                <h2>Seat Inventory</h2>
+                <p class="panel-subtitle">Seats allocated across zones.</p>
+              </div>
+              <div class="stat-row" style="width:100%;">
+                <div class="stat-box">
+                  <span class="stat-value">{{ zoneSeatTotal }}</span>
+                  <span class="stat-label">Zone Seats</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-value">{{ bookingLimits.totalSeats }}</span>
+                  <span class="stat-label">Configured Total</span>
+                </div>
+              </div>
+              <p class="form-error" v-if="zoneSeatMismatch" style="text-align:left; width:100%;">
+                Zone seats ({{ zoneSeatTotal }}) don't match the configured total ({{ bookingLimits.totalSeats }}).
+              </p>
+            </div>
+
+            <div class="forms-col">
+
+              <form class="panel-card" @submit.prevent="saveBookingLimits">
+                <div class="panel-card-header">
+                  <h2>Booking Rules</h2>
+                  <p class="panel-subtitle">Control how many seats can be booked, and for how long.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Total Available Seats</span>
+                    <input type="number" min="1" v-model.number="bookingLimits.totalSeats">
+                  </label>
+                  <label class="field">
+                    <span>Minimum Booking Duration (minutes)</span>
+                    <input type="number" min="15" step="15" v-model.number="bookingLimits.minBookingMinutes">
+                  </label>
+                  <label class="field">
+                    <span>Maximum Booking Duration (hours)</span>
+                    <input type="number" min="1" v-model.number="bookingLimits.maxBookingHours">
+                  </label>
+                  <label class="field">
+                    <span>Max Bookings per Student per Day</span>
+                    <input type="number" min="1" v-model.number="bookingLimits.maxBookingsPerDay">
+                  </label>
+                  <label class="field">
+                    <span>Advance Booking Window (days)</span>
+                    <input type="number" min="0" v-model.number="bookingLimits.advanceBookingDays">
+                  </label>
+                  <label class="field">
+                    <span>Cancellation Window (hours before slot)</span>
+                    <input type="number" min="0" v-model.number="bookingLimits.cancellationWindowHours">
+                  </label>
+                </div>
+
+                <div class="field-inline">
+                  <span>Enable Waitlist When Full</span>
+                  <toggle-switch v-model="bookingLimits.waitlistEnabled"></toggle-switch>
+                </div>
+
+                <p class="form-error" v-if="bookingLimitsError">{{ bookingLimitsError }}</p>
+                <p class="form-success" v-if="bookingLimitsSuccess">Booking limits updated successfully.</p>
+                <button type="submit" class="btn-primary btn-small">Save Booking Limits</button>
+              </form>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Seat Zones</h2>
+                  <p class="panel-subtitle">Break total seats down by zone or section.</p>
+                </div>
+
+                <div class="record-list" v-if="seatZones.length">
+                  <div class="record-row" v-for="(z, idx) in seatZones" :key="z.zone">
+                    <div class="record-info">
+                      <span class="record-name">{{ z.zone }}</span>
+                      <span class="record-sub">{{ z.seats }} seats</span>
+                    </div>
+                    <div class="record-actions">
+                      <button class="btn-ghost" @click="removeSeatZone(idx)">Remove</button>
+                    </div>
+                  </div>
+                </div>
+                <p class="data-list-empty" v-else>No zones configured yet.</p>
+
+                <div class="field-grid" style="margin-top:0.5rem;">
+                  <label class="field">
+                    <span>Zone Name</span>
+                    <input type="text" v-model.trim="newZone.zone" placeholder="e.g. Reading Room">
+                  </label>
+                  <label class="field">
+                    <span>Seats</span>
+                    <input type="number" min="1" v-model.number="newZone.seats" placeholder="Number of seats">
+                  </label>
+                </div>
+                <button type="button" class="btn-outline" style="align-self:flex-start;" @click="addSeatZone">Add Zone</button>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        
+        <section class="tab-panel" v-else-if="activeTab === 'plans'">
+          <div class="profile-layout">
+
+            <div class="panel-card identity-card">
+              <div class="panel-card-header" style="text-align:left; width:100%;">
+                <h2>Plan Overview</h2>
+                <p class="panel-subtitle">Plans currently offered to students.</p>
+              </div>
+              <div class="stat-row" style="width:100%;">
+                <div class="stat-box">
+                  <span class="stat-value">{{ membershipPlans.length }}</span>
+                  <span class="stat-label">Total Plans</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-value">{{ membershipPlans.filter(p => p.active).length }}</span>
+                  <span class="stat-label">Active</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="forms-col">
+
+              <form class="panel-card" @submit.prevent="createPlan">
+                <div class="panel-card-header">
+                  <h2>Create Membership Plan</h2>
+                  <p class="panel-subtitle">Define a new plan students can subscribe to.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Plan Name</span>
+                    <input type="text" v-model.trim="newPlan.name" placeholder="e.g. Premium">
+                  </label>
+                  <label class="field">
+                    <span>Price (₹)</span>
+                    <input type="number" min="0" v-model.number="newPlan.price" placeholder="e.g. 1999">
+                  </label>
+                  <label class="field">
+                    <span>Billing Cycle</span>
+                    <select v-model="newPlan.billingCycle">
+                      <option value="One-time">One-time</option>
+                      <option value="Monthly">Monthly</option>
+                      <option value="Quarterly">Quarterly</option>
+                      <option value="Yearly">Yearly</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Seat Bookings per Day</span>
+                    <input type="number" min="1" v-model.number="newPlan.seatBookingsPerDay">
+                  </label>
+                  <label class="field field-full">
+                    <span>Advance Booking Window (days)</span>
+                    <input type="number" min="1" v-model.number="newPlan.advanceBookingDays">
+                  </label>
+                  <label class="field field-full">
+                    <span>Features (comma-separated)</span>
+                    <input type="text" v-model.trim="newPlan.featuresText" placeholder="e.g. All zones, Priority booking, Locker">
+                  </label>
+                </div>
+
+                <p class="form-error" v-if="planError">{{ planError }}</p>
+                <p class="form-success" v-if="planSuccess">Membership plan created successfully.</p>
+                <button type="submit" class="btn-primary btn-small">Create Plan</button>
+              </form>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Manage Plans</h2>
+                  <p class="panel-subtitle">Edit, deactivate, or remove existing plans.</p>
+                </div>
+
+                <div class="plan-grid" v-if="membershipPlans.length">
+                  <div class="plan-card" v-for="plan in membershipPlans" :key="plan.id" :class="{ 'plan-card-inactive': !plan.active }">
+
+                    <template v-if="editingPlanId !== plan.id">
+                      <div class="plan-card-top">
+                        <h3>{{ plan.name }}</h3>
+                        <span class="badge" :class="plan.active ? 'badge-success' : 'badge-muted'">{{ plan.active ? 'Active' : 'Inactive' }}</span>
+                      </div>
+                      <p class="plan-price">₹{{ plan.price }} <span class="plan-cycle">/ {{ plan.billingCycle }}</span></p>
+                      <p class="plan-meta">{{ plan.seatBookingsPerDay }} booking(s)/day · {{ plan.advanceBookingDays }}-day advance window</p>
+                      <ul class="plan-features">
+                        <li v-for="f in plan.features" :key="f">{{ f }}</li>
+                      </ul>
+                      <div class="record-actions" style="margin-top:auto;">
+                        <button class="btn-ghost" @click="startEditPlan(plan)"><span class="nav-icon" v-html="icons.edit" style="width:14px;height:14px;"></span> Edit</button>
+                        <button class="btn-outline" @click="togglePlanStatus(plan)">{{ plan.active ? 'Deactivate' : 'Activate' }}</button>
+                        <button class="btn-outline btn-outline-danger" @click="deletePlan(plan)">Delete</button>
+                      </div>
+                    </template>
+
+                    <template v-else>
+                      <label class="field">
+                        <span>Plan Name</span>
+                        <input type="text" v-model.trim="planEditDraft.name">
+                      </label>
+                      <label class="field">
+                        <span>Price (₹)</span>
+                        <input type="number" min="0" v-model.number="planEditDraft.price">
+                      </label>
+                      <label class="field">
+                        <span>Billing Cycle</span>
+                        <select v-model="planEditDraft.billingCycle">
+                          <option value="One-time">One-time</option>
+                          <option value="Monthly">Monthly</option>
+                          <option value="Quarterly">Quarterly</option>
+                          <option value="Yearly">Yearly</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span>Seat Bookings per Day</span>
+                        <input type="number" min="1" v-model.number="planEditDraft.seatBookingsPerDay">
+                      </label>
+                      <label class="field">
+                        <span>Advance Booking Window (days)</span>
+                        <input type="number" min="1" v-model.number="planEditDraft.advanceBookingDays">
+                      </label>
+                      <label class="field">
+                        <span>Features (comma-separated)</span>
+                        <input type="text" v-model.trim="planEditDraft.featuresText">
+                      </label>
+                      <div class="record-actions" style="margin-top:auto; justify-content:flex-end;">
+                        <button class="btn-ghost" @click="cancelEditPlan">Cancel</button>
+                        <button class="btn-outline" @click="saveEditPlan(plan)">Save</button>
+                      </div>
+                    </template>
+
+                  </div>
+                </div>
+                <p class="data-list-empty" v-else>No membership plans yet.</p>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+       
+        <section class="tab-panel" v-else-if="activeTab === 'reports'">
+          <div class="reports-toolbar">
+            <div class="range-toggle">
+              <button
+                v-for="r in reportRanges"
+                :key="r.id"
+                type="button"
+                class="range-btn"
+                :class="{ active: reportRange === r.id }"
+                @click="reportRange = r.id"
+              >{{ r.label }}</button>
+            </div>
+            <button type="button" class="btn-outline" @click="exportReport">Export Report</button>
+          </div>
+
+          <div class="stat-card-row">
+            <stat-card label="Avg. Occupancy" :value="currentReport.avgOccupancyPct + '%'" sublabel="Across all bookable seats" tone="accent"></stat-card>
+            <stat-card label="Peak Hour" :value="peakHour.label" :sublabel="peakHour.value + '% occupancy'" tone="warning"></stat-card>
+            <stat-card label="Active Memberships" :value="activeMembershipsCount" sublabel="Currently approved students" tone="success"></stat-card>
+            <stat-card label="Revenue" :value="'₹' + currentReport.totalRevenue.toLocaleString('en-IN')" sublabel="Selected period" tone="default"></stat-card>
+          </div>
+
+          <div class="reports-grid">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Occupancy by Hour</h2>
+                <p class="panel-subtitle">Percentage of seats occupied through the day.</p>
+              </div>
+              <bar-chart :data="currentReport.occupancyByHour" unit="%"></bar-chart>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Revenue Trend</h2>
+                <p class="panel-subtitle">Revenue across the selected period.</p>
+              </div>
+              <bar-chart :data="currentReport.revenueTrend"></bar-chart>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Membership Distribution</h2>
+                <p class="panel-subtitle">Approved and pending students by plan type.</p>
+              </div>
+              <donut-chart :data="membershipDistribution"></donut-chart>
+            </div>
+          </div>
+        </section>
+
+       
         <section class="tab-panel tab-placeholder" v-else>
           <div class="placeholder-box">
             <span class="placeholder-icon" v-html="icons.soon"></span>
