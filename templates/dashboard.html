@@ -47,7 +47,7 @@
         <header class="main-header">
           <div>
             <h1>{{ currentTabLabel }}</h1>
-            <p class="main-subtitle" v-if="activeTab === 'profile'">Manage your personal and library details.</p>
+            <p class="main-subtitle" v-if="currentTabSubtitle">{{ currentTabSubtitle }}</p>
           </div>
           <div class="header-user">
             <div class="header-avatar">{{ initials }}</div>
@@ -58,8 +58,328 @@
           </div>
         </header>
 
+        <!-- 3.1 REAL-TIME SEAT AVAILABILITY -->
+        <section class="tab-panel" v-if="activeTab === 'availability'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ availabilitySummary.available }}</span>
+              <span class="stat-card-label">Available now</span>
+            </div>
+            <div class="stat-card stat-card-warning">
+              <span class="stat-card-value">{{ availabilitySummary.reserved }}</span>
+              <span class="stat-card-label">Reserved</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ availabilitySummary.occupied }}</span>
+              <span class="stat-card-label">Occupied</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ availabilitySummary.total }}</span>
+              <span class="stat-card-label">Total seats &amp; rooms</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header seat-toolbar-header">
+              <div>
+                <h2>Live Floor Status</h2>
+                <p class="panel-subtitle">Updated {{ secondsSinceUpdate }}s ago · refreshes automatically</p>
+              </div>
+              <button class="btn-outline" @click="refreshAvailability">Refresh Now</button>
+            </div>
+
+            <div class="seat-filters">
+              <label class="field field-inline-select">
+                <span>Zone</span>
+                <select v-model="availFilters.zone">
+                  <option value="all">All zones</option>
+                  <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
+                </select>
+              </label>
+              <label class="field field-inline-select">
+                <span>Type</span>
+                <select v-model="availFilters.type">
+                  <option value="all">Seats &amp; rooms</option>
+                  <option value="seat">Individual seats</option>
+                  <option value="room">Study rooms</option>
+                </select>
+              </label>
+              <label class="field field-inline-select field-grow">
+                <span>Search</span>
+                <input type="text" v-model.trim="availFilters.search" placeholder="Search by name…">
+              </label>
+            </div>
+
+            <div class="seat-grid" v-if="filteredSeats.length">
+              <div
+                class="seat-card"
+                v-for="seat in filteredSeats"
+                :key="seat.id"
+                :class="'seat-status-' + seat.status"
+              >
+                <div class="seat-card-top">
+                  <span class="seat-card-name">{{ seat.name }}</span>
+                  <span class="badge" :class="{
+                    'badge-success': seat.status === 'available',
+                    'badge-warning': seat.status === 'reserved',
+                    'badge-danger': seat.status === 'occupied',
+                    'badge-muted': seat.status === 'maintenance'
+                  }">{{ STATUS_LABELS[seat.status] }}</span>
+                </div>
+                <p class="seat-card-meta">
+                  {{ seat.type === 'room' ? 'Room · seats ' + seat.capacity : 'Single seat' }}
+                  <span v-if="seat.hasPower"> · Power outlet</span>
+                </p>
+                <button
+                  class="btn-outline btn-small-full"
+                  v-if="seat.status === 'available'"
+                  @click="goBookSeat(seat)"
+                >
+                  Book This
+                </button>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No seats or rooms match your filters.</p>
+          </div>
+        </section>
+
+        <!-- 3.2 ADVANCE BOOKING -->
+        <section class="tab-panel" v-else-if="activeTab === 'booking'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Choose Date &amp; Time</h2>
+                <p class="panel-subtitle">Pick when you'd like to study.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field">
+                  <span>Date</span>
+                  <select v-model="bookingForm.date">
+                    <option v-for="d in bookingDateOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Time Slot</span>
+                  <select v-model="bookingForm.slotId">
+                    <option v-for="s in TIME_SLOTS" :key="s.id" :value="s.id">{{ s.label }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Zone</span>
+                  <select v-model="bookingForm.zone">
+                    <option value="all">Any zone</option>
+                    <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Type</span>
+                  <select v-model="bookingForm.type">
+                    <option value="all">Seat or room</option>
+                    <option value="seat">Individual seat</option>
+                    <option value="room">Study room</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Available for This Slot</h2>
+                <p class="panel-subtitle">{{ bookableSeats.length }} option(s) open for the selected date &amp; time.</p>
+              </div>
+
+              <div class="seat-grid" v-if="bookableSeats.length">
+                <button
+                  type="button"
+                  class="seat-card seat-pick"
+                  v-for="seat in bookableSeats"
+                  :key="seat.id"
+                  :class="{ 'seat-pick-selected': bookingForm.seatId === seat.id }"
+                  @click="bookingForm.seatId = seat.id"
+                >
+                  <div class="seat-card-top">
+                    <span class="seat-card-name">{{ seat.name }}</span>
+                  </div>
+                  <p class="seat-card-meta">
+                    {{ seat.type === 'room' ? 'Room · seats ' + seat.capacity : 'Single seat' }}
+                    <span v-if="seat.hasPower"> · Power outlet</span>
+                  </p>
+                </button>
+              </div>
+              <p class="data-list-empty" v-else>Nothing free for this combination — try another slot, zone, or type.</p>
+
+              <p class="form-error" v-if="bookingError">{{ bookingError }}</p>
+
+              <div class="booking-confirm-row" v-if="selectedBookingSeat">
+                <p class="booking-selected-summary">
+                  Booking <strong>{{ selectedBookingSeat.name }}</strong> for
+                  <strong>{{ bookingForm.date }}</strong>, {{ TIME_SLOTS.find(s => s.id === bookingForm.slotId).label }}
+                </p>
+                <button class="btn-primary btn-small" @click="confirmBooking">Confirm Booking</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="booking-success-toast" v-if="bookingSuccess">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Booking Confirmed</h2>
+                <p class="panel-subtitle">Reference {{ bookingSuccess.id }}</p>
+              </div>
+              <p class="identity-meta">
+                {{ bookingSuccess.seatName }} · {{ bookingSuccess.date }} · {{ bookingSuccess.slotLabel }}
+              </p>
+              <p class="field-hint">You can modify or cancel this from "My Bookings" up to 2 hours before it starts.</p>
+              <button class="btn-outline" @click="dismissBookingSuccess">Got it</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3.3 MY BOOKINGS (MODIFY / CANCEL) + EXTENSION REQUEST -->
+        <section class="tab-panel" v-else-if="activeTab === 'myBookings'">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Upcoming Reservations</h2>
+              <p class="panel-subtitle">Bookings can be changed or cancelled up to 2 hours before the start time.</p>
+            </div>
+
+            <div class="record-list" v-if="upcomingBookings.length">
+              <div class="record-row booking-row" v-for="b in upcomingBookings" :key="b.id">
+
+                <template v-if="editingBookingId !== b.id">
+                  <div class="record-avatar">{{ b.type === 'room' ? 'RM' : 'ST' }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ b.seatName }}</span>
+                    <span class="record-sub">{{ b.date }} · {{ b.slotLabel }} · {{ b.zone }}</span>
+                    <span class="record-sub" v-if="b.status === 'checked-in'">Checked in — session in progress</span>
+                    <span class="record-sub" v-else>{{ modifyDeadlineLabel(b) }}</span>
+                  </div>
+                  <span class="badge" :class="statusBadgeClass(b.status)">{{ b.status === 'checked-in' ? 'Checked In' : 'Upcoming' }}</span>
+                  <div class="record-actions">
+                    <template v-if="b.status === 'upcoming'">
+                      <button class="btn-outline" :disabled="!canModify(b)" @click="startModify(b)">Modify</button>
+                      <button class="btn-outline btn-outline-danger" :disabled="!canModify(b)" @click="cancelBooking(b)">Cancel</button>
+                    </template>
+                    <template v-else-if="b.status === 'checked-in'">
+                      <button
+                        class="btn-outline"
+                        v-if="!extensionStatus(b)"
+                        @click="openExtendForm(b)"
+                      >Request Extension</button>
+                      <span class="badge badge-warning" v-else>Extension {{ extensionStatus(b) }}</span>
+                    </template>
+                  </div>
+
+                  <div class="extend-form" v-if="extendingBookingId === b.id">
+                    <label class="field">
+                      <span>Extend by</span>
+                      <select v-model.number="extendMinutes">
+                        <option :value="30">30 minutes</option>
+                        <option :value="60">1 hour</option>
+                        <option :value="120">2 hours</option>
+                      </select>
+                    </label>
+                    <div class="record-actions">
+                      <button class="btn-primary btn-small" @click="submitExtension(b)">Submit Request</button>
+                      <button class="btn-ghost" @click="cancelExtend">Cancel</button>
+                    </div>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="record-edit-grid record-edit-grid-wide">
+                    <label class="field">
+                      <span>Date</span>
+                      <select v-model="editForm.date">
+                        <option v-for="d in bookingDateOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
+                      </select>
+                    </label>
+                    <label class="field">
+                      <span>Time Slot</span>
+                      <select v-model="editForm.slotId">
+                        <option v-for="s in TIME_SLOTS" :key="s.id" :value="s.id">{{ s.label }}</option>
+                      </select>
+                    </label>
+                    <label class="field field-full">
+                      <span>Seat / Room</span>
+                      <select v-model="editForm.seatId">
+                        <option :value="null" disabled>Select a seat or room</option>
+                        <option v-for="s in editBookableSeats" :key="s.id" :value="s.id">{{ s.name }}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="form-error" v-if="editError">{{ editError }}</p>
+                  <div class="record-actions">
+                    <button class="btn-primary btn-small" @click="saveModify(b)">Save Changes</button>
+                    <button class="btn-ghost" @click="cancelModify">Cancel</button>
+                  </div>
+                </template>
+
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>You have no upcoming bookings. Head to "Book a Space" to reserve one.</p>
+          </div>
+        </section>
+
+        <!-- 3.4 BOOKING AND ATTENDANCE HISTORY -->
+        <section class="tab-panel" v-else-if="activeTab === 'history'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ historySummary.totalSessions }}</span>
+              <span class="stat-card-label">Past sessions</span>
+            </div>
+            <div class="stat-card stat-card-success">
+              <span class="stat-card-value">{{ historySummary.completed }}</span>
+              <span class="stat-card-label">Completed</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ historySummary.noShows }}</span>
+              <span class="stat-card-label">No-shows</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ historySummary.hoursLogged }}</span>
+              <span class="stat-card-label">Hours logged</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header reports-toolbar">
+              <div>
+                <h2>Session History</h2>
+                <p class="panel-subtitle">Your booking and attendance record.</p>
+              </div>
+              <div class="range-toggle">
+                <button
+                  class="range-btn"
+                  v-for="opt in [{id:'all',label:'All'},{id:'completed',label:'Completed'},{id:'no-show',label:'No-shows'},{id:'cancelled',label:'Cancelled'}]"
+                  :key="opt.id"
+                  :class="{ active: historyFilter === opt.id }"
+                  @click="historyFilter = opt.id"
+                >{{ opt.label }}</button>
+              </div>
+            </div>
+
+            <div class="record-list" v-if="filteredHistory.length">
+              <div class="record-row" v-for="h in filteredHistory" :key="h.id">
+                <div class="record-avatar">{{ h.type === 'room' ? 'RM' : 'ST' }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ h.seatName }}</span>
+                  <span class="record-sub">{{ h.date }} · {{ h.slotLabel }}</span>
+                  <span class="record-sub" v-if="h.checkInTime">Checked in {{ h.checkInTime }} · out {{ h.checkOutTime || '—' }}</span>
+                </div>
+                <span class="badge" :class="statusBadgeClass(h.status)">{{ h.status.replace('-', ' ') }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No sessions match this filter.</p>
+          </div>
+        </section>
+
         <!-- PROFILE MANAGEMENT TAB -->
-        <section class="tab-panel" v-if="activeTab === 'profile'">
+        <section class="tab-panel" v-else-if="activeTab === 'profile'">
 
           <div class="profile-layout">
 
@@ -253,6 +573,7 @@
   {% endraw %}
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/library-data.js') }}"></script>
   <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>

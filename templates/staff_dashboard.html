@@ -47,8 +47,7 @@
         <header class="main-header">
           <div>
             <h1>{{ currentTabLabel }}</h1>
-            <p class="main-subtitle" v-if="activeTab === 'createStudent'">Set up login access for a new student.</p>
-            <p class="main-subtitle" v-else-if="activeTab === 'verifyMemberships'">Verify student membership details.</p>
+            <p class="main-subtitle" v-if="currentTabSubtitle">{{ currentTabSubtitle }}</p>
           </div>
           <div class="header-user">
             <div class="header-avatar">{{ initials }}</div>
@@ -59,8 +58,221 @@
           </div>
         </header>
 
+        <!-- 3.5 DAILY BOOKING OVERVIEW -->
+        <section class="tab-panel" v-if="activeTab === 'dailyOverview'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ overviewStats.total }}</span>
+              <span class="stat-card-label">Bookings today</span>
+            </div>
+            <div class="stat-card stat-card-warning">
+              <span class="stat-card-value">{{ overviewStats.expectedArrivals }}</span>
+              <span class="stat-card-label">Expected arrivals</span>
+            </div>
+            <div class="stat-card stat-card-success">
+              <span class="stat-card-value">{{ overviewStats.checkedIn }}</span>
+              <span class="stat-card-label">Checked in</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ overviewStats.noShows }}</span>
+              <span class="stat-card-label">No-shows</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ overviewStats.occupancyPct }}%</span>
+              <span class="stat-card-label">Current occupancy</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header reports-toolbar">
+              <div>
+                <h2>Today's Schedule</h2>
+                <p class="panel-subtitle">Sorted by arrival time · {{ overviewDate }}</p>
+              </div>
+              <input type="date" v-model="overviewDate" class="hours-time-input">
+            </div>
+
+            <div class="record-list" v-if="overviewBookings.length">
+              <div class="record-row" v-for="b in overviewBookings" :key="b.id">
+                <div class="record-avatar">{{ initialsOf(b.studentName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ b.studentName }}</span>
+                  <span class="record-sub">{{ b.seatName }} · {{ b.slot.label }} · {{ b.studentId }}</span>
+                </div>
+                <span class="badge" :class="overviewBadgeClass(b.status)">{{ b.status.replace('-', ' ') }}</span>
+                <div class="record-actions" v-if="b.status === 'upcoming'">
+                  <button class="btn-outline" @click="markArrived(b)">Mark Arrived</button>
+                  <button class="btn-outline btn-outline-danger" @click="markNoShow(b)">No-Show</button>
+                </div>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No bookings on record for this date in the demo data.</p>
+          </div>
+        </section>
+
+        <!-- 3.6 WALK-IN ADMISSION -->
+        <section class="tab-panel" v-else-if="activeTab === 'walkIn'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Walk-In Details</h2>
+                <p class="panel-subtitle">Capture the student, then assign a free seat.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field field-full">
+                  <span>Student Name</span>
+                  <input type="text" v-model.trim="walkInForm.fullName" placeholder="Full name">
+                </label>
+                <label class="field field-full">
+                  <span>Student ID <span class="identity-meta muted">(optional)</span></span>
+                  <input type="text" v-model.trim="walkInForm.studentId" placeholder="e.g. STU-2026-0199, leave blank if none">
+                </label>
+                <label class="field">
+                  <span>Zone</span>
+                  <select v-model="walkInForm.zone">
+                    <option value="all">Any zone</option>
+                    <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Type</span>
+                  <select v-model="walkInForm.type">
+                    <option value="all">Seat or room</option>
+                    <option value="seat">Individual seat</option>
+                    <option value="room">Study room</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Assign a Seat</h2>
+                <p class="panel-subtitle">{{ availableForWalkIn.length }} available right now.</p>
+              </div>
+
+              <div class="seat-grid" v-if="availableForWalkIn.length">
+                <button
+                  type="button"
+                  class="seat-card seat-pick"
+                  v-for="seat in availableForWalkIn"
+                  :key="seat.id"
+                  :class="{ 'seat-pick-selected': walkInForm.seatId === seat.id }"
+                  @click="walkInForm.seatId = seat.id"
+                >
+                  <div class="seat-card-top">
+                    <span class="seat-card-name">{{ seat.name }}</span>
+                  </div>
+                  <p class="seat-card-meta">
+                    {{ seat.type === 'room' ? 'Room · seats ' + seat.capacity : 'Single seat' }}
+                    <span v-if="seat.hasPower"> · Power outlet</span>
+                  </p>
+                </button>
+              </div>
+              <p class="data-list-empty" v-else>Nothing free matching these filters right now.</p>
+
+              <p class="form-error" v-if="walkInError">{{ walkInError }}</p>
+
+              <div class="booking-confirm-row">
+                <p class="booking-selected-summary" v-if="walkInForm.seatId">
+                  Assigning <strong>{{ availableForWalkIn.find(s => s.id === walkInForm.seatId)?.name }}</strong>
+                </p>
+                <span v-else></span>
+                <button class="btn-primary btn-small" @click="assignWalkIn">Admit &amp; Assign Seat</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="booking-success-toast" v-if="walkInSuccess">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Walk-In Admitted</h2>
+                <p class="panel-subtitle">{{ walkInSuccess.id }}</p>
+              </div>
+              <p class="identity-meta">
+                {{ walkInSuccess.studentName }} → {{ walkInSuccess.seatName }}
+              </p>
+              <button class="btn-outline" @click="dismissWalkInSuccess">Got it</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3.7 EXTENSION APPROVAL & SEAT ALLOCATION -->
+        <section class="tab-panel" v-else-if="activeTab === 'extensions'">
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Pending Requests</h2>
+              <p class="panel-subtitle">Extend the student's current seat, or move them to a different available one.</p>
+            </div>
+
+            <div class="record-list" v-if="pendingList.length">
+              <div class="record-row booking-row" v-for="req in pendingList" :key="req.id">
+
+                <template v-if="reassigningId !== req.id">
+                  <div class="record-avatar">{{ initialsOf(req.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ req.studentName }}</span>
+                    <span class="record-sub">{{ req.currentSeatName }} · {{ req.studentId }}</span>
+                    <span class="record-sub">Requesting +{{ req.requestedMinutes }} min — "{{ req.reason }}"</span>
+                  </div>
+                  <span class="badge badge-warning">Pending</span>
+                  <div class="record-actions">
+                    <button class="btn-outline" @click="approveExtendCurrent(req)">Extend Same Seat</button>
+                    <button class="btn-outline" @click="startReassign(req)">Assign New Seat</button>
+                    <button class="btn-outline btn-outline-danger" @click="rejectExtension(req)">Reject</button>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="record-avatar">{{ initialsOf(req.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ req.studentName }}</span>
+                    <span class="record-sub">Currently at {{ req.currentSeatName }}</span>
+                  </div>
+                  <div class="record-edit-grid record-edit-grid-wide">
+                    <label class="field field-full">
+                      <span>New Seat / Room</span>
+                      <select v-model="reassignSeatId">
+                        <option :value="null" disabled>Select an available seat or room</option>
+                        <option v-for="s in availableForReassign" :key="s.id" :value="s.id">{{ s.name }}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="record-actions">
+                    <button class="btn-primary btn-small" @click="confirmReassign(req)">Confirm Reassignment</button>
+                    <button class="btn-ghost" @click="cancelReassign">Cancel</button>
+                  </div>
+                </template>
+
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No pending extension requests.</p>
+          </div>
+
+          <div class="panel-card" v-if="resolvedList.length">
+            <div class="panel-card-header">
+              <h2>Recently Handled</h2>
+              <p class="panel-subtitle">Resolved during this session.</p>
+            </div>
+            <div class="record-list">
+              <div class="record-row" v-for="req in resolvedList" :key="req.id">
+                <div class="record-avatar">{{ initialsOf(req.studentName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ req.studentName }}</span>
+                  <span class="record-sub">{{ req.resolution }}</span>
+                </div>
+                <span class="badge" :class="req.status === 'approved' ? 'badge-success' : 'badge-muted'">{{ req.status }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- CREATE STUDENT ACCOUNT TAB -->
-        <section class="tab-panel" v-if="activeTab === 'createStudent'">
+        <section class="tab-panel" v-else-if="activeTab === 'createStudent'">
 
           <div class="profile-layout">
 
@@ -241,6 +453,7 @@
   {% endraw %}
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/library-data.js') }}"></script>
   <script src="{{ url_for('static', filename='js/staff_dashboard.js') }}"></script>
 </body>
 </html>

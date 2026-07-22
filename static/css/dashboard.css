@@ -950,6 +950,177 @@
   margin-right: 0.4rem;
 }
 
+/* ---------- Seat availability & booking ---------- */
+
+.seat-toolbar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.seat-filters {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.25rem;
+}
+
+.field-inline-select {
+  min-width: 160px;
+}
+
+.field-grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+.seat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.9rem;
+}
+
+.seat-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-left: 4px solid var(--border);
+  text-align: left;
+  font-family: inherit;
+  cursor: default;
+}
+
+.seat-status-available {
+  border-left-color: #16a34a;
+}
+
+.seat-status-occupied {
+  border-left-color: var(--error);
+  opacity: 0.85;
+}
+
+.seat-status-reserved {
+  border-left-color: #d97706;
+}
+
+.seat-status-maintenance {
+  border-left-color: var(--muted);
+  opacity: 0.6;
+}
+
+.seat-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.seat-card-name {
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.seat-card-meta {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.btn-small-full {
+  width: 100%;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.seat-pick {
+  width: 100%;
+  background: var(--card-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+.seat-pick:hover {
+  border-color: var(--accent);
+}
+
+.seat-pick-selected {
+  border-left-color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+  background: #ffffff;
+}
+
+.booking-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.booking-confirm-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.booking-selected-summary {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.booking-success-toast {
+  max-width: 420px;
+  margin-top: 1.5rem;
+}
+
+.booking-success-toast .panel-card {
+  border-left: 4px solid #16a34a;
+}
+
+/* Bookings list rows that can expand into an edit form */
+
+.booking-row {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.booking-row > .record-avatar {
+  align-self: flex-start;
+}
+
+.record-edit-grid-wide {
+  grid-template-columns: 1fr 1fr;
+}
+
+.extend-form {
+  width: 100%;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.btn-outline:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--border);
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {
@@ -959,6 +1130,10 @@
 
   .identity-card {
     position: static;
+  }
+
+  .booking-layout {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1049,5 +1224,22 @@
 
   .donut-chart-wrap {
     flex-direction: column;
+  }
+
+  .record-edit-grid-wide {
+    grid-template-columns: 1fr;
+  }
+
+  .seat-filters {
+    flex-direction: column;
+  }
+
+  .field-inline-select {
+    min-width: 0;
+  }
+
+  .booking-confirm-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
