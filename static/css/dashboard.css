@@ -76,6 +76,11 @@
   color: #ffffff;
 }
 
+.nav-item.active:hover:not(.disabled) {
+  background: var(--accent-hover);
+  color: #ffffff;
+}
+
 .nav-item.disabled {
   color: var(--muted);
   cursor: not-allowed;
@@ -1119,6 +1124,41 @@
   background: transparent;
   color: var(--muted);
   border-color: var(--border);
+}
+
+/* ---------- Check-in code (Story 4.1) ---------- */
+
+.checkin-code-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-basis: 100%;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+
+.checkin-code-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.checkin-code {
+  font-size: 1.05rem;
+  letter-spacing: 0.14em;
+  font-weight: bold;
+  color: var(--accent);
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* ---------- Payment amount (Epic 5) ---------- */
+
+.record-amount {
+  font-size: 0.95rem;
+  color: var(--text);
+  font-weight: bold;
+  white-space: nowrap;
 }
 
 /* ---------- Responsive ---------- */

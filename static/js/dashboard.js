@@ -10,7 +10,8 @@ const icons = {
   settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3.9a7 7 0 0 0-2.1-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2.1 1.2l-2.3-.9-2 3.4 2 1.5A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.4 2.3-.9c.6.5 1.3.9 2.1 1.2L10 21h4l.5-2.6c.8-.3 1.5-.7 2.1-1.2l2.3.9 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   soon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
-  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>'
+  bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
+  payments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6 14.5h4"/></svg>'
 };
 
 const MODIFY_WINDOW_MS = 2 * 60 * 60 * 1000; // students may modify/cancel up to 2 hours before start
@@ -23,6 +24,7 @@ createApp({
       { id: 'booking', label: 'Book a Space', icon: icons.booking, enabled: true },
       { id: 'myBookings', label: 'My Bookings', icon: icons.myBookings, enabled: true },
       { id: 'history', label: 'History', icon: icons.history, enabled: true },
+      { id: 'payments', label: 'Payment History', icon: icons.payments, enabled: true },
       { id: 'profile', label: 'Profile Management', icon: icons.profile, enabled: true },
       { id: 'settings', label: 'Settings', icon: icons.settings, enabled: false }
     ]);
@@ -41,7 +43,8 @@ createApp({
       availability: 'See which seats and study rooms are free right now.',
       booking: 'Reserve a seat or study room ahead of time.',
       myBookings: 'Modify or cancel an upcoming reservation.',
-      history: 'Review your past study sessions and attendance.'
+      history: 'Review your past study sessions and attendance.',
+      payments: 'Review payments recorded on your account.'
     };
 
     const currentTabLabel = computed(() => {
@@ -256,6 +259,13 @@ createApp({
       return `${date}|${slotId}`;
     }
 
+    // ---------------------------------------------------------------
+    // 4.1 Student Check-In — unique code shown to library staff
+    // ---------------------------------------------------------------
+    function generateCheckInCode() {
+      return String(Math.floor(100000 + Math.random() * 900000));
+    }
+
     function isSeatBookedFor(seatId, date, slotId) {
       const key = slotKey(date, slotId);
       return Boolean(slotBookings[key] && slotBookings[key].includes(seatId));
@@ -325,6 +335,7 @@ createApp({
         startDateTime,
         endDateTime,
         status: 'upcoming',
+        checkInCode: generateCheckInCode(),
         checkInTime: null,
         checkOutTime: null
       };
@@ -446,6 +457,39 @@ createApp({
     const upcomingBookings = computed(() => myBookings.value.filter((b) => b.status === 'upcoming' || b.status === 'checked-in'));
 
     // ---------------------------------------------------------------
+    // 4.1 Student Check-In — copy the code to share with staff
+    // ---------------------------------------------------------------
+    const copiedCodeId = ref('');
+
+    function copyCheckInCode(booking) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(booking.checkInCode).catch(() => {});
+      }
+      copiedCodeId.value = booking.id;
+      setTimeout(() => {
+        if (copiedCodeId.value === booking.id) copiedCodeId.value = '';
+      }, 1500);
+    }
+
+    // ---------------------------------------------------------------
+    // 4.4 Study Session Check-Out
+    // ---------------------------------------------------------------
+    function checkOutBooking(booking) {
+      const seat = seats.value.find((s) => s.id === booking.seatId);
+      if (seat) seat.status = 'available';
+
+      booking.status = 'completed';
+      booking.checkOutTime = now.value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      if (!booking.checkInTime) booking.checkInTime = 'Earlier today';
+
+      // TODO: PATCH /api/bookings/{id}/check-out once the backend endpoint exists
+      console.log('Checked out:', booking.id);
+
+      myBookings.value = myBookings.value.filter((b) => b.id !== booking.id);
+      history.value.unshift(booking);
+    }
+
+    // ---------------------------------------------------------------
     // Extension requests (feeds Story 3.7 on the staff side)
     // ---------------------------------------------------------------
     const extensionRequests = ref([]);
@@ -545,6 +589,41 @@ createApp({
       return 'badge';
     }
 
+    // ---------------------------------------------------------------
+    // 5.2 Payment History
+    // ---------------------------------------------------------------
+    // TODO: GET /api/students/{id}/payments once the backend endpoint exists
+    const payments = ref([
+      {
+        id: 'PAY-6003', date: LibraryData.addDays(today, -2), amount: 300,
+        mode: 'Card', purpose: 'Day Pass — Guest Slot'
+      },
+      {
+        id: 'PAY-6002', date: LibraryData.addDays(today, -14), amount: 150,
+        mode: 'Cash', purpose: 'Extended Study Room Fee'
+      },
+      {
+        id: 'PAY-6001', date: LibraryData.addDays(today, -30), amount: 1200,
+        mode: 'UPI', purpose: 'Premium Membership — Monthly'
+      }
+    ]);
+
+    const paymentsSummary = computed(() => {
+      const totalPaid = payments.value.reduce((sum, p) => sum + p.amount, 0);
+      return {
+        totalPaid,
+        count: payments.value.length,
+        lastPayment: payments.value.length ? payments.value[0].date : '—'
+      };
+    });
+
+    function paymentModeBadgeClass(mode) {
+      if (mode === 'Cash') return 'badge-success';
+      if (mode === 'UPI') return 'badge-warning';
+      if (mode === 'Card') return 'badge';
+      return 'badge-muted';
+    }
+
     // Seed one "in progress" booking so the extension-request flow is demoable,
     // plus a further-out upcoming booking so modify/cancel is demoable.
     function seedActiveBooking() {
@@ -569,6 +648,7 @@ createApp({
           startDateTime,
           endDateTime,
           status: 'checked-in',
+          checkInCode: generateCheckInCode(),
           checkInTime: '—',
           checkOutTime: null
         });
@@ -593,6 +673,7 @@ createApp({
           startDateTime: LibraryData.slotDateTime(today, laterSlot.id, 'start'),
           endDateTime: LibraryData.slotDateTime(today, laterSlot.id, 'end'),
           status: 'upcoming',
+          checkInCode: generateCheckInCode(),
           checkInTime: null,
           checkOutTime: null
         });
@@ -673,6 +754,11 @@ createApp({
       saveModify,
       cancelBooking,
 
+      // 4.1 / 4.4 Check-in code & check-out
+      copiedCodeId,
+      copyCheckInCode,
+      checkOutBooking,
+
       // Extension
       extendingBookingId,
       extendMinutes,
@@ -686,7 +772,12 @@ createApp({
       historyFilter,
       filteredHistory,
       historySummary,
-      statusBadgeClass
+      statusBadgeClass,
+
+      // 5.2 Payment history
+      payments,
+      paymentsSummary,
+      paymentModeBadgeClass
     };
   }
 }).mount('#app');

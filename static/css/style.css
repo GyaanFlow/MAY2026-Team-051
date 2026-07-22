@@ -142,6 +142,7 @@ body {
   gap: 0.35rem;
   font-size: 0.9rem;
   color: var(--text);
+  min-width: 0;
 }
 
 .field span {
@@ -150,6 +151,8 @@ body {
 
 .field input,
 .field select {
+  width: 100%;
+  min-width: 0;
   font-family: inherit;
   font-size: 1rem;
   padding: 0.65rem 0.8rem;
@@ -172,6 +175,7 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+  min-width: 0;
 }
 
 .field-full {

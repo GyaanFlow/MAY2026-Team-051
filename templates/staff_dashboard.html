@@ -103,11 +103,82 @@
                 <span class="badge" :class="overviewBadgeClass(b.status)">{{ b.status.replace('-', ' ') }}</span>
                 <div class="record-actions" v-if="b.status === 'upcoming'">
                   <button class="btn-outline" @click="markArrived(b)">Mark Arrived</button>
-                  <button class="btn-outline btn-outline-danger" @click="markNoShow(b)">No-Show</button>
+                  <button
+                    class="btn-outline btn-outline-danger"
+                    :disabled="!canMarkNoShow(b)"
+                    :title="!canMarkNoShow(b) ? 'Wait out the grace period before releasing the seat' : ''"
+                    @click="markNoShow(b)"
+                  >{{ canMarkNoShow(b) ? 'No-Show' : (noShowWaitLabel(b) || 'No-Show') }}</button>
                 </div>
               </div>
             </div>
             <p class="data-list-empty" v-else>No bookings on record for this date in the demo data.</p>
+          </div>
+        </section>
+
+        <!-- 4.2 CHECK-IN VERIFICATION -->
+        <section class="tab-panel" v-else-if="activeTab === 'checkIn'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Verify Check-In Code</h2>
+                <p class="panel-subtitle">Ask the student for their unique check-in code.</p>
+              </div>
+
+              <label class="field">
+                <span>Check-In Code</span>
+                <input
+                  type="text"
+                  v-model.trim="checkInCodeInput"
+                  placeholder="e.g. 482913"
+                  @keyup.enter="verifyCheckInCode"
+                >
+              </label>
+
+              <p class="field-hint">Demo tip: try 482913, 205774, or 917364.</p>
+              <p class="form-error" v-if="checkInError">{{ checkInError }}</p>
+
+              <button class="btn-primary btn-small" @click="verifyCheckInCode">Verify Code</button>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Booking Match</h2>
+                <p class="panel-subtitle">Confirm the details before checking the student in.</p>
+              </div>
+
+              <div class="record-list" v-if="checkInMatch">
+                <div class="record-row">
+                  <div class="record-avatar">{{ initialsOf(checkInMatch.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ checkInMatch.studentName }}</span>
+                    <span class="record-sub">{{ checkInMatch.seatName }} · {{ checkInMatch.slot.label }} · {{ checkInMatch.studentId }}</span>
+                  </div>
+                  <span class="badge">Upcoming</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>Verify a code to see the matching booking here.</p>
+
+              <button
+                class="btn-primary btn-small"
+                v-if="checkInMatch"
+                @click="confirmCheckIn(checkInMatch)"
+              >Confirm Check-In</button>
+            </div>
+          </div>
+
+          <div class="booking-success-toast" v-if="checkInSuccess">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Student Checked In</h2>
+                <p class="panel-subtitle">{{ checkInSuccess.id }}</p>
+              </div>
+              <p class="identity-meta">
+                {{ checkInSuccess.studentName }} → {{ checkInSuccess.seatName }}
+              </p>
+              <button class="btn-outline" @click="dismissCheckInSuccess">Got it</button>
+            </div>
           </div>
         </section>
 
@@ -268,6 +339,69 @@
                 <span class="badge" :class="req.status === 'approved' ? 'badge-success' : 'badge-muted'">{{ req.status }}</span>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- 5.1 OFFLINE PAYMENT RECORDING -->
+        <section class="tab-panel" v-else-if="activeTab === 'payments'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Record a Payment</h2>
+                <p class="panel-subtitle">Log cash, UPI, or card payments made in person.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field field-full">
+                  <span>Student Name</span>
+                  <input type="text" v-model.trim="paymentForm.studentName" placeholder="Full name">
+                </label>
+                <label class="field field-full">
+                  <span>Student ID <span class="identity-meta muted">(optional)</span></span>
+                  <input type="text" v-model.trim="paymentForm.studentId" placeholder="e.g. STU-2026-0142">
+                </label>
+                <label class="field">
+                  <span>Amount (₹)</span>
+                  <input type="number" min="0" step="1" v-model.number="paymentForm.amount" placeholder="e.g. 500">
+                </label>
+                <label class="field">
+                  <span>Payment Mode</span>
+                  <select v-model="paymentForm.mode">
+                    <option v-for="m in PAYMENT_MODES" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                </label>
+                <label class="field field-full">
+                  <span>Purpose</span>
+                  <input type="text" v-model.trim="paymentForm.purpose" placeholder="e.g. Premium Membership — Monthly">
+                </label>
+              </div>
+
+              <p class="form-error" v-if="paymentError">{{ paymentError }}</p>
+              <p class="form-success" v-if="paymentSuccess">Payment of ₹{{ paymentSuccess.amount }} recorded for {{ paymentSuccess.studentName }}.</p>
+              <button class="btn-primary btn-small" @click="recordPayment">Record Payment</button>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Recorded This Session</h2>
+                <p class="panel-subtitle">{{ recordedPayments.length }} payment(s) logged.</p>
+              </div>
+
+              <div class="record-list" v-if="recordedPayments.length">
+                <div class="record-row" v-for="p in recordedPayments" :key="p.id">
+                  <div class="record-avatar">{{ initialsOf(p.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ p.studentName }}</span>
+                    <span class="record-sub">{{ p.purpose }} · {{ p.studentId }}</span>
+                  </div>
+                  <span class="badge" :class="paymentModeBadgeClass(p.mode)">{{ p.mode }}</span>
+                  <span class="record-amount">₹{{ p.amount }}</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No payments recorded yet this session.</p>
+            </div>
+
           </div>
         </section>
 

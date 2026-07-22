@@ -270,7 +270,15 @@
                         @click="openExtendForm(b)"
                       >Request Extension</button>
                       <span class="badge badge-warning" v-else>Extension {{ extensionStatus(b) }}</span>
+                      <button class="btn-primary btn-small" @click="checkOutBooking(b)">Check Out</button>
                     </template>
+                  </div>
+
+                  <!-- 4.1 Student Check-In: present this code to library staff -->
+                  <div class="checkin-code-row" v-if="b.status === 'upcoming'">
+                    <span class="checkin-code-label">Check-in code — show this at the desk</span>
+                    <span class="checkin-code">{{ b.checkInCode }}</span>
+                    <button type="button" class="btn-ghost" @click="copyCheckInCode(b)">{{ copiedCodeId === b.id ? 'Copied!' : 'Copy' }}</button>
                   </div>
 
                   <div class="extend-form" v-if="extendingBookingId === b.id">
@@ -375,6 +383,45 @@
               </div>
             </div>
             <p class="data-list-empty" v-else>No sessions match this filter.</p>
+          </div>
+        </section>
+
+        <!-- 5.2 PAYMENT HISTORY -->
+        <section class="tab-panel" v-else-if="activeTab === 'payments'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">₹{{ paymentsSummary.totalPaid }}</span>
+              <span class="stat-card-label">Total paid</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ paymentsSummary.count }}</span>
+              <span class="stat-card-label">Transactions</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ paymentsSummary.lastPayment }}</span>
+              <span class="stat-card-label">Last payment</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Transaction History</h2>
+              <p class="panel-subtitle">Payments recorded by library staff on your account.</p>
+            </div>
+
+            <div class="record-list" v-if="payments.length">
+              <div class="record-row" v-for="p in payments" :key="p.id">
+                <div class="record-avatar">₹</div>
+                <div class="record-info">
+                  <span class="record-name">{{ p.purpose }}</span>
+                  <span class="record-sub">{{ p.date }} · {{ p.id }}</span>
+                </div>
+                <span class="badge" :class="paymentModeBadgeClass(p.mode)">{{ p.mode }}</span>
+                <span class="record-amount">₹{{ p.amount }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No payments recorded yet.</p>
           </div>
         </section>
 
