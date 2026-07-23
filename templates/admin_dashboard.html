@@ -47,12 +47,15 @@
         <header class="main-header">
           <div>
             <h1>{{ currentTabLabel }}</h1>
-            <p class="main-subtitle" v-if="activeTab === 'staffAccounts'">Create, update, and deactivate library staff accounts.</p>
+            <p class="main-subtitle" v-if="activeTab === 'overview'">A quick snapshot of staff, memberships, occupancy, and updates.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'staffAccounts'">Create, update, and deactivate library staff accounts.</p>
             <p class="main-subtitle" v-else-if="activeTab === 'memberships'">Approve and manage student memberships.</p>
             <p class="main-subtitle" v-else-if="activeTab === 'operatingHours'">Set the hours students can book and access the library.</p>
             <p class="main-subtitle" v-else-if="activeTab === 'bookingLimits'">Manage seat capacity and booking rules to keep occupancy under control.</p>
             <p class="main-subtitle" v-else-if="activeTab === 'plans'">Create and manage the membership plans students can subscribe to.</p>
             <p class="main-subtitle" v-else-if="activeTab === 'reports'">Occupancy, peak hours, memberships, and revenue at a glance.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'announcements'">Create and manage announcements for students and staff.</p>
+            <p class="main-subtitle" v-else-if="activeTab === 'settings'">Manage your personal account details.</p>
           </div>
           <div class="header-user">
             <div class="header-avatar">{{ initials }}</div>
@@ -63,8 +66,81 @@
           </div>
         </header>
 
+        <!-- OVERVIEW -->
+        <section class="tab-panel" v-if="activeTab === 'overview'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ activeStaffCount }}</span>
+              <span class="stat-card-label">Active staff</span>
+            </div>
+            <div class="stat-card stat-card-warning">
+              <span class="stat-card-value">{{ pendingMemberships.length }}</span>
+              <span class="stat-card-label">Pending memberships</span>
+            </div>
+            <div class="stat-card stat-card-success">
+              <span class="stat-card-value">{{ activeMembershipsCount }}</span>
+              <span class="stat-card-label">Active memberships</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ currentReport.avgOccupancyPct }}%</span>
+              <span class="stat-card-label">Avg. occupancy</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ publishedAnnouncementsCount }}</span>
+              <span class="stat-card-label">Published announcements</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Pending Membership Approvals</h2>
+              <p class="panel-subtitle">Approve or reject without leaving Overview.</p>
+            </div>
+            <div class="record-list" v-if="overviewPendingMemberships.length">
+              <div class="record-row" v-for="m in overviewPendingMemberships" :key="m.id">
+                <div class="record-avatar">{{ initialsOf(m.fullName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ m.fullName }}</span>
+                  <span class="record-sub">{{ m.membershipType }} · {{ m.studentId }}</span>
+                </div>
+                <div class="record-actions">
+                  <button class="btn-outline" @click="approveMembership(m)">Approve</button>
+                  <button class="btn-outline btn-outline-danger" @click="rejectMembership(m)">Reject</button>
+                </div>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No pending membership approvals.</p>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Occupancy by Hour</h2>
+              <p class="panel-subtitle">Percentage of seats occupied through the day.</p>
+            </div>
+            <bar-chart :data="currentReport.occupancyByHour" unit="%"></bar-chart>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Latest Announcements</h2>
+              <p class="panel-subtitle">Published by you for students and staff.</p>
+            </div>
+            <div class="record-list" v-if="overviewAnnouncements.length">
+              <div class="record-row" v-for="a in overviewAnnouncements" :key="a.id">
+                <div class="record-info">
+                  <span class="record-name">{{ a.title }}</span>
+                  <span class="record-sub">{{ a.createdAt }}</span>
+                </div>
+                <span class="badge" :class="announcementPriorityBadgeClass(a.priority)">{{ a.priority }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No announcements published yet.</p>
+          </div>
+        </section>
+
         <!-- STAFF ACCOUNT MANAGEMENT TAB -->
-        <section class="tab-panel" v-if="activeTab === 'staffAccounts'">
+        <section class="tab-panel" v-else-if="activeTab === 'staffAccounts'">
           <div class="profile-layout">
 
             <div class="panel-card identity-card">
@@ -636,19 +712,24 @@
           <div class="stat-card-row">
             <stat-card label="Avg. Occupancy" :value="currentReport.avgOccupancyPct + '%'" sublabel="Across all bookable seats" tone="accent"></stat-card>
             <stat-card label="Peak Hour" :value="peakHour.label" :sublabel="peakHour.value + '% occupancy'" tone="warning"></stat-card>
-            <stat-card label="Active Memberships" :value="activeMembershipsCount" sublabel="Currently approved students" tone="success"></stat-card>
+            <stat-card label="Total Bookings" :value="currentReport.totalBookings" sublabel="Selected period" tone="default"></stat-card>
             <stat-card label="Revenue" :value="'₹' + currentReport.totalRevenue.toLocaleString('en-IN')" sublabel="Selected period" tone="default"></stat-card>
+            <stat-card label="Active Memberships" :value="activeMembershipsCount" sublabel="Currently approved students" tone="success"></stat-card>
+            <stat-card label="New Memberships" :value="currentReport.newMemberships" sublabel="Signed up this period" tone="success"></stat-card>
+            <stat-card label="Active Staff" :value="totalStaffCount" sublabel="Across all accounts" tone="default"></stat-card>
+            <stat-card label="Active Plans" :value="activePlansCount" sublabel="Membership plans on offer" tone="default"></stat-card>
+            <stat-card label="Open Complaints" :value="openComplaintsCount" sublabel="Awaiting staff resolution" tone="warning"></stat-card>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Occupancy by Hour</h2>
+              <p class="panel-subtitle">Percentage of seats occupied through the day.</p>
+            </div>
+            <bar-chart :data="currentReport.occupancyByHour" unit="%"></bar-chart>
           </div>
 
           <div class="reports-grid">
-            <div class="panel-card">
-              <div class="panel-card-header">
-                <h2>Occupancy by Hour</h2>
-                <p class="panel-subtitle">Percentage of seats occupied through the day.</p>
-              </div>
-              <bar-chart :data="currentReport.occupancyByHour" unit="%"></bar-chart>
-            </div>
-
             <div class="panel-card">
               <div class="panel-card-header">
                 <h2>Revenue Trend</h2>
@@ -663,6 +744,218 @@
                 <p class="panel-subtitle">Approved and pending students by plan type.</p>
               </div>
               <donut-chart :data="membershipDistribution"></donut-chart>
+            </div>
+          </div>
+        </section>
+
+        <!-- 6.3 ANNOUNCEMENTS & NOTIFICATIONS -->
+        <section class="tab-panel" v-else-if="activeTab === 'announcements'">
+          <div class="booking-layout">
+
+            <form class="panel-card" @submit.prevent="createAnnouncement">
+              <div class="panel-card-header">
+                <h2>New Announcement</h2>
+                <p class="panel-subtitle">Publish an update so students and/or staff are notified.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field field-full">
+                  <span>Title</span>
+                  <input type="text" v-model.trim="newAnnouncement.title" placeholder="e.g. Library closed for maintenance">
+                </label>
+                <label class="field field-full">
+                  <span>Message</span>
+                  <textarea rows="4" v-model.trim="newAnnouncement.message" placeholder="Details students and staff should know…"></textarea>
+                </label>
+                <label class="field">
+                  <span>Audience</span>
+                  <select v-model="newAnnouncement.audience">
+                    <option v-for="aud in ANNOUNCEMENT_AUDIENCES" :key="aud.id" :value="aud.id">{{ aud.label }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Priority</span>
+                  <select v-model="newAnnouncement.priority">
+                    <option v-for="p in ANNOUNCEMENT_PRIORITIES" :key="p" :value="p">{{ p }}</option>
+                  </select>
+                </label>
+              </div>
+
+              <p class="form-error" v-if="announcementError">{{ announcementError }}</p>
+              <p class="form-success" v-if="announcementSuccess">Announcement published.</p>
+              <button type="button" class="btn-primary btn-small" @click="createAnnouncement">Publish Announcement</button>
+            </form>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>All Announcements</h2>
+                <p class="panel-subtitle">{{ sortedAnnouncements.length }} total.</p>
+              </div>
+
+              <div class="record-list" v-if="sortedAnnouncements.length">
+                <div class="record-row booking-row" v-for="a in sortedAnnouncements" :key="a.id">
+
+                  <template v-if="editingAnnouncementId !== a.id">
+                    <div class="record-info">
+                      <span class="record-name">{{ a.title }}</span>
+                      <span class="record-sub">{{ a.message }}</span>
+                      <span class="record-sub">{{ announcementAudienceLabel(a.audience) }} · {{ a.createdAt }} · {{ a.createdBy }}</span>
+                    </div>
+                    <span class="badge" :class="announcementPriorityBadgeClass(a.priority)">{{ a.priority }}</span>
+                    <span class="badge" :class="a.active ? 'badge-success' : 'badge-muted'">{{ a.active ? 'Published' : 'Unpublished' }}</span>
+                    <div class="record-actions">
+                      <button class="btn-ghost" @click="startEditAnnouncement(a)"><span class="nav-icon" v-html="icons.edit" style="width:14px;height:14px;"></span> Edit</button>
+                      <button class="btn-outline" @click="toggleAnnouncementStatus(a)">{{ a.active ? 'Unpublish' : 'Publish' }}</button>
+                      <button class="btn-outline btn-outline-danger" @click="deleteAnnouncement(a)">Delete</button>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="record-edit-grid record-edit-grid-wide">
+                      <label class="field field-full">
+                        <span>Title</span>
+                        <input type="text" v-model.trim="announcementEditDraft.title">
+                      </label>
+                      <label class="field field-full">
+                        <span>Message</span>
+                        <textarea rows="3" v-model.trim="announcementEditDraft.message"></textarea>
+                      </label>
+                      <label class="field">
+                        <span>Audience</span>
+                        <select v-model="announcementEditDraft.audience">
+                          <option v-for="aud in ANNOUNCEMENT_AUDIENCES" :key="aud.id" :value="aud.id">{{ aud.label }}</option>
+                        </select>
+                      </label>
+                      <label class="field">
+                        <span>Priority</span>
+                        <select v-model="announcementEditDraft.priority">
+                          <option v-for="p in ANNOUNCEMENT_PRIORITIES" :key="p" :value="p">{{ p }}</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="record-actions">
+                      <button class="btn-primary btn-small" @click="saveEditAnnouncement(a)">Save Changes</button>
+                      <button class="btn-ghost" @click="cancelEditAnnouncement">Cancel</button>
+                    </div>
+                  </template>
+
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No announcements published yet.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="tab-panel" v-else-if="activeTab === 'settings'">
+
+          <div class="profile-layout">
+
+            <!-- Avatar / identity card -->
+            <div class="panel-card identity-card">
+              <div class="avatar-wrap">
+                <div class="avatar-circle" :style="avatarStyle">
+                  <span v-if="!admin.avatarUrl">{{ initials }}</span>
+                </div>
+                <label class="avatar-upload-btn">
+                  Change Photo
+                  <input type="file" accept="image/*" @change="handleAvatarChange" hidden>
+                </label>
+                <button class="avatar-remove-btn" v-if="admin.avatarUrl" @click="removeAvatar">Remove</button>
+              </div>
+              <h3 class="identity-name">{{ admin.fullName || 'Unnamed Admin' }}</h3>
+              <p class="identity-meta">{{ admin.designation || 'Administrator' }}</p>
+              <p class="identity-meta muted">Admin ID: {{ admin.adminId || '—' }}</p>
+              <p class="identity-meta muted">Joined {{ admin.dateJoined || '—' }}</p>
+            </div>
+
+            <!-- Forms -->
+            <div class="forms-col">
+
+              <!-- Personal Information -->
+              <form class="panel-card" @submit.prevent="savePersonal">
+                <div class="panel-card-header">
+                  <h2>Personal Information</h2>
+                  <p class="panel-subtitle">Your basic personal details.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Full Name</span>
+                    <input type="text" v-model.trim="admin.fullName" placeholder="Your full name">
+                  </label>
+
+                  <label class="field">
+                    <span>Email</span>
+                    <input type="email" v-model.trim="admin.email" placeholder="you@studylibrary.com">
+                  </label>
+
+                  <label class="field">
+                    <span>Date of Birth</span>
+                    <input type="date" v-model="admin.dob">
+                  </label>
+
+                  <label class="field">
+                    <span>Gender</span>
+                    <select v-model="admin.gender">
+                      <option value="" disabled>Select gender</option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Phone</span>
+                    <input type="tel" v-model.trim="admin.phone" placeholder="10-digit phone number">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Address</span>
+                    <input type="text" v-model.trim="admin.address" placeholder="Your address">
+                  </label>
+                </div>
+
+                <p class="form-success" v-if="savedSection === 'personal'">Personal details saved.</p>
+                <button type="submit" class="btn-primary btn-small">Save Changes</button>
+              </form>
+
+              <!-- Account & Security -->
+              <form class="panel-card" @submit.prevent="changePassword">
+                <div class="panel-card-header">
+                  <h2>Account &amp; Security</h2>
+                  <p class="panel-subtitle">Your login credentials.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Username</span>
+                    <input type="text" :value="admin.username" disabled>
+                  </label>
+
+                  <label class="field">
+                    <span>Current Password</span>
+                    <input type="password" v-model="security.currentPassword" placeholder="Enter current password">
+                  </label>
+
+                  <label class="field">
+                    <span>New Password</span>
+                    <input type="password" v-model="security.newPassword" placeholder="Enter new password">
+                  </label>
+
+                  <label class="field">
+                    <span>Confirm New Password</span>
+                    <input type="password" v-model="security.confirmPassword" placeholder="Re-enter new password">
+                  </label>
+                </div>
+
+                <p class="form-error" v-if="securityError">{{ securityError }}</p>
+                <p class="form-success" v-if="savedSection === 'security'">Password updated.</p>
+                <button type="submit" class="btn-primary btn-small">Update Password</button>
+              </form>
+
             </div>
           </div>
         </section>
@@ -682,6 +975,7 @@
   {% endraw %}
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/library-data.js') }}"></script>
   <script src="{{ url_for('static', filename='js/admin_dashboard.js') }}"></script>
 </body>
 </html>

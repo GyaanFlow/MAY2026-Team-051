@@ -11,7 +11,9 @@ const icons = {
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   soon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
   bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>',
-  payments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6 14.5h4"/></svg>'
+  payments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6 14.5h4"/></svg>',
+  complaints: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9.5v4.5"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/></svg>',
+  announcements: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10v4a1 1 0 0 0 1 1h2l4 4V5l-4 4H5a1 1 0 0 0-1 1Z"/><path d="M17 9a4 4 0 0 1 0 6"/><path d="M20 6a8 8 0 0 1 0 12"/></svg>'
 };
 
 const MODIFY_WINDOW_MS = 2 * 60 * 60 * 1000; // students may modify/cancel up to 2 hours before start
@@ -19,17 +21,18 @@ const MODIFY_WINDOW_MS = 2 * 60 * 60 * 1000; // students may modify/cancel up to
 createApp({
   setup() {
     const tabs = ref([
-      { id: 'overview', label: 'Overview', icon: icons.overview, enabled: false },
+      { id: 'overview', label: 'Overview', icon: icons.overview, enabled: true },
       { id: 'availability', label: 'Seat Availability', icon: icons.availability, enabled: true },
       { id: 'booking', label: 'Book a Space', icon: icons.booking, enabled: true },
       { id: 'myBookings', label: 'My Bookings', icon: icons.myBookings, enabled: true },
       { id: 'history', label: 'History', icon: icons.history, enabled: true },
       { id: 'payments', label: 'Payment History', icon: icons.payments, enabled: true },
-      { id: 'profile', label: 'Profile Management', icon: icons.profile, enabled: true },
-      { id: 'settings', label: 'Settings', icon: icons.settings, enabled: false }
+      { id: 'complaints', label: 'Complaints', icon: icons.complaints, enabled: true },
+      { id: 'announcements', label: 'Announcements', icon: icons.announcements, enabled: true },
+      { id: 'profile', label: 'Profile Management', icon: icons.profile, enabled: true }
     ]);
 
-    const activeTab = ref('availability');
+    const activeTab = ref('overview');
 
     function setActiveTab(id) {
       const tab = tabs.value.find((t) => t.id === id);
@@ -39,12 +42,15 @@ createApp({
     }
 
     const tabSubtitles = {
+      overview: 'A quick snapshot of your bookings, activity, and updates.',
       profile: 'Manage your personal and library details.',
       availability: 'See which seats and study rooms are free right now.',
       booking: 'Reserve a seat or study room ahead of time.',
       myBookings: 'Modify or cancel an upcoming reservation.',
       history: 'Review your past study sessions and attendance.',
-      payments: 'Review payments recorded on your account.'
+      payments: 'Review payments recorded on your account.',
+      complaints: 'Raise an issue and track its resolution.',
+      announcements: 'Updates and notices from the library admin.'
     };
 
     const currentTabLabel = computed(() => {
@@ -682,6 +688,103 @@ createApp({
     seedActiveBooking();
 
     // ---------------------------------------------------------------
+    // Story 6.1 — Complaint Submission (Student)
+    // ---------------------------------------------------------------
+    const COMPLAINT_CATEGORIES = LibraryData.COMPLAINT_CATEGORIES;
+    const COMPLAINT_STATUS_LABELS = LibraryData.COMPLAINT_STATUS_LABELS;
+
+    const complaintForm = reactive({
+      category: '',
+      subject: '',
+      description: ''
+    });
+
+    const complaintError = ref('');
+    const complaintSuccess = ref(false);
+    let complaintCounter = 6010;
+
+    // Seed with any complaints this student already has on file, so the
+    // "My Complaints" list isn't empty on first load.
+    const myComplaints = ref(
+      LibraryData.seedComplaints().filter((c) => c.studentId === profile.studentId)
+    );
+
+    function complaintStatusBadgeClass(status) {
+      return LibraryData.complaintStatusBadgeClass(status);
+    }
+
+    function submitComplaint() {
+      if (!complaintForm.category || !complaintForm.subject.trim() || !complaintForm.description.trim()) {
+        complaintError.value = 'Please select a category and fill in both the subject and description.';
+        complaintSuccess.value = false;
+        return;
+      }
+
+      complaintCounter += 1;
+      const complaint = {
+        id: `CMP-${complaintCounter}`,
+        studentName: profile.fullName,
+        studentId: profile.studentId,
+        category: complaintForm.category,
+        subject: complaintForm.subject.trim(),
+        description: complaintForm.description.trim(),
+        status: 'open',
+        date: today,
+        resolutionNote: '',
+        resolvedBy: ''
+      };
+
+      // TODO: POST /api/students/complaints once the backend endpoint exists
+      console.log('Complaint submitted:', complaint);
+
+      myComplaints.value.unshift(complaint);
+      complaintError.value = '';
+      complaintSuccess.value = true;
+
+      complaintForm.category = '';
+      complaintForm.subject = '';
+      complaintForm.description = '';
+
+      setTimeout(() => {
+        complaintSuccess.value = false;
+      }, 2500);
+    }
+
+    // ---------------------------------------------------------------
+    // Story 6.3 — Announcements (read-only view for students)
+    // ---------------------------------------------------------------
+    const announcements = ref(
+      LibraryData.seedAnnouncements().filter((a) => a.active && (a.audience === 'all' || a.audience === 'students'))
+    );
+
+    const sortedAnnouncements = computed(() =>
+      [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    );
+
+    function announcementPriorityBadgeClass(priority) {
+      return LibraryData.announcementPriorityBadgeClass(priority);
+    }
+
+    // ---------------------------------------------------------------
+    // Overview — a quick, read-only snapshot pulled from the other tabs.
+    // Shows: seats free right now, the next upcoming booking, hours
+    // logged, open complaints, latest announcements, and recent payments.
+    // ---------------------------------------------------------------
+    const openComplaintsCount = computed(
+      () => myComplaints.value.filter((c) => c.status !== 'resolved').length
+    );
+
+    const nextBooking = computed(() => {
+      const list = [...upcomingBookings.value].sort((a, b) =>
+        a.startDateTime && b.startDateTime ? a.startDateTime - b.startDateTime : 0
+      );
+      return list[0] || null;
+    });
+
+    const overviewAnnouncements = computed(() => sortedAnnouncements.value.slice(0, 3));
+    const overviewRecentPayments = computed(() => payments.value.slice(0, 3));
+
+    // ---------------------------------------------------------------
     // Lifecycle
     // ---------------------------------------------------------------
     onMounted(() => {
@@ -777,7 +880,27 @@ createApp({
       // 5.2 Payment history
       payments,
       paymentsSummary,
-      paymentModeBadgeClass
+      paymentModeBadgeClass,
+
+      // 6.1 Complaint submission
+      COMPLAINT_CATEGORIES,
+      COMPLAINT_STATUS_LABELS,
+      complaintForm,
+      complaintError,
+      complaintSuccess,
+      myComplaints,
+      complaintStatusBadgeClass,
+      submitComplaint,
+
+      // 6.3 Announcements (view only)
+      sortedAnnouncements,
+      announcementPriorityBadgeClass,
+
+      // Overview
+      openComplaintsCount,
+      nextBooking,
+      overviewAnnouncements,
+      overviewRecentPayments
     };
   }
 }).mount('#app');

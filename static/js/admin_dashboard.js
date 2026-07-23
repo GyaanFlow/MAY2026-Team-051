@@ -12,7 +12,8 @@ const icons = {
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   soon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
   edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/></svg>'
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6"/></svg>',
+  announcements: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10v4a1 1 0 0 0 1 1h2l4 4V5l-4 4H5a1 1 0 0 0-1 1Z"/><path d="M17 9a4 4 0 0 1 0 6"/><path d="M20 6a8 8 0 0 1 0 12"/></svg>'
 };
 
 
@@ -131,17 +132,18 @@ const DonutChart = {
 const app = createApp({
   setup() {
     const tabs = ref([
-      { id: 'overview', label: 'Overview', icon: icons.overview, enabled: false },
+      { id: 'overview', label: 'Overview', icon: icons.overview, enabled: true },
       { id: 'staffAccounts', label: 'Staff Account Management', icon: icons.staff, enabled: true },
       { id: 'memberships', label: 'Student Membership Management', icon: icons.memberships, enabled: true },
       { id: 'operatingHours', label: 'Operating Hours', icon: icons.hours, enabled: true },
       { id: 'bookingLimits', label: 'Booking Limits', icon: icons.bookingLimits, enabled: true },
       { id: 'plans', label: 'Membership Plans', icon: icons.plans, enabled: true },
       { id: 'reports', label: 'Reports & Analytics', icon: icons.reports, enabled: true },
-      { id: 'settings', label: 'Settings', icon: icons.settings, enabled: false }
+      { id: 'announcements', label: 'Announcements', icon: icons.announcements, enabled: true },
+      { id: 'settings', label: 'Settings', icon: icons.settings, enabled: true }
     ]);
 
-    const activeTab = ref('staffAccounts');
+    const activeTab = ref('overview');
 
     function setActiveTab(id) {
       const tab = tabs.value.find((t) => t.id === id);
@@ -157,8 +159,90 @@ const app = createApp({
 
     const admin = reactive({
       fullName: 'Priya Nair',
-      adminId: 'ADMIN-0001'
+      avatarUrl: '',
+      email: 'priya.nair@studylibrary.com',
+      phone: '9876500011',
+      dob: '1990-11-05',
+      gender: 'female',
+      address: '9 Lakeview Residency, Pune, MH',
+
+      adminId: 'ADMIN-0001',
+      designation: 'Library Administrator',
+      dateJoined: '2024-06-01',
+
+      username: 'priya.nair'
     });
+
+    const security = reactive({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    });
+
+    const securityError = ref('');
+    const savedSection = ref('');
+
+    const avatarStyle = computed(() => {
+      return admin.avatarUrl ? { backgroundImage: `url(${admin.avatarUrl})` } : {};
+    });
+
+    function flashSaved(section) {
+      savedSection.value = section;
+      setTimeout(() => {
+        if (savedSection.value === section) savedSection.value = '';
+      }, 2500);
+    }
+
+    function savePersonal() {
+      // TODO: PATCH /api/admin/profile once the backend endpoint exists
+      console.log('Admin personal info saved:', {
+        fullName: admin.fullName,
+        email: admin.email,
+        phone: admin.phone,
+        dob: admin.dob,
+        gender: admin.gender,
+        address: admin.address
+      });
+      flashSaved('personal');
+    }
+
+    function changePassword() {
+      if (!security.currentPassword || !security.newPassword || !security.confirmPassword) {
+        securityError.value = 'Please fill in all password fields.';
+        return;
+      }
+      if (security.newPassword !== security.confirmPassword) {
+        securityError.value = 'New passwords do not match.';
+        return;
+      }
+      if (security.newPassword.length < 8) {
+        securityError.value = 'New password must be at least 8 characters.';
+        return;
+      }
+
+      // TODO: PATCH /api/admin/password once the backend endpoint exists
+      securityError.value = '';
+      console.log('Admin password change submitted');
+
+      security.currentPassword = '';
+      security.newPassword = '';
+      security.confirmPassword = '';
+      flashSaved('security');
+    }
+
+    function handleAvatarChange(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        admin.avatarUrl = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeAvatar() {
+      admin.avatarUrl = '';
+    }
 
     const initials = computed(() => {
       if (!admin.fullName) return 'A';
@@ -572,6 +656,8 @@ const app = createApp({
       week: {
         totalRevenue: 48250,
         avgOccupancyPct: 68,
+        totalBookings: 342,
+        newMemberships: 18,
         occupancyByHour: [
           { label: '8am', value: 22 }, { label: '10am', value: 41 }, { label: '12pm', value: 58 },
           { label: '2pm', value: 74 }, { label: '4pm', value: 91 }, { label: '6pm', value: 85 },
@@ -586,6 +672,8 @@ const app = createApp({
       month: {
         totalRevenue: 205600,
         avgOccupancyPct: 72,
+        totalBookings: 1486,
+        newMemberships: 64,
         occupancyByHour: [
           { label: '8am', value: 26 }, { label: '10am', value: 45 }, { label: '12pm', value: 61 },
           { label: '2pm', value: 78 }, { label: '4pm', value: 95 }, { label: '6pm', value: 88 },
@@ -599,6 +687,8 @@ const app = createApp({
       quarter: {
         totalRevenue: 612400,
         avgOccupancyPct: 70,
+        totalBookings: 4210,
+        newMemberships: 178,
         occupancyByHour: [
           { label: '8am', value: 24 }, { label: '10am', value: 43 }, { label: '12pm', value: 59 },
           { label: '2pm', value: 76 }, { label: '4pm', value: 93 }, { label: '6pm', value: 86 },
@@ -632,6 +722,16 @@ const app = createApp({
 
     const activeMembershipsCount = computed(() => approvedMemberships.value.length);
 
+    // Extra report stats pulled from other parts of the admin dashboard
+    // (and the shared dummy dataset) so Reports & Analytics gives a
+    // fuller picture, not just occupancy and revenue.
+    const totalStaffCount = computed(() => staffAccounts.value.length);
+    const activePlansCount = computed(() => membershipPlans.value.filter((p) => p.active).length);
+    const complaintsSnapshot = ref(LibraryData.seedComplaints());
+    const openComplaintsCount = computed(
+      () => complaintsSnapshot.value.filter((c) => c.status !== 'resolved').length
+    );
+
     function exportReport() {
       // TODO: GET /api/admin/reports/export?range={reportRange} once the backend endpoint exists.
       console.log('Exporting report for range:', reportRange.value);
@@ -641,6 +741,112 @@ const app = createApp({
       // TODO: POST /api/logout once the backend endpoint exists
       window.location.href = '/';
     }
+
+    // ---------------------------------------------------------------
+    // Story 6.3 — Announcements & Notifications (Admin)
+    // ---------------------------------------------------------------
+    const announcements = ref(LibraryData.seedAnnouncements());
+    const ANNOUNCEMENT_AUDIENCES = LibraryData.ANNOUNCEMENT_AUDIENCES;
+    const ANNOUNCEMENT_PRIORITIES = LibraryData.ANNOUNCEMENT_PRIORITIES;
+
+    const sortedAnnouncements = computed(() =>
+      [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    );
+
+    function announcementAudienceLabel(audience) {
+      const found = ANNOUNCEMENT_AUDIENCES.find((a) => a.id === audience);
+      return found ? found.label : audience;
+    }
+
+    function announcementPriorityBadgeClass(priority) {
+      return LibraryData.announcementPriorityBadgeClass(priority);
+    }
+
+    const emptyAnnouncement = () => ({
+      title: '',
+      message: '',
+      audience: 'all',
+      priority: 'Normal'
+    });
+
+    const newAnnouncement = reactive(emptyAnnouncement());
+    const announcementError = ref('');
+    const announcementSuccess = ref(false);
+    let announcementCounter = 103;
+
+    function createAnnouncement() {
+      if (!newAnnouncement.title.trim() || !newAnnouncement.message.trim()) {
+        announcementError.value = 'Please provide both a title and a message.';
+        announcementSuccess.value = false;
+        return;
+      }
+
+      announcementCounter += 1;
+      const record = {
+        id: `ANN-${announcementCounter}`,
+        title: newAnnouncement.title.trim(),
+        message: newAnnouncement.message.trim(),
+        audience: newAnnouncement.audience,
+        priority: newAnnouncement.priority,
+        createdBy: admin.fullName,
+        createdAt: LibraryData.todayStr(),
+        active: true
+      };
+
+      // TODO: POST /api/admin/announcements once the backend endpoint exists
+      console.log('Announcement created:', record);
+
+      announcements.value.unshift(record);
+      announcementError.value = '';
+      announcementSuccess.value = true;
+      Object.assign(newAnnouncement, emptyAnnouncement());
+
+      setTimeout(() => { announcementSuccess.value = false; }, 2500);
+    }
+
+    const editingAnnouncementId = ref(null);
+    const announcementEditDraft = reactive({ title: '', message: '', audience: 'all', priority: 'Normal' });
+
+    function startEditAnnouncement(announcement) {
+      editingAnnouncementId.value = announcement.id;
+      announcementEditDraft.title = announcement.title;
+      announcementEditDraft.message = announcement.message;
+      announcementEditDraft.audience = announcement.audience;
+      announcementEditDraft.priority = announcement.priority;
+    }
+
+    function cancelEditAnnouncement() {
+      editingAnnouncementId.value = null;
+    }
+
+    function saveEditAnnouncement(announcement) {
+      // TODO: PATCH /api/admin/announcements/{id} once the backend endpoint exists
+      announcement.title = announcementEditDraft.title;
+      announcement.message = announcementEditDraft.message;
+      announcement.audience = announcementEditDraft.audience;
+      announcement.priority = announcementEditDraft.priority;
+      editingAnnouncementId.value = null;
+    }
+
+    function toggleAnnouncementStatus(announcement) {
+      // TODO: PATCH /api/admin/announcements/{id}/status once the backend endpoint exists
+      announcement.active = !announcement.active;
+    }
+
+    function deleteAnnouncement(announcement) {
+      // TODO: DELETE /api/admin/announcements/{id} once the backend endpoint exists
+      announcements.value = announcements.value.filter((a) => a.id !== announcement.id);
+    }
+
+    // ---------------------------------------------------------------
+    // Overview — a quick, read-only snapshot pulled from the other tabs.
+    // Shows: staff/membership/occupancy/revenue stats, a preview of
+    // pending membership approvals, the occupancy chart, and the
+    // latest announcements.
+    // ---------------------------------------------------------------
+    const overviewPendingMemberships = computed(() => pendingMemberships.value.slice(0, 4));
+    const overviewAnnouncements = computed(() => sortedAnnouncements.value.slice(0, 3));
+    const publishedAnnouncementsCount = computed(() => announcements.value.filter((a) => a.active).length);
 
     return {
       icons,
@@ -716,7 +922,44 @@ const app = createApp({
       peakHour,
       membershipDistribution,
       activeMembershipsCount,
+      totalStaffCount,
+      activePlansCount,
+      openComplaintsCount,
       exportReport,
+
+      // 6.3 Announcements
+      announcements,
+      sortedAnnouncements,
+      ANNOUNCEMENT_AUDIENCES,
+      ANNOUNCEMENT_PRIORITIES,
+      announcementAudienceLabel,
+      announcementPriorityBadgeClass,
+      newAnnouncement,
+      announcementError,
+      announcementSuccess,
+      createAnnouncement,
+      editingAnnouncementId,
+      announcementEditDraft,
+      startEditAnnouncement,
+      cancelEditAnnouncement,
+      saveEditAnnouncement,
+      toggleAnnouncementStatus,
+      deleteAnnouncement,
+
+      // Overview
+      overviewPendingMemberships,
+      overviewAnnouncements,
+      publishedAnnouncementsCount,
+
+      // Settings
+      security,
+      securityError,
+      savedSection,
+      avatarStyle,
+      savePersonal,
+      changePassword,
+      handleAvatarChange,
+      removeAvatar,
 
       handleLogout
     };

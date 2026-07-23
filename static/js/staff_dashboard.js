@@ -12,13 +12,15 @@ const icons = {
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>',
   soon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
   checkin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>',
-  payments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6 14.5h4"/></svg>'
+  payments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 9.5h19"/><path d="M6 14.5h4"/></svg>',
+  complaints: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9.5v4.5"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/></svg>',
+  announcements: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10v4a1 1 0 0 0 1 1h2l4 4V5l-4 4H5a1 1 0 0 0-1 1Z"/><path d="M17 9a4 4 0 0 1 0 6"/><path d="M20 6a8 8 0 0 1 0 12"/></svg>'
 };
 
 createApp({
   setup() {
     const tabs = ref([
-      { id: 'overview', label: 'Overview', icon: icons.overview, enabled: false },
+      { id: 'overview', label: 'Overview', icon: icons.overview, enabled: true },
       { id: 'dailyOverview', label: 'Daily Bookings', icon: icons.daily, enabled: true },
       { id: 'checkIn', label: 'Check-In Verification', icon: icons.checkin, enabled: true },
       { id: 'walkIn', label: 'Walk-In Admission', icon: icons.walkIn, enabled: true },
@@ -26,11 +28,12 @@ createApp({
       { id: 'payments', label: 'Record Payment', icon: icons.payments, enabled: true },
       { id: 'createStudent', label: 'Create Student Account', icon: icons.addStudent, enabled: true },
       { id: 'verifyMemberships', label: 'Verify Memberships', icon: icons.verify, enabled: true },
-      { id: 'students', label: 'Students', icon: icons.students, enabled: false },
-      { id: 'settings', label: 'Settings', icon: icons.settings, enabled: false }
+      { id: 'complaints', label: 'Student Complaints', icon: icons.complaints, enabled: true },
+      { id: 'announcements', label: 'Announcements', icon: icons.announcements, enabled: true },
+      { id: 'settings', label: 'Settings', icon: icons.settings, enabled: true }
     ]);
 
-    const activeTab = ref('dailyOverview');
+    const activeTab = ref('overview');
 
     function setActiveTab(id) {
       const tab = tabs.value.find((t) => t.id === id);
@@ -40,13 +43,17 @@ createApp({
     }
 
     const tabSubtitles = {
+      overview: "A quick snapshot of today's bookings, requests, and updates.",
       createStudent: "Set up login access for a new student.",
       verifyMemberships: 'Verify student membership details.',
       dailyOverview: "See today's bookings and who's expected to arrive.",
       checkIn: "Verify a student's booking using their check-in code.",
       walkIn: 'Assign an available seat to a same-day walk-in.',
       extensions: "Review students' requests to keep studying.",
-      payments: 'Record an offline payment made by a student.'
+      payments: 'Record an offline payment made by a student.',
+      complaints: 'View and resolve issues reported by students.',
+      announcements: 'Announcements published by the library admin.',
+      settings: 'Manage your personal account details.'
     };
 
     const currentTabLabel = computed(() => {
@@ -58,8 +65,90 @@ createApp({
     // Dummy staff data — replace with data fetched from the backend
     const staff = reactive({
       fullName: 'Rohan Mehta',
-      staffId: 'STAFF-0007'
+      avatarUrl: '',
+      email: 'rohan.mehta@studylibrary.com',
+      phone: '9822011234',
+      dob: '1996-03-22',
+      gender: 'male',
+      address: '14 Residency Road, Pune, MH',
+
+      staffId: 'STAFF-0007',
+      designation: 'Front Desk Staff',
+      dateJoined: '2025-02-10',
+
+      username: 'rohan.mehta'
     });
+
+    const security = reactive({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: ''
+    });
+
+    const securityError = ref('');
+    const savedSection = ref('');
+
+    const avatarStyle = computed(() => {
+      return staff.avatarUrl ? { backgroundImage: `url(${staff.avatarUrl})` } : {};
+    });
+
+    function flashSaved(section) {
+      savedSection.value = section;
+      setTimeout(() => {
+        if (savedSection.value === section) savedSection.value = '';
+      }, 2500);
+    }
+
+    function savePersonal() {
+      // TODO: PATCH /api/staff/profile once the backend endpoint exists
+      console.log('Staff personal info saved:', {
+        fullName: staff.fullName,
+        email: staff.email,
+        phone: staff.phone,
+        dob: staff.dob,
+        gender: staff.gender,
+        address: staff.address
+      });
+      flashSaved('personal');
+    }
+
+    function changePassword() {
+      if (!security.currentPassword || !security.newPassword || !security.confirmPassword) {
+        securityError.value = 'Please fill in all password fields.';
+        return;
+      }
+      if (security.newPassword !== security.confirmPassword) {
+        securityError.value = 'New passwords do not match.';
+        return;
+      }
+      if (security.newPassword.length < 8) {
+        securityError.value = 'New password must be at least 8 characters.';
+        return;
+      }
+
+      // TODO: PATCH /api/staff/password once the backend endpoint exists
+      securityError.value = '';
+      console.log('Staff password change submitted');
+
+      security.currentPassword = '';
+      security.newPassword = '';
+      security.confirmPassword = '';
+      flashSaved('security');
+    }
+
+    function handleAvatarChange(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        staff.avatarUrl = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeAvatar() {
+      staff.avatarUrl = '';
+    }
 
     const initials = computed(() => {
       if (!staff.fullName) return 'S';
@@ -130,10 +219,10 @@ createApp({
       const total = list.length;
       const expectedArrivals = list.filter((b) => b.status === 'upcoming').length;
       const checkedIn = list.filter((b) => b.status === 'checked-in').length;
-      const noShows = list.filter((b) => b.status === 'no-show').length;
+      const unarrived = list.filter((b) => b.status === 'no-show').length;
       const occupiedNow = seats.value.filter((s) => s.status === 'occupied' || s.status === 'reserved').length;
       const occupancyPct = seats.value.length ? Math.round((occupiedNow / seats.value.length) * 100) : 0;
-      return { total, expectedArrivals, checkedIn, noShows, occupancyPct };
+      return { total, expectedArrivals, checkedIn, unarrived, occupancyPct };
     });
 
     function overviewBadgeClass(status) {
@@ -142,6 +231,13 @@ createApp({
       if (status === 'no-show') return 'badge-danger';
       if (status === 'walk-in') return 'badge-muted';
       return 'badge';
+    }
+
+    // Display label for a booking status — keeps the internal 'no-show'
+    // status value (used across the app) but shows friendlier wording.
+    function overviewStatusLabel(status) {
+      if (status === 'no-show') return 'Unarrived';
+      return status.replace('-', ' ');
     }
 
     function markArrived(booking) {
@@ -153,25 +249,25 @@ createApp({
       }
     }
 
-    // 4.3 No-Show Management — staff must wait out a grace period
-    // after the slot start time before a booking can be marked no-show.
-    const NO_SHOW_GRACE_MINUTES = 15;
+    // 4.3 Unarrived Management — staff must wait out a grace period
+    // after the slot start time before a booking can be marked unarrived.
+    const UNARRIVED_GRACE_MINUTES = 15;
 
-    function noShowEligibleAt(booking) {
+    function unarrivedEligibleAt(booking) {
       if (overviewDate.value !== today) return null;
       const d = new Date(today + 'T00:00:00');
-      d.setHours(booking.slot.start, NO_SHOW_GRACE_MINUTES, 0, 0);
+      d.setHours(booking.slot.start, UNARRIVED_GRACE_MINUTES, 0, 0);
       return d;
     }
 
-    function canMarkNoShow(booking) {
+    function canMarkUnarrived(booking) {
       if (booking.status !== 'upcoming') return false;
-      const eligible = noShowEligibleAt(booking);
+      const eligible = unarrivedEligibleAt(booking);
       return Boolean(eligible && now.value.getTime() >= eligible.getTime());
     }
 
-    function noShowWaitLabel(booking) {
-      const eligible = noShowEligibleAt(booking);
+    function unarrivedWaitLabel(booking) {
+      const eligible = unarrivedEligibleAt(booking);
       if (!eligible) return '';
       const diffMs = eligible.getTime() - now.value.getTime();
       if (diffMs <= 0) return '';
@@ -179,10 +275,10 @@ createApp({
       return `Available in ${mins}m`;
     }
 
-    function markNoShow(booking) {
-      if (!canMarkNoShow(booking)) return;
+    function markUnarrived(booking) {
+      if (!canMarkUnarrived(booking)) return;
 
-      // TODO: PATCH /api/staff/bookings/{id}/no-show once the backend endpoint exists
+      // TODO: PATCH /api/staff/bookings/{id}/unarrived once the backend endpoint exists
       booking.status = 'no-show';
 
       // Release the reserved seat so it becomes available to other students.
@@ -460,6 +556,84 @@ createApp({
     }
 
     // ---------------------------------------------------------------
+    // Story 6.2 — Complaint Management (Library Staff)
+    // ---------------------------------------------------------------
+    const complaints = ref(LibraryData.seedComplaints());
+    const complaintFilter = ref('open');
+    const resolvingComplaintId = ref(null);
+    const resolutionDraft = ref('');
+
+    const COMPLAINT_STATUS_LABELS = LibraryData.COMPLAINT_STATUS_LABELS;
+
+    const complaintFilterCounts = computed(() => ({
+      open: complaints.value.filter((c) => c.status === 'open').length,
+      'in-progress': complaints.value.filter((c) => c.status === 'in-progress').length,
+      resolved: complaints.value.filter((c) => c.status === 'resolved').length,
+      all: complaints.value.length
+    }));
+
+    const filteredComplaints = computed(() => {
+      const list = [...complaints.value].sort((a, b) => (a.date < b.date ? 1 : -1));
+      if (complaintFilter.value === 'all') return list;
+      return list.filter((c) => c.status === complaintFilter.value);
+    });
+
+    function complaintStatusBadgeClass(status) {
+      return LibraryData.complaintStatusBadgeClass(status);
+    }
+
+    function startReview(complaint) {
+      // TODO: PATCH /api/staff/complaints/{id}/start once the backend endpoint exists
+      complaint.status = 'in-progress';
+    }
+
+    function startResolve(complaint) {
+      resolvingComplaintId.value = complaint.id;
+      resolutionDraft.value = complaint.resolutionNote || '';
+    }
+
+    function cancelResolve() {
+      resolvingComplaintId.value = null;
+      resolutionDraft.value = '';
+    }
+
+    function confirmResolve(complaint) {
+      if (!resolutionDraft.value.trim()) return;
+
+      // TODO: PATCH /api/staff/complaints/{id}/resolve once the backend endpoint exists
+      complaint.status = 'resolved';
+      complaint.resolutionNote = resolutionDraft.value.trim();
+      complaint.resolvedBy = staff.fullName;
+
+      resolvingComplaintId.value = null;
+      resolutionDraft.value = '';
+    }
+
+    // ---------------------------------------------------------------
+    // Story 6.3 — Announcements (read-only view for staff)
+    // ---------------------------------------------------------------
+    const announcements = ref(
+      LibraryData.seedAnnouncements().filter((a) => a.active && (a.audience === 'all' || a.audience === 'staff'))
+    );
+
+    const sortedAnnouncements = computed(() =>
+      [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+    );
+
+    function announcementPriorityBadgeClass(priority) {
+      return LibraryData.announcementPriorityBadgeClass(priority);
+    }
+
+    // ---------------------------------------------------------------
+    // Overview — a quick, read-only snapshot pulled from the other tabs.
+    // Shows: today's booking stats, a preview of today's schedule,
+    // pending extension requests, and the latest announcements.
+    // ---------------------------------------------------------------
+    const overviewSchedulePreview = computed(() => overviewBookings.value.slice(0, 5));
+    const overviewPendingExtensions = computed(() => pendingList.value.slice(0, 3));
+    const overviewAnnouncements = computed(() => sortedAnnouncements.value.slice(0, 3));
+
+    // ---------------------------------------------------------------
     // 5.1 Offline Payment Recording
     // ---------------------------------------------------------------
     const PAYMENT_MODES = ['Cash', 'UPI', 'Card'];
@@ -560,10 +734,11 @@ createApp({
       overviewBookings,
       overviewStats,
       overviewBadgeClass,
+      overviewStatusLabel,
       markArrived,
-      markNoShow,
-      canMarkNoShow,
-      noShowWaitLabel,
+      markUnarrived,
+      canMarkUnarrived,
+      unarrivedWaitLabel,
 
       // Walk-in
       seats,
@@ -613,6 +788,39 @@ createApp({
       createStudentAccount,
       membershipsToVerify,
       verifyMembership,
+
+      // 6.2 Complaint management
+      complaints,
+      complaintFilter,
+      complaintFilterCounts,
+      filteredComplaints,
+      COMPLAINT_STATUS_LABELS,
+      complaintStatusBadgeClass,
+      startReview,
+      resolvingComplaintId,
+      resolutionDraft,
+      startResolve,
+      cancelResolve,
+      confirmResolve,
+
+      // 6.3 Announcements (view only)
+      sortedAnnouncements,
+      announcementPriorityBadgeClass,
+
+      // Overview
+      overviewSchedulePreview,
+      overviewPendingExtensions,
+      overviewAnnouncements,
+
+      // Settings
+      security,
+      securityError,
+      savedSection,
+      avatarStyle,
+      savePersonal,
+      changePassword,
+      handleAvatarChange,
+      removeAvatar,
 
       handleLogout
     };

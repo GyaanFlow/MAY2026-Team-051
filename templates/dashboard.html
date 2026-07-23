@@ -58,8 +58,87 @@
           </div>
         </header>
 
+        <!-- OVERVIEW -->
+        <section class="tab-panel" v-if="activeTab === 'overview'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ availabilitySummary.available }}</span>
+              <span class="stat-card-label">Seats available now</span>
+            </div>
+            <div class="stat-card stat-card-warning">
+              <span class="stat-card-value">{{ upcomingBookings.length }}</span>
+              <span class="stat-card-label">Upcoming bookings</span>
+            </div>
+            <div class="stat-card stat-card-success">
+              <span class="stat-card-value">{{ profile.hoursLogged }}</span>
+              <span class="stat-card-label">Hours logged</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ openComplaintsCount }}</span>
+              <span class="stat-card-label">Open complaints</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Your Next Booking</h2>
+              <p class="panel-subtitle">The next reservation you're expected for.</p>
+            </div>
+
+            <div class="record-list" v-if="nextBooking">
+              <div class="record-row">
+                <div class="record-avatar">{{ nextBooking.type === 'room' ? 'RM' : 'ST' }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ nextBooking.seatName }}</span>
+                  <span class="record-sub">{{ nextBooking.date }} · {{ nextBooking.slotLabel }} · {{ nextBooking.zone }}</span>
+                </div>
+                <span class="badge" :class="statusBadgeClass(nextBooking.status)">{{ nextBooking.status === 'checked-in' ? 'Checked In' : 'Upcoming' }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>You have no upcoming bookings. Head to "Book a Space" to reserve one.</p>
+          </div>
+
+          <div class="booking-layout">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Latest Announcements</h2>
+                <p class="panel-subtitle">Recent updates from the library admin.</p>
+              </div>
+              <div class="record-list" v-if="overviewAnnouncements.length">
+                <div class="record-row" v-for="a in overviewAnnouncements" :key="a.id">
+                  <div class="record-info">
+                    <span class="record-name">{{ a.title }}</span>
+                    <span class="record-sub">{{ a.createdAt }}</span>
+                  </div>
+                  <span class="badge" :class="announcementPriorityBadgeClass(a.priority)">{{ a.priority }}</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No announcements right now.</p>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Recent Payments</h2>
+                <p class="panel-subtitle">Your latest recorded transactions.</p>
+              </div>
+              <div class="record-list" v-if="overviewRecentPayments.length">
+                <div class="record-row" v-for="p in overviewRecentPayments" :key="p.id">
+                  <div class="record-info">
+                    <span class="record-name">{{ p.purpose }}</span>
+                    <span class="record-sub">{{ p.date }}</span>
+                  </div>
+                  <span class="badge" :class="paymentModeBadgeClass(p.mode)">{{ p.mode }}</span>
+                  <span class="record-amount">₹{{ p.amount }}</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No payments recorded yet.</p>
+            </div>
+          </div>
+        </section>
+
         <!-- 3.1 REAL-TIME SEAT AVAILABILITY -->
-        <section class="tab-panel" v-if="activeTab === 'availability'">
+        <section class="tab-panel" v-else-if="activeTab === 'availability'">
 
           <div class="stat-card-row">
             <div class="stat-card stat-card-accent">
@@ -602,6 +681,83 @@
               </div>
 
             </div>
+          </div>
+        </section>
+
+        <!-- 6.1 COMPLAINT SUBMISSION -->
+        <section class="tab-panel" v-else-if="activeTab === 'complaints'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Raise a Complaint</h2>
+                <p class="panel-subtitle">Let the library staff know about an issue so it can be addressed.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field field-full">
+                  <span>Category</span>
+                  <select v-model="complaintForm.category">
+                    <option value="" disabled>Select a category</option>
+                    <option v-for="cat in COMPLAINT_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+                  </select>
+                </label>
+                <label class="field field-full">
+                  <span>Subject</span>
+                  <input type="text" v-model.trim="complaintForm.subject" placeholder="Short summary of the issue">
+                </label>
+                <label class="field field-full">
+                  <span>Description</span>
+                  <textarea rows="4" v-model.trim="complaintForm.description" placeholder="Describe what happened, where, and when…"></textarea>
+                </label>
+              </div>
+
+              <p class="form-error" v-if="complaintError">{{ complaintError }}</p>
+              <p class="form-success" v-if="complaintSuccess">Your complaint has been submitted to the library staff.</p>
+              <button class="btn-primary btn-small" @click="submitComplaint">Submit Complaint</button>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>My Complaints</h2>
+                <p class="panel-subtitle">{{ myComplaints.length }} submitted.</p>
+              </div>
+
+              <div class="record-list" v-if="myComplaints.length">
+                <div class="record-row" v-for="c in myComplaints" :key="c.id">
+                  <div class="record-info">
+                    <span class="record-name">{{ c.subject }}</span>
+                    <span class="record-sub">{{ c.category }} · {{ c.date }}</span>
+                    <span class="record-sub" v-if="c.status === 'resolved'">Resolution: {{ c.resolutionNote }}</span>
+                  </div>
+                  <span class="badge" :class="complaintStatusBadgeClass(c.status)">{{ COMPLAINT_STATUS_LABELS[c.status] }}</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>You haven't submitted any complaints yet.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- 6.3 ANNOUNCEMENTS (VIEW ONLY FOR STUDENTS) -->
+        <section class="tab-panel" v-else-if="activeTab === 'announcements'">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Latest Announcements</h2>
+              <p class="panel-subtitle">Published by the library admin.</p>
+            </div>
+
+            <div class="record-list" v-if="sortedAnnouncements.length">
+              <div class="record-row" v-for="a in sortedAnnouncements" :key="a.id">
+                <div class="record-info">
+                  <span class="record-name">{{ a.title }}</span>
+                  <span class="record-sub">{{ a.message }}</span>
+                  <span class="record-sub">{{ a.createdAt }} · {{ a.createdBy }}</span>
+                </div>
+                <span class="badge" :class="announcementPriorityBadgeClass(a.priority)">{{ a.priority }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No announcements right now.</p>
           </div>
         </section>
 

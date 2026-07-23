@@ -117,6 +117,128 @@ const LibraryData = (function () {
     return d;
   }
 
+  // ---------------------------------------------------------------
+  // Story 6.1 / 6.2 — Complaints (shared dummy data)
+  // ---------------------------------------------------------------
+  const COMPLAINT_CATEGORIES = [
+    'Seating & Furniture',
+    'Wi-Fi / Internet',
+    'Noise Disturbance',
+    'Cleanliness & Hygiene',
+    'Staff Behavior',
+    'Billing / Payment',
+    'Other'
+  ];
+
+  const COMPLAINT_STATUS_LABELS = {
+    open: 'Open',
+    'in-progress': 'In Progress',
+    resolved: 'Resolved'
+  };
+
+  // Demo seed so both the student and staff dashboards render a
+  // consistent-looking starting dataset. TODO: replace with
+  // GET /api/complaints once the backend endpoint exists.
+  function seedComplaints() {
+    return [
+      {
+        id: 'CMP-6001',
+        studentName: 'Ananya Sharma',
+        studentId: 'STU-2026-0142',
+        category: 'Wi-Fi / Internet',
+        subject: 'Wi-Fi keeps disconnecting in Hall B',
+        description: 'The Wi-Fi signal near Hall B, Seat 3 drops every 10–15 minutes, which makes it hard to attend online classes.',
+        status: 'open',
+        date: '2026-07-18',
+        resolutionNote: '',
+        resolvedBy: ''
+      },
+      {
+        id: 'CMP-6002',
+        studentName: 'Vikram Singh',
+        studentId: 'STU-2026-0150',
+        category: 'Noise Disturbance',
+        subject: 'Loud conversations near Hall A',
+        description: 'A group near Hall A, Seat 6 has been talking loudly for the past few sessions, disturbing nearby students.',
+        status: 'in-progress',
+        date: '2026-07-15',
+        resolutionNote: 'Spoke with the group and moved them to a discussion room.',
+        resolvedBy: 'Rohan Mehta'
+      },
+      {
+        id: 'CMP-6003',
+        studentName: 'Neha Joshi',
+        studentId: 'STU-2026-0151',
+        category: 'Cleanliness & Hygiene',
+        subject: 'Desk was left uncleaned',
+        description: 'Study Room 202 had food wrappers left on the desk from the previous booking.',
+        status: 'resolved',
+        date: '2026-07-10',
+        resolutionNote: 'Housekeeping notified; desk cleaned and room inspected before each new booking.',
+        resolvedBy: 'Rohan Mehta'
+      }
+    ];
+  }
+
+  function complaintStatusBadgeClass(status) {
+    if (status === 'resolved') return 'badge-success';
+    if (status === 'in-progress') return 'badge-warning';
+    return 'badge-danger';
+  }
+
+  // ---------------------------------------------------------------
+  // Story 6.3 — Announcements & Notifications (shared dummy data)
+  // ---------------------------------------------------------------
+  const ANNOUNCEMENT_AUDIENCES = [
+    { id: 'all', label: 'Everyone' },
+    { id: 'students', label: 'Students Only' },
+    { id: 'staff', label: 'Staff Only' }
+  ];
+
+  const ANNOUNCEMENT_PRIORITIES = ['Normal', 'Important', 'Urgent'];
+
+  // TODO: replace with GET /api/announcements once the backend endpoint exists.
+  function seedAnnouncements() {
+    return [
+      {
+        id: 'ANN-101',
+        title: 'Library closed on 15th August',
+        message: 'The library will remain closed on 15th August for Independence Day. Bookings for that date have been disabled.',
+        audience: 'all',
+        priority: 'Important',
+        createdBy: 'Priya Nair',
+        createdAt: '2026-07-19',
+        active: true
+      },
+      {
+        id: 'ANN-102',
+        title: 'New Silent Zone seating added',
+        message: '10 additional seats have been added to the Silent Zone with power outlets at every desk.',
+        audience: 'students',
+        priority: 'Normal',
+        createdBy: 'Priya Nair',
+        createdAt: '2026-07-16',
+        active: true
+      },
+      {
+        id: 'ANN-103',
+        title: 'Updated unarrived grace period policy',
+        message: 'Staff should wait the full 15-minute grace period before marking a booking as unarrived and releasing the seat.',
+        audience: 'staff',
+        priority: 'Normal',
+        createdBy: 'Priya Nair',
+        createdAt: '2026-07-12',
+        active: true
+      }
+    ];
+  }
+
+  function announcementPriorityBadgeClass(priority) {
+    if (priority === 'Urgent') return 'badge-danger';
+    if (priority === 'Important') return 'badge-warning';
+    return 'badge-muted';
+  }
+
   return {
     ZONES,
     TIME_SLOTS,
@@ -126,6 +248,16 @@ const LibraryData = (function () {
     addDays,
     formatDateLabel,
     slotById,
-    slotDateTime
+    slotDateTime,
+
+    COMPLAINT_CATEGORIES,
+    COMPLAINT_STATUS_LABELS,
+    seedComplaints,
+    complaintStatusBadgeClass,
+
+    ANNOUNCEMENT_AUDIENCES,
+    ANNOUNCEMENT_PRIORITIES,
+    seedAnnouncements,
+    announcementPriorityBadgeClass
   };
 })();
