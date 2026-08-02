@@ -21,3 +21,13 @@ def staff_or_admin_required(fn):
             return jsonify({"message": "Staff or Admin access required"}), 403
         return fn(*args, **kwargs)
     return wrapper
+
+
+def student_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        verify_jwt_in_request()
+        if get_jwt().get("role") != "Student":
+            return jsonify({"message": "Student access required"}), 403
+        return fn(*args, **kwargs)
+    return wrapper

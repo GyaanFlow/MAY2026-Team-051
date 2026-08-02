@@ -9,21 +9,19 @@ from models import db, User, MembershipPlan
 from resources.auth import LoginResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
-from resources.students import (
-    StudentListResource,
-    StudentResource,
-    VerifyMembershipResource,
-    ApproveStudentResource,
-    RejectStudentResource,
-    DisapproveStudentResource,
-)
 from resources.profile import ProfileResource, ResetPasswordResource
-from resources.staff_students import StaffRegisterStudentResource, StaffStudentDetailResource
+from resources.student_profile import StudentMeResource
+from resources.staff_students import (
+    StaffRegisterStudentResource,
+    StaffStudentDetailResource,
+    StaffVerifyStudentMembershipResource,
+)
 from resources.admin_memberships import (
     PendingMembershipsResource,
     MembershipListResource,
     ApproveMembershipResource,
     RejectMembershipResource,
+    DisapproveMembershipResource,
     MembershipDetailResource,
 )
 
@@ -40,33 +38,28 @@ def create_app(config_class=Config):
 
     api.add_resource(LoginResource, "/auth/login")
 
-    api.add_resource(StaffListResource, "/staff")
-    api.add_resource(StaffResource, "/staff/<int:user_id>")
-    api.add_resource(DeactivateStaffResource, "/staff/<int:user_id>/deactivate")
+    api.add_resource(StaffListResource, "/admin/staff")
+    api.add_resource(StaffResource, "/admin/staff/<int:user_id>")
+    api.add_resource(DeactivateStaffResource, "/admin/staff/<int:user_id>/deactivate")
 
     api.add_resource(MembershipPlanListResource, "/membership-plans")
     api.add_resource(MembershipPlanResource, "/membership-plans/<int:plan_id>")
 
-    api.add_resource(StudentListResource, "/students")
-    api.add_resource(StudentResource, "/students/<int:student_id>")
-    api.add_resource(VerifyMembershipResource, "/students/<int:student_id>/verify")
-    api.add_resource(ApproveStudentResource, "/students/<int:student_id>/approve")
-    api.add_resource(RejectStudentResource, "/students/<int:student_id>/reject")
-    api.add_resource(DisapproveStudentResource, "/students/<int:student_id>/disapprove")
-
     api.add_resource(ProfileResource, "/profile")
     api.add_resource(ResetPasswordResource, "/auth/reset-password")
 
+    api.add_resource(StudentMeResource, "/students/me")
+
     api.add_resource(StaffRegisterStudentResource, "/staff/students/register")
     api.add_resource(StaffStudentDetailResource, "/staff/students/<int:student_id>")
+    api.add_resource(StaffVerifyStudentMembershipResource, "/staff/students/<int:student_id>/verify")
 
     api.add_resource(PendingMembershipsResource, "/admin/memberships/pending")
     api.add_resource(MembershipListResource, "/admin/memberships")
     api.add_resource(ApproveMembershipResource, "/admin/memberships/<int:membership_id>/approve")
     api.add_resource(RejectMembershipResource, "/admin/memberships/<int:membership_id>/reject")
+    api.add_resource(DisapproveMembershipResource, "/admin/memberships/<int:membership_id>/disapprove")
     api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
-
-         
 
     with app.app_context():
         db.create_all()
