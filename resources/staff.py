@@ -86,7 +86,7 @@ class StaffResource(Resource):
 
 class DeactivateStaffResource(Resource):
     @admin_required
-    def patch(self, user_id):
+    def post(self, user_id):
         staff = User.query.filter_by(user_id=user_id, role="Staff").first()
         if not staff:
             return {"message": "Staff member not found"}, 404

@@ -35,16 +35,23 @@ seProject/
 |-- app.py                  -> creates Flask app, registers all routes, seeds admin+plans
 |-- config.py                -> app config (secret keys, database URL, JWT expiry)
 |-- models.py                 -> SQLAlchemy models: User, MembershipPlan, Student
-|-- utils.py                   -> admin_required and staff_or_admin_required decorators
+|-- utils.py                   -> admin_required, staff_or_admin_required, student_required decorators
 |-- requirements.txt            -> pinned dependency versions
 |-- resources/
 |     |-- auth.py               -> login
-|     |-- staff.py               -> admin managing staff accounts
+|     |-- staff.py               -> admin managing staff accounts (Story 1.1)
 |     |-- membership.py           -> admin managing membership plans (price only)
-|     |-- students.py              -> student create/list/approve/reject/disapprove
-|     |-- profile.py                -> logged-in user's own profile + password reset
-|     |-- staff_students.py          -> staff registers new student, views student profile
-|     |-- admin_memberships.py        -> admin membership approval workflow
+|     |-- profile.py                -> Admin/Staff own profile + password reset (any role)
+|     |-- student_profile.py         -> Story 1.4/1.5: student's own profile at /students/me
+|     |-- staff_students.py          -> staff registers/views/verifies a student (Story 1.3)
+|     |-- admin_memberships.py        -> admin membership approval workflow (Story 1.2)
+
+NOTE: resources/students.py (the original generic student CRUD file) was
+removed. It duplicated functionality that staff_students.py and
+admin_memberships.py now implement with the exact routes from the API
+spec. Its unique bits were relocated, not dropped:
+  - membership verification -> staff_students.py (StaffVerifyStudentMembershipResource)
+  - disapprove -> admin_memberships.py (DisapproveMembershipResource)
 
 ========================================================================
 3. HOW TO RUN THE PROJECT (STEP BY STEP)
@@ -123,45 +130,44 @@ POST   /api/auth/reset-password   (any logged-in user)
     Body: { "old_password": "", "new_password": "" }
     Errors: 400 missing fields, 401 old password wrong, 404 user not found
 
-5.2 PROFILE (any logged-in user)
+5.2 PROFILE (Story 1.1/general - Admin or Staff only; Students get 403 here)
 GET    /api/profile
 PUT    /api/profile
-    Body (any of): { "email":"", "phone":"", "full_name":"", "address":"" }
+    Body (any of): { "email":"", "phone":"" }
 
-5.3 STAFF MANAGEMENT (Admin only)
-GET    /api/staff
-POST   /api/staff
+5.3 STAFF MANAGEMENT (Story 1.1 - Admin only)
+GET    /api/admin/staff
+POST   /api/admin/staff
     Body: { "username":"", "password":"", "email":"", "id_type":"", "id_number":"", "phone":"" }
-GET    /api/staff/<user_id>
-PUT    /api/staff/<user_id>
+GET    /api/admin/staff/<user_id>
+PUT    /api/admin/staff/<user_id>
     Body (any of): { "email":"", "id_type":"", "id_number":"", "phone":"", "password":"" }
-PATCH  /api/staff/<user_id>/deactivate
+POST   /api/admin/staff/<user_id>/deactivate
 
 5.4 MEMBERSHIP PLANS (Admin only)
 GET    /api/membership-plans
 PUT    /api/membership-plans/<plan_id>
     Body: { "price": 300 }
 
-5.5 STUDENTS (mixed roles)
-GET    /api/students                     (Staff or Admin)
-POST   /api/students                     (Staff or Admin)
-    Body: { "username":"", "password":"", "email":"", "full_name":"", "address":"", "plan_id": 1 }
-GET    /api/students/<student_id>
-GET    /api/students/<student_id>/verify   (Staff or Admin)
-PATCH  /api/students/<student_id>/approve  (Admin only)
-PATCH  /api/students/<student_id>/reject   (Admin only)
-PATCH  /api/students/<student_id>/disapprove (Admin only)
+5.5 STUDENT SELF-SERVICE (Story 1.4/1.5 - Student only)
+GET    /api/students/me
+    Returns own profile fields + membership_status/membership_expiry/membership_valid
+PUT    /api/students/me
+    Body (any of): { "email":"", "phone":"", "full_name":"", "address":"" }
 
-5.6 STAFF STUDENT REGISTRATION (Story 1.3 - Staff or Admin)
+5.6 STAFF STUDENT REGISTRATION & LOOKUP (Story 1.3 - Staff or Admin)
 POST   /api/staff/students/register
     Body: { "username":"", "password":"", "email":"", "full_name":"", "address":"", "plan_id": 1, "id_type":"", "id_number":"", "phone":"" }
 GET    /api/staff/students/<student_id>
+GET    /api/staff/students/<student_id>/verify
+    Returns { "status": "", "valid": true/false, "membership_expiry": "" }
 
 5.7 ADMIN MEMBERSHIP MANAGEMENT (Story 1.2 - Admin only)
 GET    /api/admin/memberships/pending
 GET    /api/admin/memberships  (optional ?status=Active)
 POST   /api/admin/memberships/<membership_id>/approve
-POST   /api/admin/memberships/<membership_id>/reject
+POST   /api/admin/memberships/<membership_id>/reject      (only from Pending)
+POST   /api/admin/memberships/<membership_id>/disapprove  (only from Active)
 PUT    /api/admin/memberships/<membership_id>
     Body (any of): { "plan_id": 2 } or { "extend_days": 30 } or { "membership_expiry": "2026-12-31" }
 
@@ -222,6 +228,24 @@ Never commit directly to main.
 - All endpoints tested via Thunder Client including error/role cases
 - Changes committed and pushed to dev branch
 
+Epic 1 completion pass (2026-08-02):
+- Story 1.1 routes aligned to the API spec: /staff -> /admin/staff,
+  deactivate changed from PATCH to POST
+- Removed resources/students.py: it duplicated Story 1.2/1.3 routes and
+  had drifted (its reject route was missing the "only Pending can be
+  rejected" guard that the Story 1.2 route had - fixed before removal)
+- Relocated membership verification to
+  GET /staff/students/<id>/verify (staff_students.py)
+- Relocated disapprove to
+  POST /admin/memberships/<id>/disapprove (admin_memberships.py)
+- Implemented Story 1.4: GET /students/me (student_profile.py)
+- Implemented Story 1.5: PUT /students/me (student_profile.py)
+- ProfileResource (/profile) is now Admin/Staff only; Students get 403
+  and must use /students/me instead, to avoid two overlapping paths to
+  the same student data
+- Epic 1 (Stories 1.1-1.5) is now fully implemented and matches
+  proposedListOfApis.docx
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
@@ -247,7 +271,7 @@ Expected: 200, save access_token as admin_token
 
 TEST 2 - Create a Staff account (Admin only)
 Method: POST
-URL:    http://localhost:5000/api/staff
+URL:    http://localhost:5000/api/admin/staff
 Auth:   Bearer {{admin_token}}
 Body:
 {
@@ -270,20 +294,20 @@ Expected: 200, save as staff_token
 
 TEST 4 - Get all staff
 Method: GET
-URL:    http://localhost:5000/api/staff
+URL:    http://localhost:5000/api/admin/staff
 Auth:   Bearer {{admin_token}}
 Expected: 200
 
 TEST 5 - Get one staff by id
 Method: GET
-URL:    http://localhost:5000/api/staff/2
+URL:    http://localhost:5000/api/admin/staff/2
 Auth:   Bearer {{admin_token}}
 Expected: 200
-Negative: /api/staff/999 -> 404
+Negative: /api/admin/staff/999 -> 404
 
 TEST 6 - Update staff details
 Method: PUT
-URL:    http://localhost:5000/api/staff/2
+URL:    http://localhost:5000/api/admin/staff/2
 Auth:   Bearer {{admin_token}}
 Body:
 {
@@ -334,6 +358,12 @@ Auth:   Bearer {{staff_token}}
 Expected: 200
 Negative: /staff/students/999 -> 404
 
+TEST 10b - Staff verifies student membership validity
+Method: GET
+URL:    http://localhost:5000/api/staff/students/1/verify
+Auth:   Bearer {{staff_token}}
+Expected: 200 { "status": "Pending", "valid": false, "membership_expiry": null }
+
 TEST 11 - Admin lists pending memberships
 Method: GET
 URL:    http://localhost:5000/api/admin/memberships/pending
@@ -366,6 +396,13 @@ Auth:   Bearer {{admin_token}}
 Expected: 200
 Negative: reject an Active student -> 400
 
+TEST 14b - Admin disapproves an active membership
+Method: POST
+URL:    http://localhost:5000/api/admin/memberships/1/disapprove
+Auth:   Bearer {{admin_token}}
+Expected: 200, status becomes Disapproved, expiry cleared
+Negative: call again on a non-Active membership -> 400
+
 TEST 15 - Admin extends/updates a membership
 Method: PUT
 URL:    http://localhost:5000/api/admin/memberships/1
@@ -388,28 +425,12 @@ Negative body:
 }
 Expected: 400 wrong format
 
-TEST 16 - Students API (older story)
-Method: GET
-URL:    http://localhost:5000/api/students
-Auth:   Bearer {{staff_token}}
-Expected: 200
+TEST 16 - (removed) The old generic /students CRUD endpoints (list/get/
+approve/reject/disapprove at /students/...) were removed - they duplicated
+Story 1.2 (admin_memberships.py) and Story 1.3 (staff_students.py). Use
+those instead. See TESTs 9-15 above.
 
-Method: GET
-URL:    http://localhost:5000/api/students/1
-Auth:   Bearer {{staff_token}}
-Expected: 200
-
-Method: GET
-URL:    http://localhost:5000/api/students/1/verify
-Auth:   Bearer {{staff_token}}
-Expected: 200 { "status": "Active", "valid": true, ... }
-
-Method: PATCH
-URL:    http://localhost:5000/api/students/2/disapprove
-Auth:   Bearer {{admin_token}}
-Expected: 400 (not Active)
-
-TEST 17 - Login as Student and test profile
+TEST 17 - Login as Student and test self-service profile (Story 1.4/1.5)
 Method: POST
 URL:    http://localhost:5000/api/auth/login
 Body:
@@ -420,12 +441,13 @@ Body:
 Expected: 200, save as student_token
 
 Method: GET
-URL:    http://localhost:5000/api/profile
+URL:    http://localhost:5000/api/students/me
 Auth:   Bearer {{student_token}}
-Expected: 200
+Expected: 200, includes membership_status/membership_expiry/membership_valid
+Negative: GET /api/profile with student_token -> 403 (students must use /students/me)
 
 Method: PUT
-URL:    http://localhost:5000/api/profile
+URL:    http://localhost:5000/api/students/me
 Auth:   Bearer {{student_token}}
 Body:
 {
@@ -447,9 +469,10 @@ Expected: 200
 Then re-login with new password to confirm.
 
 TEST 19 - Role restriction tests (all must return 403)
-GET /api/staff with student_token -> 403
+GET /api/admin/staff with student_token -> 403
 GET /api/admin/memberships/pending with staff_token -> 403
-POST /api/students with student_token -> 403
+POST /api/staff/students/register with student_token -> 403
+GET /api/profile with student_token -> 403
 
 TEST 20 - Bad request / missing JSON tests
 POST /api/auth/login with Body set to Text (not JSON) -> 400
@@ -462,12 +485,15 @@ CHECKLIST
 [ ] Membership plans list + price update works
 [ ] Staff can register new student
 [ ] Staff can view student profile
+[ ] Staff can verify a student's membership validity
 [ ] Admin can list pending memberships
 [ ] Admin can filter memberships by status
 [ ] Admin can approve membership
-[ ] Admin can reject membership
+[ ] Admin can reject membership (only from Pending)
+[ ] Admin can disapprove membership (only from Active)
 [ ] Admin can extend/update membership
-[ ] Student login + profile GET/PUT works
+[ ] Student login + /students/me GET/PUT works
+[ ] Student is blocked (403) from /profile
 [ ] Password reset + re-login works
 [ ] All 403 role-restriction tests pass
 [ ] Bad JSON / missing body returns 400 correctly

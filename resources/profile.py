@@ -1,33 +1,32 @@
 from flask import request
 from flask_restful import Resource
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Student
+from models import db, User
 
 
 class ProfileResource(Resource):
+    """Self-service profile for Admin/Staff. Students use /students/me instead."""
+
     @jwt_required()
     def get(self):
+        if get_jwt().get("role") == "Student":
+            return {"message": "Students should use /students/me"}, 403
+
         uid = get_jwt_identity()
-        user = User.query.get(int(uid))
+        user = db.session.get(User, int(uid))
         if not user:
             return {"message": "User not found"}, 404
 
-        data = user.to_dict()
-        if user.role == "Student":
-            student = Student.query.filter_by(user_id=user.user_id).first()
-            if student:
-                data["full_name"] = student.full_name
-                data["address"] = student.address
-                data["membership_status"] = student.membership_status
-                data["membership_expiry"] = str(student.membership_expiry) if student.membership_expiry else None
-
-        return data, 200
+        return user.to_dict(), 200
 
     @jwt_required()
     def put(self):
+        if get_jwt().get("role") == "Student":
+            return {"message": "Students should use /students/me"}, 403
+
         uid = get_jwt_identity()
-        user = User.query.get(int(uid))
+        user = db.session.get(User, int(uid))
         if not user:
             return {"message": "User not found"}, 404
 
@@ -42,17 +41,6 @@ class ProfileResource(Resource):
 
         if "phone" in data:
             user.phone = data.get("phone")
-
-        if user.role == "Student":
-            student = Student.query.filter_by(user_id=user.user_id).first()
-            if student:
-                if "full_name" in data:
-                    if not data.get("full_name"):
-                        return {"message": "Full name cannot be empty"}, 400
-                    student.full_name = data.get("full_name")
-
-                if "address" in data:
-                    student.address = data.get("address")
 
         db.session.commit()
         return {"message": "Profile updated"}, 200

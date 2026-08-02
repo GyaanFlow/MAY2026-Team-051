@@ -65,6 +65,22 @@ class RejectMembershipResource(Resource):
         return {"message": "Membership rejected", "student": student.to_dict()}, 200
 
 
+class DisapproveMembershipResource(Resource):
+    @admin_required
+    def post(self, membership_id):
+        student = Student.query.filter_by(student_id=membership_id).first()
+        if not student:
+            return {"message": "Membership not found"}, 404
+
+        if student.membership_status != "Active":
+            return {"message": "Only active memberships can be disapproved"}, 400
+
+        student.membership_status = "Disapproved"
+        student.membership_expiry = None
+        db.session.commit()
+        return {"message": "Membership disapproved", "student": student.to_dict()}, 200
+
+
 class MembershipDetailResource(Resource):
     @admin_required
     def put(self, membership_id):

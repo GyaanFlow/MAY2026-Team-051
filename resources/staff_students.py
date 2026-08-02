@@ -1,3 +1,4 @@
+from datetime import date
 from flask import request
 from flask_restful import Resource
 from werkzeug.security import generate_password_hash
@@ -73,3 +74,22 @@ class StaffStudentDetailResource(Resource):
             data["username"] = user.username
 
         return data, 200
+
+
+class StaffVerifyStudentMembershipResource(Resource):
+    @staff_or_admin_required
+    def get(self, student_id):
+        student = Student.query.filter_by(student_id=student_id).first()
+        if not student:
+            return {"message": "Student not found"}, 404
+
+        valid = False
+        if student.membership_status == "Active" and student.membership_expiry:
+            if student.membership_expiry >= date.today():
+                valid = True
+
+        return {
+            "status": student.membership_status,
+            "valid": valid,
+            "membership_expiry": str(student.membership_expiry) if student.membership_expiry else None,
+        }, 200
