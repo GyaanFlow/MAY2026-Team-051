@@ -40,11 +40,13 @@ seProject/
 |-- resources/
 |     |-- auth.py               -> login
 |     |-- staff.py               -> admin managing staff accounts (Story 1.1)
-|     |-- membership.py           -> admin managing membership plans (price only)
+|     |-- membership.py           -> admin managing membership plans (Story 2.3)
 |     |-- profile.py                -> Admin/Staff own profile + password reset (any role)
 |     |-- student_profile.py         -> Story 1.4/1.5: student's own profile at /students/me
 |     |-- staff_students.py          -> staff registers/views/verifies a student (Story 1.3)
 |     |-- admin_memberships.py        -> admin membership approval workflow (Story 1.2)
+|     |-- settings.py                 -> admin library settings / operating hours (Story 2.1)
+|     |-- seats.py                     -> admin seat inventory / status (Story 2.2)
 
 NOTE: resources/students.py (the original generic student CRUD file) was
 removed. It duplicated functionality that staff_students.py and
@@ -144,10 +146,21 @@ PUT    /api/admin/staff/<user_id>
     Body (any of): { "email":"", "id_type":"", "id_number":"", "phone":"", "password":"" }
 POST   /api/admin/staff/<user_id>/deactivate
 
-5.4 MEMBERSHIP PLANS (Admin only)
-GET    /api/membership-plans
-PUT    /api/membership-plans/<plan_id>
-    Body: { "price": 300 }
+5.4 MEMBERSHIP PLANS (Story 2.3 - Admin only)
+GET    /api/admin/membership-plans
+    Lists all plans, including retired ones (check is_active)
+POST   /api/admin/membership-plans
+    Body: { "plan_name": "Quarterly", "duration_days": 90, "price": 900 }
+    Errors: 400 missing/invalid fields
+PUT    /api/admin/membership-plans/<plan_id>
+    Body (any of): { "plan_name":"", "duration_days":90, "price":300 }
+    Errors: 404 not found, 400 invalid field values
+DELETE /api/admin/membership-plans/<plan_id>
+    Retires the plan (sets is_active=False). Does NOT hard-delete the
+    row - students already on this plan (students.plan_id) still
+    reference it. There is no "un-retire" route yet (same limitation
+    as staff deactivate - see section 15).
+    Errors: 404 not found, 400 already retired
 
 5.5 STUDENT SELF-SERVICE (Story 1.4/1.5 - Student only)
 GET    /api/students/me
@@ -170,6 +183,32 @@ POST   /api/admin/memberships/<membership_id>/reject      (only from Pending)
 POST   /api/admin/memberships/<membership_id>/disapprove  (only from Active)
 PUT    /api/admin/memberships/<membership_id>
     Body (any of): { "plan_id": 2 } or { "extend_days": 30 } or { "membership_expiry": "2026-12-31" }
+
+5.8 LIBRARY SETTINGS (Story 2.1 - Operating Hours - Admin only)
+GET    /api/admin/settings
+    Returns the single library_settings row (open_time, close_time, and
+    other library_settings columns - total_seats, no_show_grace_minutes,
+    cancellation_period, max_booking_days_ahead, extension_limit_minutes -
+    which are still null until the stories that own them are implemented)
+PUT    /api/admin/settings
+    Body (any of): { "open_time": "09:00", "close_time": "21:00" }
+    Times are 24-hour "HH:MM". close_time must be after open_time.
+    Errors: 400 bad time format, 400 close_time <= open_time
+    A default row (09:00-21:00) is auto-seeded on first app run.
+
+5.9 SEAT INVENTORY (Story 2.2 - Admin only)
+GET    /api/admin/seats
+    List all seats with status
+POST   /api/admin/seats
+    Body: { "seat_number": "A1", "status": "Available" }
+    status is optional, defaults to "Available". Must be "Available" or
+    "Maintenance" if given. seat_number must be unique.
+    Errors: 400 missing/invalid, 409 seat_number already exists
+PUT    /api/admin/seats/<seat_id>
+    Body: { "status": "Maintenance" }
+    Changes a seat's status only (seat_number is not renameable via this
+    route). status must be "Available" or "Maintenance".
+    Errors: 404 seat not found, 400 missing/invalid status
 
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
@@ -246,6 +285,31 @@ Epic 1 completion pass (2026-08-02):
 - Epic 1 (Stories 1.1-1.5) is now fully implemented and matches
   proposedListOfApis.docx
 
+Epic 2 progress (2026-08-02):
+- Implemented Story 2.1: Operating Hours Configuration
+  (GET/PUT /admin/settings, resources/settings.py, LibrarySettings model)
+- Fixed a pre-existing bug in utils.py: admin_required/staff_or_admin_
+  required/student_required were returning jsonify({...}), 403 from
+  inside a Flask-RESTful resource method. Flask-RESTful re-serializes
+  the tuple's first element through its own JSON encoder, and a Flask
+  Response object isn't serializable there - every 403 from these
+  decorators was actually crashing to a 500. Fixed by returning plain
+  dicts instead of jsonify(...). This affected EVERY role-restricted
+  route in the app (Epic 1 included) - if you previously saw 500s
+  instead of 403s in role-restriction tests, this was why. Re-test all
+  403 cases across both epics.
+- Implemented Story 2.2: Booking Limit Configuration
+  (GET/POST /admin/seats, PUT /admin/seats/<id>, resources/seats.py,
+  Seat model). PUT only changes status (Available/Maintenance) -
+  seat_number is not renameable via the API.
+- Implemented Story 2.3: Membership Plan Management
+  (full CRUD at /admin/membership-plans, resources/membership.py).
+  Routes moved from /membership-plans to /admin/membership-plans to
+  match the spec (same fix applied to Story 1.1's staff routes).
+  Added is_active to MembershipPlan (not in dbSchema.docx) so DELETE
+  can soft-retire a plan instead of hard-deleting a row that students
+  still reference via students.plan_id.
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
@@ -254,6 +318,12 @@ Epic 1 completion pass (2026-08-02):
 - Connect frontend (Vue) to these endpoints
 - Add remaining stories (book issue/return, fines, reports) if required
 - Consider pytest automated tests for long-term maintainability
+- Story 2.4 (Library Reports & Analytics) intentionally deferred - not
+  started. /admin/reports/occupancy and /peak-hours need Epic 3
+  (bookings/attendance) data, /revenue needs Epic 5 (payments) data.
+  /admin/reports/memberships could be built now from existing
+  students/membership_plans data but was deferred along with the rest
+  per team decision - revisit once Epics 3-5 land.
 
 ========================================================================
 12. COMPLETE API TESTING DATA (EVERY ENDPOINT, STEP BY STEP)
@@ -315,15 +385,29 @@ Body:
 }
 Expected: 200
 
-TEST 7 - View membership plans
+TEST 7 - View membership plans (Story 2.3)
 Method: GET
-URL:    http://localhost:5000/api/membership-plans
+URL:    http://localhost:5000/api/admin/membership-plans
 Auth:   Bearer {{admin_token}}
-Expected: 200, Weekly/Monthly/Yearly
+Expected: 200, Weekly/Monthly/Yearly, each is_active: true
 
-TEST 8 - Update a membership plan price
+TEST 7b - Create a membership plan (Story 2.3)
+Method: POST
+URL:    http://localhost:5000/api/admin/membership-plans
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "plan_name": "Quarterly",
+  "duration_days": 90,
+  "price": 900
+}
+Expected: 201
+Negative body: { "plan_name": "Bad", "duration_days": -5, "price": 100 } -> 400
+Negative body: { "plan_name": "Bad", "duration_days": 30, "price": -1 } -> 400
+
+TEST 8 - Update a membership plan (Story 2.3)
 Method: PUT
-URL:    http://localhost:5000/api/membership-plans/2
+URL:    http://localhost:5000/api/admin/membership-plans/2
 Auth:   Bearer {{admin_token}}
 Body:
 {
@@ -331,6 +415,15 @@ Body:
 }
 Expected: 200
 Negative body: { "price": -50 } -> 400
+Negative: /api/admin/membership-plans/999 -> 404
+
+TEST 8b - Retire a membership plan (Story 2.3)
+Method: DELETE
+URL:    http://localhost:5000/api/admin/membership-plans/4
+Auth:   Bearer {{admin_token}}
+Expected: 200, is_active becomes false
+Negative: call again -> 400 (already retired)
+Negative: /api/admin/membership-plans/999 -> 404
 
 TEST 9 - Staff registers a new student (Story 1.3)
 Method: POST
@@ -425,6 +518,53 @@ Negative body:
 }
 Expected: 400 wrong format
 
+TEST 15b - Admin views and updates operating hours (Story 2.1)
+Method: GET
+URL:    http://localhost:5000/api/admin/settings
+Auth:   Bearer {{admin_token}}
+Expected: 200, default { "open_time": "09:00", "close_time": "21:00", ... }
+
+Method: PUT
+URL:    http://localhost:5000/api/admin/settings
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "open_time": "08:00",
+  "close_time": "22:00"
+}
+Expected: 200
+Negative body: { "open_time": "22:00", "close_time": "08:00" } -> 400 (close before open)
+Negative body: { "open_time": "9am" } -> 400 (bad format)
+Negative: PUT with staff_token -> 403
+
+TEST 15c - Admin manages seat inventory (Story 2.2)
+Method: POST
+URL:    http://localhost:5000/api/admin/seats
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "seat_number": "A1"
+}
+Expected: 201, status defaults to "Available"
+Negative: same seat_number again -> 409
+Negative body: { "seat_number": "A2", "status": "Occupied" } -> 400 (invalid status)
+
+Method: GET
+URL:    http://localhost:5000/api/admin/seats
+Auth:   Bearer {{admin_token}}
+Expected: 200, list including A1
+
+Method: PUT
+URL:    http://localhost:5000/api/admin/seats/1
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "status": "Maintenance"
+}
+Expected: 200
+Negative: /api/admin/seats/999 -> 404
+Negative: POST/GET/PUT with staff_token -> 403
+
 TEST 16 - (removed) The old generic /students CRUD endpoints (list/get/
 approve/reject/disapprove at /students/...) were removed - they duplicated
 Story 1.2 (admin_memberships.py) and Story 1.3 (staff_students.py). Use
@@ -482,7 +622,10 @@ CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
 [ ] Staff list/detail/update works
-[ ] Membership plans list + price update works
+[ ] Membership plans list works
+[ ] Membership plan create works (validates duration_days/price)
+[ ] Membership plan edit works (any of plan_name/duration_days/price)
+[ ] Membership plan retire (DELETE) works, blocks double-retire
 [ ] Staff can register new student
 [ ] Staff can view student profile
 [ ] Staff can verify a student's membership validity
@@ -492,6 +635,11 @@ CHECKLIST
 [ ] Admin can reject membership (only from Pending)
 [ ] Admin can disapprove membership (only from Active)
 [ ] Admin can extend/update membership
+[ ] Admin can view library settings
+[ ] Admin can update operating hours (close_time after open_time enforced)
+[ ] Admin can add a seat (unique seat_number enforced)
+[ ] Admin can list seats
+[ ] Admin can update a seat's status (Available/Maintenance only)
 [ ] Student login + /students/me GET/PUT works
 [ ] Student is blocked (403) from /profile
 [ ] Password reset + re-login works
@@ -521,7 +669,12 @@ Column          Type            Notes
 plan_id         Integer PK      auto-increment
 plan_name       String(100)     "Weekly" / "Monthly" / "Yearly" (seeded)
 duration_days   Integer         used to calculate membership_expiry on approve
-price           Numeric(10,2)   set by Admin via PUT /membership-plans/<id>
+price           Numeric(10,2)   editable via PUT /admin/membership-plans/<id>
+is_active       Boolean         True by default; DELETE /admin/membership-plans/<id>
+                                sets this False (soft-retire, not a real row delete -
+                                added beyond dbSchema.docx since students.plan_id
+                                still references retired plans and "retire" implies
+                                soft-delete, not hard delete)
 
 TABLE: students
 --------------------------------------------------------------------
@@ -534,10 +687,39 @@ membership_status   String(20)      Pending / Active / Rejected / Disapproved
 plan_id             Integer FK      -> membership_plans.plan_id (nullable)
 membership_expiry   Date            set automatically when Admin approves
 
+TABLE: seats
+--------------------------------------------------------------------
+Column          Type            Notes
+seat_id         Integer PK      auto-increment
+seat_number     String(20)      unique, required (e.g. "A1")
+status          String(20)      "Available" / "Maintenance", defaults to Available
+
+Managed entirely via POST/GET/PUT /admin/seats (Story 2.2). No DELETE
+route - retiring a seat is done by setting status to "Maintenance".
+
+TABLE: library_settings
+--------------------------------------------------------------------
+Column                    Type            Notes
+setting_id                Integer PK      auto-increment
+open_time                 Time            set via PUT /admin/settings (Story 2.1)
+close_time                Time            set via PUT /admin/settings (Story 2.1)
+total_seats                Integer         not yet managed by any story - null
+no_show_grace_minutes      Integer         not yet managed by any story - null
+cancellation_period        Integer         not yet managed by any story - null
+max_booking_days_ahead     Integer         not yet managed by any story - null
+extension_limit_minutes    Integer         not yet managed by any story - null
+updated_by                Integer FK      -> users.user_id, set on every PUT
+updated_at                DateTime        set on every PUT
+
+Single-row table: one default row (09:00-21:00) is auto-seeded on first
+app run in app.py:seed_data(). There is no POST/DELETE for this table -
+Admin only ever edits the one existing row via PUT /admin/settings.
+
 RELATIONSHIPS
 --------------------------------------------------------------------
 users (1) ----- (1) students        [every Student row links to one User row]
 membership_plans (1) ----- (many) students  [many students can share one plan]
+users (1) ----- (many) library_settings.updated_by  [tracks which admin last changed settings]
 
 IMPORTANT: There is currently NO separate "memberships" table. The admin
 membership routes (/api/admin/memberships/...) reuse student_id as the
@@ -592,9 +774,11 @@ price               - plan cost, editable by Admin only, stored as decimal
    config.py) and the user must log in again - there is no refresh
    token endpoint currently.
 
-4. No staff reactivation route
-   Staff can be deactivated (PATCH /staff/<id>/deactivate) but there is
-   no corresponding "reactivate" endpoint yet.
+4. No staff reactivation route, no plan un-retire route
+   Staff can be deactivated (POST /admin/staff/<id>/deactivate) but
+   there is no "reactivate" endpoint yet. Same gap for membership plans:
+   DELETE /admin/membership-plans/<id> retires a plan but there is no
+   route to set is_active back to true.
 
 5. role is server-controlled
    The client should never send "role" in any request body - it is
@@ -604,9 +788,10 @@ price               - plan cost, editable by Admin only, stored as decimal
    this is acceptable for your project or add explicit rejection.
 
 6. No pagination
-   GET /staff, GET /students, GET /admin/memberships all return the full
-   list with no page/limit parameters. Fine for small datasets in a
-   college project, but note this if scaling later.
+   GET /admin/staff, GET /admin/memberships, GET /admin/membership-plans,
+   GET /admin/seats all return the full list with no page/limit
+   parameters. Fine for small datasets in a college project, but note
+   this if scaling later.
 
 7. SQLite only in dev
    config.py defaults to SQLite (app.db). For production or team-shared
