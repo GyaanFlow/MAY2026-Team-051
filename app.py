@@ -1,3 +1,4 @@
+from datetime import time
 from flask import Flask
 from flask_cors import CORS
 from flask_restful import Api
@@ -5,10 +6,12 @@ from flask_jwt_extended import JWTManager
 from werkzeug.security import generate_password_hash
 
 from config import Config
-from models import db, User, MembershipPlan
+from models import db, User, MembershipPlan, LibrarySettings
 from resources.auth import LoginResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
+from resources.settings import LibrarySettingsResource
+from resources.seats import SeatListResource, SeatResource
 from resources.profile import ProfileResource, ResetPasswordResource
 from resources.student_profile import StudentMeResource
 from resources.staff_students import (
@@ -42,8 +45,13 @@ def create_app(config_class=Config):
     api.add_resource(StaffResource, "/admin/staff/<int:user_id>")
     api.add_resource(DeactivateStaffResource, "/admin/staff/<int:user_id>/deactivate")
 
-    api.add_resource(MembershipPlanListResource, "/membership-plans")
-    api.add_resource(MembershipPlanResource, "/membership-plans/<int:plan_id>")
+    api.add_resource(MembershipPlanListResource, "/admin/membership-plans")
+    api.add_resource(MembershipPlanResource, "/admin/membership-plans/<int:plan_id>")
+
+    api.add_resource(LibrarySettingsResource, "/admin/settings")
+
+    api.add_resource(SeatListResource, "/admin/seats")
+    api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
 
     api.add_resource(ProfileResource, "/profile")
     api.add_resource(ResetPasswordResource, "/auth/reset-password")
@@ -87,6 +95,9 @@ def seed_data():
             MembershipPlan(plan_name="Monthly", duration_days=30, price=500),
             MembershipPlan(plan_name="Yearly", duration_days=365, price=3000),
         ])
+
+    if not LibrarySettings.query.first():
+        db.session.add(LibrarySettings(open_time=time(9, 0), close_time=time(21, 0)))
 
     db.session.commit()
 
