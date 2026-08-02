@@ -1,0 +1,616 @@
+========================================================================
+LIBRARY MANAGEMENT SYSTEM - BACKEND PROJECT GUIDE
+Team: MAY2026-Team-051
+Prepared by: Gaurav
+========================================================================
+
+This guide covers everything needed to run, understand, and test the
+backend API built so far. Read this fully before touching the code.
+
+========================================================================
+1. PROJECT OVERVIEW
+========================================================================
+
+This is a Flask + Flask-RESTful + JWT based REST API for a Library
+Membership Management System. It has three user roles:
+
+  - Admin   : manages staff, membership plans, approves/rejects memberships
+  - Staff   : registers new students, views student profiles
+  - Student : views/edits own profile, resets password
+
+Tech stack:
+  - Flask 3.0.3
+  - Flask-RESTful 0.3.10
+  - Flask-SQLAlchemy 3.1.1
+  - Flask-JWT-Extended 4.6.0
+  - Werkzeug 3.0.3
+  - Flask-CORS 4.0.1
+  - SQLite (default local database, file: app.db)
+
+========================================================================
+2. PROJECT STRUCTURE
+========================================================================
+
+seProject/
+|-- app.py                  -> creates Flask app, registers all routes, seeds admin+plans
+|-- config.py                -> app config (secret keys, database URL, JWT expiry)
+|-- models.py                 -> SQLAlchemy models: User, MembershipPlan, Student
+|-- utils.py                   -> admin_required and staff_or_admin_required decorators
+|-- requirements.txt            -> pinned dependency versions
+|-- resources/
+|     |-- auth.py               -> login
+|     |-- staff.py               -> admin managing staff accounts
+|     |-- membership.py           -> admin managing membership plans (price only)
+|     |-- students.py              -> student create/list/approve/reject/disapprove
+|     |-- profile.py                -> logged-in user's own profile + password reset
+|     |-- staff_students.py          -> staff registers new student, views student profile
+|     |-- admin_memberships.py        -> admin membership approval workflow
+
+========================================================================
+3. HOW TO RUN THE PROJECT (STEP BY STEP)
+========================================================================
+
+Step 1 - Install dependencies
+    pip install -r requirements.txt
+
+Step 2 - Delete old database if schema changed
+    Windows:
+        del app.db
+    or if it is inside an instance folder:
+        del instance\app.db
+
+Step 3 - Run the server
+    python app.py
+
+    Server runs at: http://localhost:5000
+    All routes are prefixed with /api
+
+Step 4 - Confirm it started with no errors
+    You should see:
+    " * Running on http://127.0.0.1:5000"
+    with no red traceback text.
+
+Step 5 - Default admin login (auto-seeded on first run)
+    username: admin
+    password: admin123
+
+Step 6 - Default membership plans (auto-seeded)
+    Weekly   - 7 days
+    Monthly  - 30 days
+    Yearly   - 365 days
+
+========================================================================
+4. AUTHENTICATION FLOW
+========================================================================
+
+Every route except /auth/login requires a Bearer token.
+
+Step 1: Login
+    POST /api/auth/login
+    Body (JSON):
+    {
+      "username": "admin",
+      "password": "admin123"
+    }
+
+    Response:
+    {
+      "access_token": "xxxxx.....",
+      "user": { ...user fields... }
+    }
+
+Step 2: Use token on every other request
+    Header:
+    Authorization: Bearer <access_token>
+
+Token expires after 8 hours.
+
+Roles embedded in JWT: role = Admin / Staff / Student.
+Decorators in utils.py:
+    admin_required           -> Admin only
+    staff_or_admin_required  -> Staff or Admin
+
+========================================================================
+5. COMPLETE API REFERENCE
+========================================================================
+
+5.1 AUTH
+POST   /api/auth/login
+    Body: { "username": "", "password": "" }
+    Errors: 400 missing fields, 401 invalid credentials, 403 deactivated
+
+POST   /api/auth/reset-password   (any logged-in user)
+    Body: { "old_password": "", "new_password": "" }
+    Errors: 400 missing fields, 401 old password wrong, 404 user not found
+
+5.2 PROFILE (any logged-in user)
+GET    /api/profile
+PUT    /api/profile
+    Body (any of): { "email":"", "phone":"", "full_name":"", "address":"" }
+
+5.3 STAFF MANAGEMENT (Admin only)
+GET    /api/staff
+POST   /api/staff
+    Body: { "username":"", "password":"", "email":"", "id_type":"", "id_number":"", "phone":"" }
+GET    /api/staff/<user_id>
+PUT    /api/staff/<user_id>
+    Body (any of): { "email":"", "id_type":"", "id_number":"", "phone":"", "password":"" }
+PATCH  /api/staff/<user_id>/deactivate
+
+5.4 MEMBERSHIP PLANS (Admin only)
+GET    /api/membership-plans
+PUT    /api/membership-plans/<plan_id>
+    Body: { "price": 300 }
+
+5.5 STUDENTS (mixed roles)
+GET    /api/students                     (Staff or Admin)
+POST   /api/students                     (Staff or Admin)
+    Body: { "username":"", "password":"", "email":"", "full_name":"", "address":"", "plan_id": 1 }
+GET    /api/students/<student_id>
+GET    /api/students/<student_id>/verify   (Staff or Admin)
+PATCH  /api/students/<student_id>/approve  (Admin only)
+PATCH  /api/students/<student_id>/reject   (Admin only)
+PATCH  /api/students/<student_id>/disapprove (Admin only)
+
+5.6 STAFF STUDENT REGISTRATION (Story 1.3 - Staff or Admin)
+POST   /api/staff/students/register
+    Body: { "username":"", "password":"", "email":"", "full_name":"", "address":"", "plan_id": 1, "id_type":"", "id_number":"", "phone":"" }
+GET    /api/staff/students/<student_id>
+
+5.7 ADMIN MEMBERSHIP MANAGEMENT (Story 1.2 - Admin only)
+GET    /api/admin/memberships/pending
+GET    /api/admin/memberships  (optional ?status=Active)
+POST   /api/admin/memberships/<membership_id>/approve
+POST   /api/admin/memberships/<membership_id>/reject
+PUT    /api/admin/memberships/<membership_id>
+    Body (any of): { "plan_id": 2 } or { "extend_days": 30 } or { "membership_expiry": "2026-12-31" }
+
+========================================================================
+6. TESTING METHODS - THUNDER CLIENT SETUP
+========================================================================
+
+1. Install "Thunder Client" extension in VS Code.
+2. Open Thunder Client icon from sidebar.
+3. Create environment "Library" with variables:
+       admin_token, staff_token, student_token
+4. After login, paste token value into the matching variable.
+5. In every request Auth tab -> Bearer Token -> type {{admin_token}} etc.
+6. Group requests into folders: Auth, Staff, Membership-Plans, Students,
+   Staff-Students, Admin-Memberships, Profile.
+
+========================================================================
+7. COMMON ERRORS AND FIXES
+========================================================================
+
+"Email is required" even though sent -> set Content-Type: application/json,
+    Body tab set to JSON not Text.
+401 Unauthorized on every request -> token missing/expired/no "Bearer " prefix.
+403 not allowed -> wrong role's token used for that route.
+sqlite3.OperationalError: no such column -> delete app.db, restart server.
+ModuleNotFoundError: No module named 'flask_cors' -> pip install -r requirements.txt.
+git push rejected (fetch first) -> git pull origin dev, then push again.
+
+========================================================================
+8. GIT WORKFLOW FOR THE TEAM
+========================================================================
+
+Branches: main (stable) and dev (shared working branch)
+
+Daily workflow:
+    git checkout dev
+    git pull origin dev
+    git add .
+    git commit -m "short clear message"
+    git push origin dev
+
+For bigger features:
+    git checkout -b feature/your-feature-name
+    (work, commit, push -u origin feature/your-feature-name)
+    Open Pull Request into dev, review, merge.
+
+Never commit directly to main.
+
+========================================================================
+9. WORK COMPLETED SO FAR (BY GAURAV)
+========================================================================
+
+- Converted all resources from reqparse to request.get_json() JSON handling
+- Added Flask-CORS support for frontend integration
+- Fixed route URL patterns with <int:...> converters in app.py
+- Implemented Story 1.3: Staff Student Registration
+- Implemented Story 1.2: Admin Membership Management
+- All endpoints tested via Thunder Client including error/role cases
+- Changes committed and pushed to dev branch
+
+========================================================================
+10. NEXT STEPS / OPEN ITEMS
+========================================================================
+
+- Confirm whether membership_id needs a separate Membership table
+- Connect frontend (Vue) to these endpoints
+- Add remaining stories (book issue/return, fines, reports) if required
+- Consider pytest automated tests for long-term maintainability
+
+========================================================================
+12. COMPLETE API TESTING DATA (EVERY ENDPOINT, STEP BY STEP)
+========================================================================
+
+TEST 1 - Login as Admin
+Method: POST
+URL:    http://localhost:5000/api/auth/login
+Body:
+{
+  "username": "admin",
+  "password": "admin123"
+}
+Expected: 200, save access_token as admin_token
+
+TEST 2 - Create a Staff account (Admin only)
+Method: POST
+URL:    http://localhost:5000/api/staff
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "username": "staff1",
+  "password": "staff123",
+  "email": "staff1@lib.com",
+  "phone": "9876500001"
+}
+Expected: 201
+
+TEST 3 - Login as Staff
+Method: POST
+URL:    http://localhost:5000/api/auth/login
+Body:
+{
+  "username": "staff1",
+  "password": "staff123"
+}
+Expected: 200, save as staff_token
+
+TEST 4 - Get all staff
+Method: GET
+URL:    http://localhost:5000/api/staff
+Auth:   Bearer {{admin_token}}
+Expected: 200
+
+TEST 5 - Get one staff by id
+Method: GET
+URL:    http://localhost:5000/api/staff/2
+Auth:   Bearer {{admin_token}}
+Expected: 200
+Negative: /api/staff/999 -> 404
+
+TEST 6 - Update staff details
+Method: PUT
+URL:    http://localhost:5000/api/staff/2
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "phone": "9999999999"
+}
+Expected: 200
+
+TEST 7 - View membership plans
+Method: GET
+URL:    http://localhost:5000/api/membership-plans
+Auth:   Bearer {{admin_token}}
+Expected: 200, Weekly/Monthly/Yearly
+
+TEST 8 - Update a membership plan price
+Method: PUT
+URL:    http://localhost:5000/api/membership-plans/2
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "price": 350
+}
+Expected: 200
+Negative body: { "price": -50 } -> 400
+
+TEST 9 - Staff registers a new student (Story 1.3)
+Method: POST
+URL:    http://localhost:5000/api/staff/students/register
+Auth:   Bearer {{staff_token}}
+Body:
+{
+  "username": "student1",
+  "password": "pass123",
+  "email": "student1@lib.com",
+  "full_name": "Rahul Sharma",
+  "address": "Pune",
+  "plan_id": 2,
+  "phone": "9123456780"
+}
+Expected: 201
+Negative: same username again -> 409
+Negative: remove full_name -> 400
+Negative: "plan_id": 999 -> 404
+
+TEST 10 - Staff views student profile
+Method: GET
+URL:    http://localhost:5000/api/staff/students/1
+Auth:   Bearer {{staff_token}}
+Expected: 200
+Negative: /staff/students/999 -> 404
+
+TEST 11 - Admin lists pending memberships
+Method: GET
+URL:    http://localhost:5000/api/admin/memberships/pending
+Auth:   Bearer {{admin_token}}
+Expected: 200, student1 shows as Pending
+
+TEST 12 - Admin lists all memberships with filter
+Method: GET
+URL:    http://localhost:5000/api/admin/memberships
+Auth:   Bearer {{admin_token}}
+Expected: 200, all students
+
+Method: GET
+URL:    http://localhost:5000/api/admin/memberships?status=Pending
+Expected: 200, filtered results
+(repeat with ?status=Active, ?status=Rejected, ?status=Disapproved)
+
+TEST 13 - Admin approves a membership
+Method: POST
+URL:    http://localhost:5000/api/admin/memberships/1/approve
+Auth:   Bearer {{admin_token}}
+Expected: 200, status becomes Active with expiry date
+Negative: call again -> 400 "already active"
+
+TEST 14 - Admin rejects a membership
+(First register student2 via Test 9 pattern)
+Method: POST
+URL:    http://localhost:5000/api/admin/memberships/2/reject
+Auth:   Bearer {{admin_token}}
+Expected: 200
+Negative: reject an Active student -> 400
+
+TEST 15 - Admin extends/updates a membership
+Method: PUT
+URL:    http://localhost:5000/api/admin/memberships/1
+Auth:   Bearer {{admin_token}}
+Body A:
+{
+  "extend_days": 30
+}
+Body B:
+{
+  "membership_expiry": "2026-12-31"
+}
+Body C:
+{
+  "plan_id": 3
+}
+Negative body:
+{
+  "membership_expiry": "31-12-2026"
+}
+Expected: 400 wrong format
+
+TEST 16 - Students API (older story)
+Method: GET
+URL:    http://localhost:5000/api/students
+Auth:   Bearer {{staff_token}}
+Expected: 200
+
+Method: GET
+URL:    http://localhost:5000/api/students/1
+Auth:   Bearer {{staff_token}}
+Expected: 200
+
+Method: GET
+URL:    http://localhost:5000/api/students/1/verify
+Auth:   Bearer {{staff_token}}
+Expected: 200 { "status": "Active", "valid": true, ... }
+
+Method: PATCH
+URL:    http://localhost:5000/api/students/2/disapprove
+Auth:   Bearer {{admin_token}}
+Expected: 400 (not Active)
+
+TEST 17 - Login as Student and test profile
+Method: POST
+URL:    http://localhost:5000/api/auth/login
+Body:
+{
+  "username": "student1",
+  "password": "pass123"
+}
+Expected: 200, save as student_token
+
+Method: GET
+URL:    http://localhost:5000/api/profile
+Auth:   Bearer {{student_token}}
+Expected: 200
+
+Method: PUT
+URL:    http://localhost:5000/api/profile
+Auth:   Bearer {{student_token}}
+Body:
+{
+  "phone": "9000011111",
+  "address": "Mumbai"
+}
+Expected: 200
+
+TEST 18 - Reset password
+Method: POST
+URL:    http://localhost:5000/api/auth/reset-password
+Auth:   Bearer {{student_token}}
+Body:
+{
+  "old_password": "pass123",
+  "new_password": "newpass456"
+}
+Expected: 200
+Then re-login with new password to confirm.
+
+TEST 19 - Role restriction tests (all must return 403)
+GET /api/staff with student_token -> 403
+GET /api/admin/memberships/pending with staff_token -> 403
+POST /api/students with student_token -> 403
+
+TEST 20 - Bad request / missing JSON tests
+POST /api/auth/login with Body set to Text (not JSON) -> 400
+POST /api/auth/login with Body: {} -> 400
+
+CHECKLIST
+[ ] Admin login works
+[ ] Staff creation + login works
+[ ] Staff list/detail/update works
+[ ] Membership plans list + price update works
+[ ] Staff can register new student
+[ ] Staff can view student profile
+[ ] Admin can list pending memberships
+[ ] Admin can filter memberships by status
+[ ] Admin can approve membership
+[ ] Admin can reject membership
+[ ] Admin can extend/update membership
+[ ] Student login + profile GET/PUT works
+[ ] Password reset + re-login works
+[ ] All 403 role-restriction tests pass
+[ ] Bad JSON / missing body returns 400 correctly
+
+========================================================================
+13. DATABASE SCHEMA (ERD SUMMARY)
+========================================================================
+
+TABLE: users
+--------------------------------------------------------------------
+Column          Type            Notes
+user_id         Integer PK      auto-increment
+username        String(100)     unique, required
+password_hash   String(255)     hashed with Werkzeug generate_password_hash
+email           String(150)     required
+id_type         String(255)     optional (see Field Reference below)
+id_number       String(255)     optional (see Field Reference below)
+phone           String(20)      optional
+role            String(20)      "Admin" / "Staff" / "Student"
+status          Boolean         True = active account, False = deactivated
+
+TABLE: membership_plans
+--------------------------------------------------------------------
+Column          Type            Notes
+plan_id         Integer PK      auto-increment
+plan_name       String(100)     "Weekly" / "Monthly" / "Yearly" (seeded)
+duration_days   Integer         used to calculate membership_expiry on approve
+price           Numeric(10,2)   set by Admin via PUT /membership-plans/<id>
+
+TABLE: students
+--------------------------------------------------------------------
+Column              Type            Notes
+student_id          Integer PK      auto-increment
+user_id             Integer FK      -> users.user_id (1-to-1 with a User row)
+full_name           String(150)     required
+address             Text            optional
+membership_status   String(20)      Pending / Active / Rejected / Disapproved
+plan_id             Integer FK      -> membership_plans.plan_id (nullable)
+membership_expiry   Date            set automatically when Admin approves
+
+RELATIONSHIPS
+--------------------------------------------------------------------
+users (1) ----- (1) students        [every Student row links to one User row]
+membership_plans (1) ----- (many) students  [many students can share one plan]
+
+IMPORTANT: There is currently NO separate "memberships" table. The admin
+membership routes (/api/admin/memberships/...) reuse student_id as the
+membership_id. If your project brief requires a separate membership
+history table (e.g. to track multiple past memberships per student),
+this needs a new model - flag this with your team before final submission.
+
+========================================================================
+14. FIELD REFERENCE (WHAT EACH FIELD MEANS)
+========================================================================
+
+username           - login identifier, must be unique across all roles
+password            - plain text on input only, stored as hashed password_hash
+email               - contact email, required for all users
+id_type             - type of ID proof submitted (e.g. "Aadhar", "College ID",
+                      "Passport") - free text, not validated against a fixed list
+id_number           - the actual ID proof number matching id_type
+phone               - contact number, optional, no format validation currently
+role                - controls access: Admin / Staff / Student (set by system,
+                      not by the client - never accept "role" from request body)
+status (User)       - true = can log in, false = deactivated (staff only route
+                      to deactivate exists; no reactivate route yet)
+full_name           - student's display name, required at registration
+address             - student's address, optional, free text
+membership_status   - one of: Pending, Active, Rejected, Disapproved
+                      Pending    -> just registered, awaiting admin decision
+                      Active     -> approved, has a valid membership_expiry
+                      Rejected   -> admin rejected the pending request
+                      Disapproved-> was Active, admin later disapproved it
+plan_id             - links student to a MembershipPlan; can be null if no
+                      plan chosen yet
+membership_expiry   - calculated as today + plan.duration_days on approval;
+                      can be manually extended/set via admin PUT route
+duration_days       - defines how long a plan lasts once approved
+price               - plan cost, editable by Admin only, stored as decimal
+
+========================================================================
+15. DESIGN ASSUMPTIONS AND KNOWN LIMITATIONS
+========================================================================
+
+1. membership_id == student_id
+   The admin membership routes assume one membership per student, so
+   membership_id is just the student's student_id. There is no history
+   of past memberships if a student re-registers after being rejected.
+
+2. No password reset via email
+   ResetPasswordResource requires the OLD password to be known. There is
+   no "forgot password" flow (no email/OTP reset) implemented yet.
+
+3. No refresh token
+   Access tokens expire after 8 hours (JWT_ACCESS_TOKEN_EXPIRES in
+   config.py) and the user must log in again - there is no refresh
+   token endpoint currently.
+
+4. No staff reactivation route
+   Staff can be deactivated (PATCH /staff/<id>/deactivate) but there is
+   no corresponding "reactivate" endpoint yet.
+
+5. role is server-controlled
+   The client should never send "role" in any request body - it is
+   always set internally (Staff registration always creates role=Student,
+   admin staff creation always creates role=Staff, etc). If a request
+   body includes "role", it is currently ignored, not rejected - confirm
+   this is acceptable for your project or add explicit rejection.
+
+6. No pagination
+   GET /staff, GET /students, GET /admin/memberships all return the full
+   list with no page/limit parameters. Fine for small datasets in a
+   college project, but note this if scaling later.
+
+7. SQLite only in dev
+   config.py defaults to SQLite (app.db). For production or team-shared
+   testing, DATABASE_URL env variable can point to Postgres/MySQL instead,
+   but this hasn't been tested with this project yet.
+
+========================================================================
+16. ENVIRONMENT VARIABLES (OPTIONAL, FOR PRODUCTION SETUP)
+========================================================================
+
+config.py reads these from environment variables, with defaults if unset:
+
+SECRET_KEY        - Flask session secret (default: "change-me-in-production")
+DATABASE_URL      - SQLAlchemy DB URI (default: "sqlite:///app.db")
+JWT_SECRET_KEY    - JWT signing secret (default: "jwt-change-me-in-production")
+
+For local development, the defaults are fine and no .env file is needed.
+
+For any real deployment, set these before running the app:
+
+Windows (PowerShell):
+    $env:SECRET_KEY="your-real-secret"
+    $env:JWT_SECRET_KEY="your-real-jwt-secret"
+    $env:DATABASE_URL="your-real-database-url"
+    python app.py
+
+Or create a .env file and load it with python-dotenv (not yet added to
+requirements.txt - install python-dotenv and add load_dotenv() in
+config.py if you want this).
+
+========================================================================
+END OF GUIDE
+========================================================================

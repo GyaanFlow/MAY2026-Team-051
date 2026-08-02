@@ -18,7 +18,14 @@ from resources.students import (
     DisapproveStudentResource,
 )
 from resources.profile import ProfileResource, ResetPasswordResource
-
+from resources.staff_students import StaffRegisterStudentResource, StaffStudentDetailResource
+from resources.admin_memberships import (
+    PendingMembershipsResource,
+    MembershipListResource,
+    ApproveMembershipResource,
+    RejectMembershipResource,
+    MembershipDetailResource,
+)
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -50,6 +57,17 @@ def create_app(config_class=Config):
     api.add_resource(ProfileResource, "/profile")
     api.add_resource(ResetPasswordResource, "/auth/reset-password")
 
+    api.add_resource(StaffRegisterStudentResource, "/staff/students/register")
+    api.add_resource(StaffStudentDetailResource, "/staff/students/<int:student_id>")
+
+    api.add_resource(PendingMembershipsResource, "/admin/memberships/pending")
+    api.add_resource(MembershipListResource, "/admin/memberships")
+    api.add_resource(ApproveMembershipResource, "/admin/memberships/<int:membership_id>/approve")
+    api.add_resource(RejectMembershipResource, "/admin/memberships/<int:membership_id>/reject")
+    api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
+
+         
+
     with app.app_context():
         db.create_all()
         seed_data()
@@ -73,7 +91,7 @@ def seed_data():
     if not first_plan:
         db.session.add_all([
             MembershipPlan(plan_name="Weekly", duration_days=7, price=100),
-            MembershipPlan(plan_name="Monthly", duration_days=30, price=300),
+            MembershipPlan(plan_name="Monthly", duration_days=30, price=500),
             MembershipPlan(plan_name="Yearly", duration_days=365, price=3000),
         ])
 
