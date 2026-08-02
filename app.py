@@ -6,12 +6,12 @@ from flask_jwt_extended import JWTManager
 from werkzeug.security import generate_password_hash
 
 from config import Config
-from models import db, User, MembershipPlan, LibrarySettings
+from models import db, User, MembershipPlan, LibrarySettings, Seat, Booking
 from resources.auth import LoginResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
 from resources.settings import LibrarySettingsResource
-from resources.seats import SeatListResource, SeatResource
+from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
 from resources.profile import ProfileResource, ResetPasswordResource
 from resources.student_profile import StudentMeResource
 from resources.staff_students import (
@@ -26,6 +26,20 @@ from resources.admin_memberships import (
     RejectMembershipResource,
     DisapproveMembershipResource,
     MembershipDetailResource,
+)
+from resources.bookings import (
+    BookingListResource,
+    BookingDetailResource,
+    BookingCancelResource,
+    StudentBookingHistoryResource,
+    StaffTodayBookingsResource,
+    WalkInBookingResource,
+)
+from resources.extension_requests import (
+    StudentExtensionRequestResource,
+    StaffExtensionRequestListResource,
+    StaffExtensionRequestApproveResource,
+    StaffExtensionRequestRejectResource,
 )
 
 def create_app(config_class=Config):
@@ -69,6 +83,22 @@ def create_app(config_class=Config):
     api.add_resource(DisapproveMembershipResource, "/admin/memberships/<int:membership_id>/disapprove")
     api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
 
+    api.add_resource(SeatAvailabilityResource, "/seats/availability")
+    api.add_resource(BookingListResource, "/bookings")
+    api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
+    api.add_resource(BookingCancelResource, "/bookings/<int:booking_id>/cancel")
+
+    api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
+    api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
+    api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
+
+    api.add_resource(
+        StudentExtensionRequestResource, "/students/me/bookings/<int:booking_id>/extension-request"
+    )
+    api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
+    api.add_resource(StaffExtensionRequestApproveResource, "/staff/extension-requests/<int:extension_request_id>/approve")
+    api.add_resource(StaffExtensionRequestRejectResource, "/staff/extension-requests/<int:extension_request_id>/reject")
+
     with app.app_context():
         db.create_all()
         seed_data()
@@ -81,7 +111,7 @@ def seed_data():
     if not admin:
         admin = User(
             username="admin",
-            password_hash=generate_password_hash("admin123"),
+            password_hash=generate_password_hash("test-password"),
             email="admin@library.com",
             role="Admin",
             status=True,
@@ -95,6 +125,12 @@ def seed_data():
             MembershipPlan(plan_name="Monthly", duration_days=30, price=500),
             MembershipPlan(plan_name="Yearly", duration_days=365, price=3000),
         ])
+    if not Seat.query.first():
+        db.session.add_all([
+            Seat(seat_number=f"S{i:02d}", seat_type="Standard", is_active=True)
+            for i in range(1, 21)
+        ])
+        db.session.commit()
 
     if not LibrarySettings.query.first():
         db.session.add(LibrarySettings(open_time=time(9, 0), close_time=time(21, 0)))

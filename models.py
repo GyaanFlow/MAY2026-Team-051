@@ -71,19 +71,20 @@ class Student(db.Model):
             "membership_expiry": str(self.membership_expiry) if self.membership_expiry else None,
         }
 
-
 class Seat(db.Model):
     __tablename__ = "seats"
 
     seat_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     seat_number = db.Column(db.String(20), unique=True, nullable=False)
-    status = db.Column(db.String(20), default="Available", nullable=False)
+    seat_type = db.Column(db.String(50), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     def to_dict(self):
         return {
             "seat_id": self.seat_id,
             "seat_number": self.seat_number,
-            "status": self.status,
+            "seat_type": self.seat_type,
+            "is_active": self.is_active,
         }
 
 
@@ -113,4 +114,52 @@ class LibrarySettings(db.Model):
             "extension_limit_minutes": self.extension_limit_minutes,
             "updated_by": self.updated_by,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class Booking(db.Model):
+    __tablename__ = "bookings"
+
+    booking_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=False)
+    seat_id = db.Column(db.Integer, db.ForeignKey("seats.seat_id"), nullable=False)
+    booking_date = db.Column(db.Date, nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    checkin_code = db.Column(db.String(20), unique=True, nullable=False)
+    status = db.Column(db.String(20), default="Confirmed", nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "booking_id": self.booking_id,
+            "user_id": self.user_id,
+            "seat_id": self.seat_id,
+            "booking_date": str(self.booking_date),
+            "start_time": self.start_time.strftime("%H:%M"),
+            "end_time": self.end_time.strftime("%H:%M"),
+            "checkin_code": self.checkin_code,
+            "status": self.status,
+            "created_at": str(self.created_at),
+        }
+
+
+class ExtensionRequest(db.Model):
+    __tablename__ = "extension_requests"
+
+    extension_request_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("bookings.booking_id"), nullable=False)
+    requested_end_time = db.Column(db.Time, nullable=False)
+    status = db.Column(db.String(20), default="Pending", nullable=False)
+    approved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
+    requested_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "extension_request_id": self.extension_request_id,
+            "booking_id": self.booking_id,
+            "requested_end_time": self.requested_end_time.strftime("%H:%M"),
+            "status": self.status,
+            "approved_by": self.approved_by,
+            "requested_at": str(self.requested_at),
         }
