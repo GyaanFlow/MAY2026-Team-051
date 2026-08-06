@@ -68,3 +68,46 @@ class Student(db.Model):
             "plan_id": self.plan_id,
             "membership_expiry": str(self.membership_expiry) if self.membership_expiry else None,
         }
+
+class Seat(db.Model):
+    __tablename__ = "seats"
+
+    seat_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    seat_number = db.Column(db.String(20), unique=True, nullable=False)
+    seat_type = db.Column(db.String(50), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    def to_dict(self):
+        return {
+            "seat_id": self.seat_id,
+            "seat_number": self.seat_number,
+            "seat_type": self.seat_type,
+            "is_active": self.is_active,
+        }
+
+
+class Booking(db.Model):
+    __tablename__ = "bookings"
+
+    booking_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=False)
+    seat_id = db.Column(db.Integer, db.ForeignKey("seats.seat_id"), nullable=False)
+    booking_date = db.Column(db.Date, nullable=False)
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    checkin_code = db.Column(db.String(20), unique=True, nullable=False)
+    status = db.Column(db.String(20), default="Confirmed", nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "booking_id": self.booking_id,
+            "user_id": self.user_id,
+            "seat_id": self.seat_id,
+            "booking_date": str(self.booking_date),
+            "start_time": self.start_time.strftime("%H:%M"),
+            "end_time": self.end_time.strftime("%H:%M"),
+            "checkin_code": self.checkin_code,
+            "status": self.status,
+            "created_at": str(self.created_at),
+        }
