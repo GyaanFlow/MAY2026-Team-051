@@ -7,6 +7,7 @@ from werkzeug.security import generate_password_hash
 from config import Config
 from models import db, User, MembershipPlan, Seat, Booking
 from resources.auth import LoginResource
+from resources.seats import SeatAvailabilityResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
 from resources.students import (
@@ -26,6 +27,7 @@ from resources.admin_memberships import (
     RejectMembershipResource,
     MembershipDetailResource,
 )
+from resources.seats import SeatAvailabilityResource
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -65,6 +67,8 @@ def create_app(config_class=Config):
     api.add_resource(ApproveMembershipResource, "/admin/memberships/<int:membership_id>/approve")
     api.add_resource(RejectMembershipResource, "/admin/memberships/<int:membership_id>/reject")
     api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
+
+    api.add_resource(SeatAvailabilityResource, "/seats/availability")
 
          
 
