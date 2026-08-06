@@ -122,3 +122,23 @@ class BookingDetailResource(Resource):
         db.session.commit()
 
         return {"message": "Booking updated", "booking": booking.to_dict()}, 200    
+
+class BookingCancelResource(Resource):
+    @jwt_required()
+    def post(self, booking_id):
+        booking = db.session.get(Booking, booking_id)
+        if not booking:
+            return {"message": "Booking not found"}, 404
+
+        user_id = get_jwt_identity()
+        role = get_jwt().get("role")
+        if str(booking.user_id) != str(user_id) and role not in ("Staff", "Admin"):
+            return {"message": "Not authorized to cancel this booking"}, 403
+
+        if booking.status == "Cancelled":
+            return {"message": "Booking is already cancelled"}, 400
+
+        booking.status = "Cancelled"
+        db.session.commit()
+
+        return {"message": "Booking cancelled, seat freed", "booking": booking.to_dict()}, 200    
