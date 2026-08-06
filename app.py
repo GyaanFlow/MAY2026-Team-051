@@ -29,6 +29,7 @@ from resources.admin_memberships import (
 )
 from resources.seats import SeatAvailabilityResource
 from resources.bookings import BookingListResource
+from resources.bookings import BookingListResource, BookingDetailResource
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -71,6 +72,7 @@ def create_app(config_class=Config):
 
     api.add_resource(SeatAvailabilityResource, "/seats/availability")
     api.add_resource(BookingListResource, "/bookings")
+    api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
          
 
     with app.app_context():
