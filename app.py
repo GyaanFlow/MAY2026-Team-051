@@ -5,7 +5,7 @@ from flask_jwt_extended import JWTManager
 from werkzeug.security import generate_password_hash
 
 from config import Config
-from models import db, User, MembershipPlan
+from models import db, User, MembershipPlan, Seat, Booking
 from resources.auth import LoginResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
@@ -94,6 +94,12 @@ def seed_data():
             MembershipPlan(plan_name="Monthly", duration_days=30, price=500),
             MembershipPlan(plan_name="Yearly", duration_days=365, price=3000),
         ])
+    if not Seat.query.first():
+        db.session.add_all([
+            Seat(seat_number=f"S{i:02d}", seat_type="Standard", is_active=True)
+            for i in range(1, 21)
+        ])
+        db.session.commit()
 
     db.session.commit()
 
