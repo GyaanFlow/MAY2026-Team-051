@@ -5,8 +5,8 @@ Prepared by: Gaurav
 ========================================================================
 
 This guide covers everything needed to run, understand, and test the
-backend API built so far, including the newest Epic 3 (Booking and Seat
-Management) work. Read this fully before touching the code.
+backend API built so far, including Epic 1 (Membership) and Epic 3
+(Booking and Seat Management). Read this fully before touching the code.
 
 ========================================================================
 1. PROJECT OVERVIEW
@@ -17,7 +17,7 @@ Membership Management System, now extended with a Booking and Seat
 Management module. It has three user roles:
 
   - Admin   : manages staff, membership plans, approves/rejects memberships
-  - Staff   : registers new students, views student profiles
+  - Staff   : registers new students, views student profiles, manages bookings
   - Student : views/edits own profile, resets password, books seats
 
 Tech stack:
@@ -35,20 +35,20 @@ Tech stack:
 
 seProject/
 |-- app.py                  -> creates Flask app, registers all routes, seeds data
-|-- config.py                -> app config (secret keys, database URL, JWT expiry)
-|-- models.py                 -> User, MembershipPlan, Student, Seat, Booking
-|-- utils.py                   -> admin_required and staff_or_admin_required decorators
-|-- requirements.txt            -> pinned dependency versions
+|-- config.py               -> app config (secret keys, database URL, JWT expiry)
+|-- models.py               -> User, MembershipPlan, Student, Seat, Booking
+|-- utils.py                -> admin_required and staff_or_admin_required decorators
+|-- requirements.txt        -> pinned dependency versions
 |-- resources/
 |     |-- auth.py               -> login
-|     |-- staff.py               -> admin managing staff accounts
-|     |-- membership.py           -> admin managing membership plans (price only)
-|     |-- students.py              -> student create/list/approve/reject/disapprove
-|     |-- profile.py                -> logged-in user's own profile + password reset
-|     |-- staff_students.py          -> staff registers new student, views student profile
-|     |-- admin_memberships.py        -> admin membership approval workflow
-|     |-- seats.py                     -> real-time seat availability (Story 3.1)
-|     |-- bookings.py                   -> create/modify/cancel bookings (Stories 3.2, 3.3)
+|     |-- staff.py              -> admin managing staff accounts
+|     |-- membership.py         -> admin managing membership plans (price only)
+|     |-- students.py           -> student create/list/approve/reject/disapprove
+|     |-- profile.py            -> logged-in user's own profile + password reset
+|     |-- staff_students.py     -> staff registers new student, views student profile
+|     |-- admin_memberships.py  -> admin membership approval workflow
+|     |-- seats.py              -> real-time seat availability (Story 3.1)
+|     |-- bookings.py           -> create/modify/cancel/history/walk-in (Stories 3.2–3.6)
 
 ========================================================================
 3. HOW TO RUN THE PROJECT (STEP BY STEP)
@@ -63,7 +63,7 @@ Step 2 - Delete old database if schema changed
     or if it is inside an instance folder:
         del instance\app.db
 
-    (Required now since Seat and Booking are new tables)
+    (Required after adding Seat and Booking models.)
 
 Step 3 - Run the server
     python app.py
@@ -119,10 +119,10 @@ Decorators in utils.py:
     admin_required           -> Admin only
     staff_or_admin_required  -> Staff or Admin
 
-Booking APIs (seats.py, bookings.py) only require jwt_required() -
-any logged-in role (Admin, Staff, Student) can check availability and
-book seats. Modify/cancel additionally check that the caller either
-owns the booking or is Staff/Admin.
+Booking APIs (seats.py, bookings.py) use jwt_required() for general
+access; staff-only functions (daily overview, walk-in) also use
+staff_or_admin_required. Modify/cancel additionally check that the
+caller either owns the booking or is Staff/Admin.
 
 ========================================================================
 5. COMPLETE API REFERENCE
@@ -179,28 +179,87 @@ POST   /api/admin/memberships/<membership_id>/reject
 PUT    /api/admin/memberships/<membership_id>
     Body (any of): { "plan_id": 2 } or { "extend_days": 30 } or { "membership_expiry": "2026-12-31" }
 
-5.8 SEAT AVAILABILITY (Story 3.1 - any logged-in user) - NEW
+5.8 SEAT AVAILABILITY (Story 3.1 - any logged-in user)
 GET    /api/seats/availability?date=YYYY-MM-DD&start_time=HH:MM&end_time=HH:MM
-    Returns: list of free seats for that date/time slot
-    Errors: 400 missing/invalid params, 400 start_time >= end_time
+    Returns: list of free seats for that date/time slot.
+    Errors: 400 missing/invalid params, 400 start_time >= end_time.
 
-5.9 ADVANCE BOOKING (Story 3.2 - any logged-in user) - NEW
+5.9 ADVANCE BOOKING (Story 3.2 - any logged-in user)
 POST   /api/bookings
     Body: { "seat_id": 1, "date": "2026-08-10", "start_time": "10:00", "end_time": "12:00" }
-    Returns: 201 with booking object including auto-generated checkin_code
+    Returns: 201 with booking object including auto-generated checkin_code.
     Errors: 400 missing fields/bad format, 404 seat not found/inactive,
-            409 seat already booked for that slot
+            409 seat already booked for that slot.
 
-5.10 BOOKING MODIFICATION (Story 3.3 - owner, Staff, or Admin) - NEW
+5.10 BOOKING MODIFICATION & CANCEL (Story 3.3 - owner, Staff, or Admin)
 PUT    /api/bookings/<booking_id>
     Body (any of): { "date":"", "start_time":"", "end_time":"" }
     Errors: 400 bad format/invalid time range, 403 not authorized,
-            404 booking not found, 409 new slot clashes with existing booking
+            404 booking not found, 409 new slot clashes with existing booking.
 
 POST   /api/bookings/<booking_id>/cancel
     Body: none
-    Returns: 200, booking status set to "Cancelled", seat freed
-    Errors: 400 already cancelled, 403 not authorized, 404 not found
+    Returns: 200, booking status set to "Cancelled", seat freed.
+    Errors: 400 already cancelled, 403 not authorized, 404 not found.
+
+5.11 STUDENT BOOKING HISTORY (Story 3.4 - any logged-in user)
+GET    /api/students/me/bookings
+    Auth: jwt_required (any role).
+    Returns:
+      {
+        "total_bookings": N,
+        "bookings": [ { booking + seat_number } ... ]
+      }
+    Only bookings where booking.user_id == current user_id.
+    Errors: 401 if not logged in.
+
+5.12 DAILY BOOKING OVERVIEW (Story 3.5 - Staff/Admin)
+GET    /api/staff/bookings/today
+    Auth: staff_or_admin_required.
+    Returns:
+      {
+        "date": "YYYY-MM-DD",
+        "total_expected": N,
+        "bookings": [
+          {
+            booking_id,
+            seat_number,
+            username,
+            full_name,
+            booking_date,
+            start_time,
+            end_time,
+            status,
+            checkin_code
+          }
+        ]
+      }
+    Only Confirmed bookings for today.
+    Errors: 403 for Student or missing token.
+
+5.13 WALK-IN ADMISSION (Story 3.6 - Staff/Admin)
+POST   /api/staff/bookings/walk-in
+    Auth: staff_or_admin_required.
+    Body:
+    {
+      "student_id": <student_id>,
+      "duration_minutes": 90   // optional, default 60
+    }
+    Behavior:
+      - Validates student exists and membership_status == "Active".
+      - Uses current time as start_time, end_time = now + duration_minutes.
+      - Finds first active seat free for this slot.
+      - Creates booking with auto checkin_code.
+    Returns:
+      {
+        "message": "Walk-in booking created",
+        "booking": { booking + seat_number + full_name }
+      }
+    Errors:
+      400 missing student_id / bad duration_minutes,
+      404 student not found or no seats configured,
+      400 membership not Active,
+      409 no free seats for current slot.
 
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
@@ -228,8 +287,8 @@ sqlite3.OperationalError: no such column/table -> delete app.db, restart server
     (required after adding Seat/Booking models).
 ModuleNotFoundError: No module named 'flask_cors' -> pip install -r requirements.txt.
 git push rejected (fetch first) -> git pull origin dev, then push again.
-409 Seat already booked -> expected behavior when double-booking same
-    seat/date/overlapping time - not a bug.
+409 Seat already booked -> expected behavior when double-booking same seat/date/overlap.
+409 No free seats available right now -> expected when all seats are occupied.
 
 ========================================================================
 8. GIT WORKFLOW FOR THE TEAM
@@ -244,7 +303,7 @@ Daily workflow:
     git commit -m "short clear message"
     git push origin dev
 
-For bigger features (feature-branch workflow, now standard for this project):
+Feature-branch workflow (for PR proof):
     git checkout dev
     git pull origin dev
     git checkout -b feature/your-feature-name
@@ -263,47 +322,43 @@ Never commit directly to main.
 ========================================================================
 
 Epic 1 - Core Membership System
-- Converted all resources from reqparse to request.get_json() JSON handling
-- Added Flask-CORS support for frontend integration
-- Fixed route URL patterns with <int:...> converters in app.py
-- Implemented Story 1.3: Staff Student Registration
-- Implemented Story 1.2: Admin Membership Management
-- All endpoints tested via Thunder Client including error/role cases
-- Changes committed and pushed to dev branch
+- Converted all resources from reqparse to request.get_json() JSON handling.
+- Added Flask-CORS support for frontend integration.
+- Fixed route URL patterns with <int:...> converters in app.py.
+- Implemented Story 1.3: Staff Student Registration.
+- Implemented Story 1.2: Admin Membership Management.
+- All endpoints tested via Thunder Client including error/role cases.
+- Changes committed and pushed to dev branch.
 
-Epic 3 - Booking and Seat Management (NEW - today's work)
-- Added Seat and Booking database models with seed data (20 sample seats)
-- Implemented Story 3.1: Real-Time Seat Availability
-    GET /api/seats/availability - checks free seats for a date/time slot,
-    correctly excludes seats with overlapping confirmed bookings
-- Implemented Story 3.2: Advance Booking
-    POST /api/bookings - creates a booking, auto-generates a unique
-    checkin_code, blocks double-booking of the same seat/slot (409)
-- Implemented Story 3.3: Booking Modification
-    PUT /api/bookings/<booking_id> - lets the owner (or Staff/Admin)
-    change date/time, re-checks for clashes before saving
-    POST /api/bookings/<booking_id>/cancel - cancels a booking and
-    frees the seat back into availability
-- Work delivered across 5 separate feature branches for clean PR history:
+Epic 3 - Booking and Seat Management
+- Added Seat and Booking database models with seed data (20 sample seats).
+- Implemented Story 3.1: Real-Time Seat Availability.
+- Implemented Story 3.2: Advance Booking.
+- Implemented Story 3.3: Booking Modification + Cancel.
+- Implemented Story 3.4: Student Booking History.
+- Implemented Story 3.5: Staff Daily Booking Overview.
+- Implemented Story 3.6: Walk-In Admission with auto seat assignment.
+- Work delivered via feature branches and merged into dev:
     feature/booking-models-setup
     feature/seat-availability
     feature/advance-booking
     feature/booking-modification
     feature/booking-cancellation
-- All Epic 3 endpoints tested via Thunder Client including negative
-  cases (double-booking, invalid time ranges, unauthorized modify/cancel)
+    feature/booking-history-overview
+    feature/walk-in-admission
+- All Epic 3 endpoints tested via Thunder Client including negative cases.
 
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
 
-- Confirm whether membership_id needs a separate Membership table
-- Connect frontend (Vue) to these endpoints, including new booking APIs
-- Add remaining stories (book issue/return, fines, reports) if required
-- Consider pytest automated tests for long-term maintainability
-- Consider adding a GET /bookings (list own bookings) and
-  GET /bookings/<id> (view single booking) if the client asks for them
-- Consider a "no-show" or auto-expiry job for unused confirmed bookings
+- Confirm whether membership_id needs a separate Membership table.
+- Connect frontend (Vue) to these endpoints, including booking APIs.
+- Add remaining stories (book issue/return, fines, reports) if required.
+- Consider pytest automated tests for long-term maintainability.
+- Add POST /bookings/<id>/checkin if client wants physical attendance tracking.
+- Add GET /bookings and GET /bookings/<id> if client wants generic booking listing.
+- Add business rules for max booking duration and advance booking window.
 
 ========================================================================
 11. WHY THIS STRUCTURE IS USED
@@ -311,562 +366,111 @@ Epic 3 - Booking and Seat Management (NEW - today's work)
 
 The backend uses JSON request bodies with Flask request.get_json(), which
 matches how modern frontend apps send API data. Flask-CORS is enabled on
-/api/* routes so frontend code running on a different origin can call the
-backend without browser CORS issues. Thunder Client is used for testing
-because it supports collections, environments, request headers, auth,
-and response testing directly inside VS Code.
+/api/* routes so frontend code from a different origin can call the API
+without browser CORS issues. Thunder Client is used for testing because
+it supports collections, environments, request headers, auth, and
+response testing directly inside VS Code.
 
-The booking system checks for overlapping time ranges using the standard
-interval-overlap condition (existing_start < new_end AND existing_end >
-new_start) rather than exact match, so partial overlaps are correctly
-blocked, not just identical time slots.
+The booking system checks overlapping time ranges using:
+    existing_start < new_end AND existing_end > new_start
+so partial overlaps are correctly blocked, while back-to-back bookings
+are allowed.
 
 ========================================================================
-12. COMPLETE API TESTING DATA (EVERY ENDPOINT, STEP BY STEP)
+12. COMPLETE API TESTING DATA (KEY NEW TESTS FOR STORIES 3.4–3.6)
 ========================================================================
 
---- EPIC 1 TESTS (unchanged from before) ---
+(Assumes Epic 1 and early Epic 3 tests 1–27 already in place.)
 
-TEST 1 - Login as Admin
-Method: POST
-URL:    http://localhost:5000/api/auth/login
-Body:
-{
-  "username": "admin",
-  "password": "admin123"
-}
-Expected: 200, save access_token as admin_token
-
-TEST 2 - Create a Staff account (Admin only)
-Method: POST
-URL:    http://localhost:5000/api/staff
-Auth:   Bearer {{admin_token}}
-Body:
-{
-  "username": "staff1",
-  "password": "staff123",
-  "email": "staff1@lib.com",
-  "phone": "9876500001"
-}
-Expected: 201
-
-TEST 3 - Login as Staff
-Method: POST
-URL:    http://localhost:5000/api/auth/login
-Body:
-{
-  "username": "staff1",
-  "password": "staff123"
-}
-Expected: 200, save as staff_token
-
-TEST 4 - Get all staff
+TEST 28 - Student booking history (Story 3.4)
 Method: GET
-URL:    http://localhost:5000/api/staff
-Auth:   Bearer {{admin_token}}
+URL:    http://localhost:5000/api/students/me/bookings
+Auth:   Bearer {{student_token}}
 Expected: 200
-
-TEST 5 - Get one staff by id
-Method: GET
-URL:    http://localhost:5000/api/staff/2
-Auth:   Bearer {{admin_token}}
-Expected: 200
-Negative: /api/staff/999 -> 404
-
-TEST 6 - Update staff details
-Method: PUT
-URL:    http://localhost:5000/api/staff/2
-Auth:   Bearer {{admin_token}}
-Body:
 {
-  "phone": "9999999999"
+  "total_bookings": N,
+  "bookings": [
+    {
+      "booking_id": ...,
+      "seat_id": ...,
+      "seat_number": "S03",
+      "booking_date": "2026-08-10",
+      "start_time": "15:00",
+      "end_time": "17:00",
+      "status": "Confirmed",
+      "checkin_code": "..."
+    }
+  ]
 }
-Expected: 200
+Negative: call without token -> 401.
 
-TEST 7 - View membership plans
+TEST 29 - Staff daily booking overview (Story 3.5)
 Method: GET
-URL:    http://localhost:5000/api/membership-plans
-Auth:   Bearer {{admin_token}}
-Expected: 200, Weekly/Monthly/Yearly
-
-TEST 8 - Update a membership plan price
-Method: PUT
-URL:    http://localhost:5000/api/membership-plans/2
-Auth:   Bearer {{admin_token}}
-Body:
-{
-  "price": 350
-}
-Expected: 200
-Negative body: { "price": -50 } -> 400
-
-TEST 9 - Staff registers a new student (Story 1.3)
-Method: POST
-URL:    http://localhost:5000/api/staff/students/register
+URL:    http://localhost:5000/api/staff/bookings/today
 Auth:   Bearer {{staff_token}}
-Body:
-{
-  "username": "student1",
-  "password": "pass123",
-  "email": "student1@lib.com",
-  "full_name": "Rahul Sharma",
-  "address": "Pune",
-  "plan_id": 2,
-  "phone": "9123456780"
-}
-Expected: 201
-Negative: same username again -> 409
-Negative: remove full_name -> 400
-Negative: "plan_id": 999 -> 404
-
-TEST 10 - Staff views student profile
-Method: GET
-URL:    http://localhost:5000/api/staff/students/1
-Auth:   Bearer {{staff_token}}
-Expected: 200
-Negative: /staff/students/999 -> 404
-
-TEST 11 - Admin lists pending memberships
-Method: GET
-URL:    http://localhost:5000/api/admin/memberships/pending
-Auth:   Bearer {{admin_token}}
-Expected: 200, student1 shows as Pending
-
-TEST 12 - Admin lists all memberships with filter
-Method: GET
-URL:    http://localhost:5000/api/admin/memberships
-Auth:   Bearer {{admin_token}}
-Expected: 200, all students
-
-Method: GET
-URL:    http://localhost:5000/api/admin/memberships?status=Pending
-Expected: 200, filtered results
-(repeat with ?status=Active, ?status=Rejected, ?status=Disapproved)
-
-TEST 13 - Admin approves a membership
-Method: POST
-URL:    http://localhost:5000/api/admin/memberships/1/approve
-Auth:   Bearer {{admin_token}}
-Expected: 200, status becomes Active with expiry date
-Negative: call again -> 400 "already active"
-
-TEST 14 - Admin rejects a membership
-(First register student2 via Test 9 pattern)
-Method: POST
-URL:    http://localhost:5000/api/admin/memberships/2/reject
-Auth:   Bearer {{admin_token}}
-Expected: 200
-Negative: reject an Active student -> 400
-
-TEST 15 - Admin extends/updates a membership
-Method: PUT
-URL:    http://localhost:5000/api/admin/memberships/1
-Auth:   Bearer {{admin_token}}
-Body A: { "extend_days": 30 }
-Body B: { "membership_expiry": "2026-12-31" }
-Body C: { "plan_id": 3 }
-Negative body: { "membership_expiry": "31-12-2026" } -> 400 wrong format
-
-TEST 16 - Students API (older story)
-GET /api/students (staff_token) -> 200
-GET /api/students/1 (staff_token) -> 200
-GET /api/students/1/verify (staff_token) -> 200
-PATCH /api/students/2/disapprove (admin_token) -> 400 (not Active)
-
-TEST 17 - Login as Student and test profile
-POST /api/auth/login { "username":"student1","password":"pass123" } -> save student_token
-GET /api/profile (student_token) -> 200
-PUT /api/profile (student_token) Body: { "phone":"9000011111","address":"Mumbai" } -> 200
-
-TEST 18 - Reset password
-POST /api/auth/reset-password (student_token)
-Body: { "old_password":"pass123","new_password":"newpass456" } -> 200
-Re-login with new password to confirm.
-
-TEST 19 - Role restriction tests (all must return 403)
-GET /api/staff with student_token -> 403
-GET /api/admin/memberships/pending with staff_token -> 403
-POST /api/students with student_token -> 403
-
-TEST 20 - Bad request / missing JSON tests
-POST /api/auth/login with Body set to Text (not JSON) -> 400
-POST /api/auth/login with Body: {} -> 400
-
---- EPIC 3 TESTS (NEW - Booking and Seat Management) ---
-
-Setup: delete app.db, restart server so Seat table seeds S01-S20.
-Use admin_token (or any logged-in token) for all booking tests below,
-plus a second student_token for the authorization test at the end.
-
-TEST 21 - Check seat availability (Story 3.1)
-Method: GET
-URL:    http://localhost:5000/api/seats/availability?date=2026-08-10&start_time=10:00&end_time=12:00
-Auth:   Bearer {{admin_token}}
 Expected: 200
 {
   "date": "2026-08-10",
-  "start_time": "10:00",
-  "end_time": "12:00",
-  "available_seats": [ {...20 seats...} ],
-  "total_available": 20
+  "total_expected": N,
+  "bookings": [
+    {
+      "booking_id": ...,
+      "seat_number": "S03",
+      "username": "student1",
+      "full_name": "Rahul Sharma",
+      "start_time": "15:00",
+      "end_time": "17:00",
+      "status": "Confirmed"
+    }
+  ]
 }
-Negative: remove date param -> 400 "date, start_time and end_time are required"
-Negative: date=10-08-2026 -> 400 "date must be YYYY-MM-DD..."
-Negative: start_time=12:00&end_time=10:00 -> 400 "start_time must be before end_time"
+Negative: Auth: Bearer {{student_token}} -> 403.
 
-TEST 22 - Create a booking (Story 3.2)
+TEST 30 - Walk-in admission (Story 3.6)
 Method: POST
-URL:    http://localhost:5000/api/bookings
-Auth:   Bearer {{admin_token}}
+URL:    http://localhost:5000/api/staff/bookings/walk-in
+Auth:   Bearer {{staff_token}}
 Body:
 {
-  "seat_id": 1,
-  "date": "2026-08-10",
-  "start_time": "10:00",
-  "end_time": "12:00"
+  "student_id": 1,
+  "duration_minutes": 90
 }
 Expected: 201
 {
-  "message": "Booking created",
+  "message": "Walk-in booking created",
   "booking": {
-    "booking_id": 1,
+    "booking_id": ...,
     "seat_id": 1,
+    "seat_number": "S01",
+    "full_name": "Rahul Sharma",
     "booking_date": "2026-08-10",
-    "start_time": "10:00",
-    "end_time": "12:00",
-    "checkin_code": "A1B2C3D4",
+    "start_time": "14:06",
+    "end_time": "15:36",
+    "checkin_code": "...",
     "status": "Confirmed"
   }
 }
-Negative: repeat same request -> 409 "Seat already booked for this time slot"
-Negative: "seat_id": 999 -> 404 "Seat not found or inactive"
-Negative: remove start_time -> 400 "seat_id, date, start_time and end_time are required"
+Negative: "student_id": 999 -> 404.
+Negative: duration_minutes: -10 -> 400.
+Negative: student membership Pending/Rejected -> 400.
 
-TEST 23 - Re-check availability after booking
-Method: GET
-URL:    http://localhost:5000/api/seats/availability?date=2026-08-10&start_time=10:00&end_time=12:00
-Auth:   Bearer {{admin_token}}
-Expected: 200, total_available: 19, seat S01 no longer listed
-
-TEST 24 - Modify a booking (Story 3.3a)
-Method: PUT
-URL:    http://localhost:5000/api/bookings/1
-Auth:   Bearer {{admin_token}}
+TEST 31 - Walk-in when no seats free
+Fill all seats for current slot with earlier bookings, then:
+Method: POST
+URL:    http://localhost:5000/api/staff/bookings/walk-in
+Auth:   Bearer {{staff_token}}
 Body:
 {
-  "start_time": "14:00",
-  "end_time": "16:00"
+  "student_id": <any active>,
+  "duration_minutes": 60
 }
-Expected: 200, booking times updated
-Negative: create booking 2 on seat_id 1 at 18:00-20:00, then try to move
-    booking 1 to 18:00-20:00 -> 409 "Seat already booked for this new time slot"
-Negative: start_time=20:00, end_time=18:00 -> 400 "start_time must be before end_time"
-Negative: /bookings/999 -> 404 "Booking not found"
+Expected: 409 "No free seats available right now".
 
-TEST 25 - Cancel a booking (Story 3.3b)
-Method: POST
-URL:    http://localhost:5000/api/bookings/1/cancel
-Auth:   Bearer {{admin_token}}
-Expected: 200
-{
-  "message": "Booking cancelled, seat freed",
-  "booking": { "status": "Cancelled", ... }
-}
-Negative: cancel again -> 400 "Booking is already cancelled"
-Negative: cancel /bookings/999 -> 404 "Booking not found"
-
-TEST 26 - Confirm seat freed after cancellation
-Method: GET
-URL:    http://localhost:5000/api/seats/availability?date=2026-08-10&start_time=14:00&end_time=16:00
-Auth:   Bearer {{admin_token}}
-Expected: 200, seat S01 appears again in available_seats
-
-TEST 27 - Authorization check on modify/cancel
-Login as student1, save as student_token.
-Method: PUT
-URL:    http://localhost:5000/api/bookings/2
-Auth:   Bearer {{student_token}}
-Body: { "start_time": "09:00", "end_time": "10:00" }
-Expected: 403 "Not authorized to modify this booking"
-(unless student1 owns booking 2 or has Staff/Admin role)
-
-CHECKLIST (EPIC 1 + EPIC 3)
-[ ] Admin login works
-[ ] Staff creation + login works
-[ ] Staff list/detail/update works
-[ ] Membership plans list + price update works
-[ ] Staff can register new student
-[ ] Staff can view student profile
-[ ] Admin can list pending memberships
-[ ] Admin can filter memberships by status
-[ ] Admin can approve membership
-[ ] Admin can reject membership
-[ ] Admin can extend/update membership
-[ ] Student login + profile GET/PUT works
-[ ] Password reset + re-login works
-[ ] All 403 role-restriction tests pass
-[ ] Bad JSON / missing body returns 400 correctly
-[ ] GET seat availability returns correct free seats
-[ ] GET seat availability rejects missing/invalid params
-[ ] POST booking creates with unique checkin_code
-[ ] POST booking rejects double-booking (409)
-[ ] Booked seat disappears from availability list
-[ ] PUT modify booking updates time correctly
-[ ] PUT modify rejects clashing new slot (409)
-[ ] POST cancel booking frees the seat
-[ ] POST cancel rejects already-cancelled booking (400)
-[ ] Non-owner without Staff/Admin role gets 403 on modify/cancel
-
-========================================================================
-13. DATABASE SCHEMA (ERD SUMMARY)
-========================================================================
-
-TABLE: users
---------------------------------------------------------------------
-user_id         Integer PK      auto-increment
-username        String(100)     unique, required
-password_hash   String(255)     hashed with Werkzeug generate_password_hash
-email           String(150)     required
-id_type         String(255)     optional
-id_number       String(255)     optional
-phone           String(20)      optional
-role            String(20)      "Admin" / "Staff" / "Student"
-status          Boolean         True = active account, False = deactivated
-
-TABLE: membership_plans
---------------------------------------------------------------------
-plan_id         Integer PK      auto-increment
-plan_name       String(100)     "Weekly" / "Monthly" / "Yearly" (seeded)
-duration_days   Integer         used to calculate membership_expiry on approve
-price           Numeric(10,2)   set by Admin via PUT /membership-plans/<id>
-
-TABLE: students
---------------------------------------------------------------------
-student_id          Integer PK      auto-increment
-user_id             Integer FK      -> users.user_id (1-to-1 with a User row)
-full_name           String(150)     required
-address             Text            optional
-membership_status   String(20)      Pending / Active / Rejected / Disapproved
-plan_id             Integer FK      -> membership_plans.plan_id (nullable)
-membership_expiry   Date            set automatically when Admin approves
-
-TABLE: seats (NEW)
---------------------------------------------------------------------
-seat_id         Integer PK      auto-increment
-seat_number     String(20)      unique, e.g. "S01"
-seat_type       String(50)      e.g. "Standard"
-is_active       Boolean         default True, inactive seats hidden from availability
-
-TABLE: bookings (NEW)
---------------------------------------------------------------------
-booking_id      Integer PK      auto-increment
-user_id         Integer FK      -> users.user_id (who made the booking)
-seat_id         Integer FK      -> seats.seat_id
-booking_date    Date            the date of the booking
-start_time      Time            slot start
-end_time        Time            slot end
-checkin_code    String(20)      unique, auto-generated on creation
-status          String(20)      "Confirmed" / "Cancelled"
-created_at      DateTime        auto-set on creation
-
-RELATIONSHIPS
---------------------------------------------------------------------
-users (1) ----- (1) students
-membership_plans (1) ----- (many) students
-users (1) ----- (many) bookings
-seats (1) ----- (many) bookings
-
-IMPORTANT: There is currently NO separate "memberships" table - admin
-membership routes reuse student_id as membership_id (unchanged limitation,
-see section 15). Bookings check overlap using start_time < new_end AND
-end_time > new_start, so back-to-back bookings (e.g. one ending exactly
-when another starts) are allowed, not blocked.
-
-========================================================================
-14. FIELD REFERENCE (WHAT EACH FIELD MEANS)
-========================================================================
-
-username           - login identifier, must be unique across all roles
-password            - plain text on input only, stored as hashed password_hash
-email               - contact email, required for all users
-id_type             - type of ID proof submitted (e.g. "Aadhar", "College ID")
-id_number           - the actual ID proof number matching id_type
-phone               - contact number, optional, no format validation currently
-role                - controls access: Admin / Staff / Student (server-set only)
-status (User)       - true = can log in, false = deactivated
-full_name           - student's display name, required at registration
-address             - student's address, optional, free text
-membership_status   - Pending / Active / Rejected / Disapproved
-plan_id             - links student to a MembershipPlan; can be null
-membership_expiry   - calculated as today + plan.duration_days on approval
-duration_days       - defines how long a plan lasts once approved
-price               - plan cost, editable by Admin only, stored as decimal
-seat_number         - human-readable seat label shown to users, e.g. "S01"
-seat_type           - category of seat, currently just "Standard" for all
-is_active           - false hides a seat from availability without deleting it
-checkin_code        - random 8-character code generated per booking, used to
-                      verify the student physically checked in (front-desk
-                      scan/entry step - not yet wired to a separate endpoint)
-booking_date/start_time/end_time - defines the exact reserved slot
-status (Booking)    - "Confirmed" (active) or "Cancelled" (freed)
-
-========================================================================
-15. DESIGN ASSUMPTIONS AND KNOWN LIMITATIONS
-========================================================================
-
-1. membership_id == student_id (unchanged from Epic 1)
-2. No password reset via email (unchanged from Epic 1)
-3. No refresh token - 8 hour expiry, re-login required (unchanged)
-4. No staff reactivation route (unchanged)
-5. role is server-controlled, never accepted from client body (unchanged)
-6. No pagination on list endpoints (unchanged)
-7. SQLite only in dev (unchanged)
-
-NEW (Epic 3 - Booking):
-8. No separate check-in endpoint yet
-   checkin_code is generated and stored, but there is no
-   POST /bookings/<id>/checkin route to actually validate/consume the
-   code at the library entrance. This may be a future story.
-
-9. No booking list/history endpoints yet
-   There is no GET /bookings (list a user's own bookings) or
-   GET /bookings/<id> (view one booking's details) - only create,
-   modify, and cancel exist per the given stories. Recommend adding
-   these next for a usable frontend experience.
-
-10. No max-booking-duration or advance-booking-window validation
-    A user can currently book any seat for any date/time range with no
-    limit on how long or how far in advance - confirm with client if
-    business rules are needed here (e.g. max 4 hours, book up to 7 days
-    ahead only).
-
-11. Overlap check is per-seat, not global
-    Two different users CAN book two different seats for the exact same
-    time slot - this is intentional (each seat is independent), but
-    worth confirming this matches the client's expectation of a shared
-    library seating layout.
-
-========================================================================
-16. ENVIRONMENT VARIABLES (OPTIONAL, FOR PRODUCTION SETUP)
-========================================================================
-
-config.py reads these from environment variables, with defaults if unset:
-
-SECRET_KEY        - Flask session secret (default: "change-me-in-production")
-DATABASE_URL      - SQLAlchemy DB URI (default: "sqlite:///app.db")
-JWT_SECRET_KEY    - JWT signing secret (default: "jwt-change-me-in-production")
-
-For local development, the defaults are fine and no .env file is needed.
-
-For any real deployment, set these before running the app:
-
-Windows (PowerShell):
-    $env:SECRET_KEY="your-real-secret"
-    $env:JWT_SECRET_KEY="your-real-jwt-secret"
-    $env:DATABASE_URL="your-real-database-url"
-    python app.py
-
-========================================================================
-17. HOW TO PUSH TODAY'S WORK TO GITHUB (STEP BY STEP)
-========================================================================
-
-If you built Epic 3 directly on separate feature branches (recommended,
-see below), push each branch and open a PR into dev. If you already have
-all the Epic 3 code sitting uncommitted on your dev branch, use the
-simpler direct-push steps in 17.2 instead.
-
-------------------------------------------------------------------------
-17.1 - RECOMMENDED: Push via feature branches (5 PRs)
-------------------------------------------------------------------------
-
-Repeat this pattern once per branch:
-    feature/booking-models-setup
-    feature/seat-availability
-    feature/advance-booking
-    feature/booking-modification
-    feature/booking-cancellation
-
-    git checkout dev
-    git pull origin dev
-    git checkout -b feature/booking-models-setup
-    git add models.py app.py
-    git commit -m "add seat and booking models with sample seed data"
-    git push -u origin feature/booking-models-setup
-
-    (Open PR on GitHub: base=dev, compare=feature/booking-models-setup)
-    (Review, then click Merge pull request)
-
-    git checkout dev
-    git pull origin dev
-    git branch -d feature/booking-models-setup
-
-Then repeat for each remaining branch, e.g.:
-
-    git checkout -b feature/seat-availability
-    git add resources/seats.py app.py
-    git commit -m "add real-time seat availability api - story 3.1"
-    git push -u origin feature/seat-availability
-    (open PR, merge)
-
-    git checkout dev && git pull origin dev
-    git checkout -b feature/advance-booking
-    git add resources/bookings.py app.py
-    git commit -m "add advance booking api with checkin code generation - story 3.2"
-    git push -u origin feature/advance-booking
-    (open PR, merge)
-
-    git checkout dev && git pull origin dev
-    git checkout -b feature/booking-modification
-    git add resources/bookings.py app.py
-    git commit -m "add booking modification api - story 3.3a"
-    git push -u origin feature/booking-modification
-    (open PR, merge)
-
-    git checkout dev && git pull origin dev
-    git checkout -b feature/booking-cancellation
-    git add resources/bookings.py app.py
-    git commit -m "add booking cancellation api - story 3.3b"
-    git push -u origin feature/booking-cancellation
-    (open PR, merge)
-
-    git checkout dev
-    git pull origin dev
-
-At the end you will have 5 merged PRs visible in GitHub's Pull Requests
-tab (closed/merged filter) as proof of incremental feature-branch work.
-
-------------------------------------------------------------------------
-17.2 - SIMPLE: Direct push to dev (if not using feature branches)
-------------------------------------------------------------------------
-
-    git checkout dev
-    git pull origin dev
-    git add .
-    git commit -m "add epic 3 booking and seat management apis, update guide"
-    git push origin dev
-
-------------------------------------------------------------------------
-17.3 - If push is rejected (fetch first)
-------------------------------------------------------------------------
-
-    git pull origin dev
-    (resolve any merge conflicts shown with <<<<<<< markers)
-    git add .
-    git commit -m "merge conflicts resolved"
-    git push origin dev
-
-------------------------------------------------------------------------
-17.4 - Verify on GitHub
-------------------------------------------------------------------------
-
-Go to your repository, switch to the dev branch dropdown, and confirm:
-    - models.py shows Seat and Booking classes
-    - resources/seats.py and resources/bookings.py exist
-    - app.py has the new routes registered
-    - guide.txt reflects Epic 3 (this file)
-    - Pull Requests tab shows your merged feature branches (if using 17.1)
+TEST 32 - New endpoints visible in both history and overview
+After creating walk-in:
+- GET /api/students/me/bookings (student_token) -> total_bookings increased, includes walk-in.
+- GET /api/staff/bookings/today (staff_token) -> total_expected increased, includes walk-in.
 
 ========================================================================
 END OF GUIDE
 ========================================================================
-</content>
