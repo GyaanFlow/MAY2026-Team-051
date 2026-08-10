@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from models import db, Seat, Booking, Student, User
 from flask_jwt_extended import get_jwt
 from utils import staff_or_admin_required
+from datetime import datetime, timedelta
 
 def generate_checkin_code():
     return secrets.token_hex(4).upper()
@@ -194,3 +195,76 @@ class StaffTodayBookingsResource(Resource):
             "total_expected": len(result),
             "bookings": result,
         }, 200
+
+
+
+class WalkInBookingResource(Resource):
+    @staff_or_admin_required
+    def post(self):
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
+
+        student_id = data.get("student_id")
+        duration_minutes = data.get("duration_minutes", 60)
+
+        if not student_id:
+            return {"message": "student_id is required"}, 400
+
+        try:
+            duration_minutes = int(duration_minutes)
+            if duration_minutes <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return {"message": "duration_minutes must be a positive number"}, 400
+
+        student = db.session.get(Student, student_id)
+        if not student:
+            return {"message": "Student not found"}, 404
+
+        if student.membership_status != "Active":
+            return {"message": "Student membership is not active"}, 400
+
+        now = datetime.now()
+        booking_date = now.date()
+        start_time = now.time().replace(microsecond=0)
+        end_dt = now + timedelta(minutes=duration_minutes)
+        end_time = end_dt.time().replace(microsecond=0)
+
+        all_seats = Seat.query.filter_by(is_active=True).all()
+        if not all_seats:
+            return {"message": "No seats configured"}, 404
+
+        booked_seat_ids = {
+            b.seat_id
+            for b in Booking.query.filter(
+                Booking.booking_date == booking_date,
+                Booking.status == "Confirmed",
+                Booking.start_time < end_time,
+                Booking.end_time > start_time,
+            ).all()
+        }
+
+        free_seat = next((s for s in all_seats if s.seat_id not in booked_seat_ids), None)
+        if not free_seat:
+            return {"message": "No free seats available right now"}, 409
+
+        checkin_code = generate_checkin_code()
+
+        booking = Booking(
+            user_id=student.user_id,
+            seat_id=free_seat.seat_id,
+            booking_date=booking_date,
+            start_time=start_time,
+            end_time=end_time,
+            checkin_code=checkin_code,
+            status="Confirmed",
+        )
+        db.session.add(booking)
+        db.session.commit()
+
+        result = booking.to_dict()
+        result["seat_number"] = free_seat.seat_number
+        result["full_name"] = student.full_name
+
+        return {"message": "Walk-in booking created", "booking": result}, 201
