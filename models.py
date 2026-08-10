@@ -142,24 +142,3 @@ class Booking(db.Model):
             "status": self.status,
             "created_at": str(self.created_at),
         }
-
-
-class ExtensionRequest(db.Model):
-    __tablename__ = "extension_requests"
-
-    extension_request_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    booking_id = db.Column(db.Integer, db.ForeignKey("bookings.booking_id"), nullable=False)
-    requested_end_time = db.Column(db.Time, nullable=False)
-    status = db.Column(db.String(20), default="Pending", nullable=False)
-    approved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
-    requested_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
-
-    def to_dict(self):
-        return {
-            "extension_request_id": self.extension_request_id,
-            "booking_id": self.booking_id,
-            "requested_end_time": self.requested_end_time.strftime("%H:%M"),
-            "status": self.status,
-            "approved_by": self.approved_by,
-            "requested_at": str(self.requested_at),
-        }
