@@ -1,11 +1,11 @@
 import secrets
-from datetime import datetime
+from datetime import date as date_cls
 from flask import request
 from flask_restful import Resource
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import db, Seat, Booking
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
+from models import db, Seat, Booking, Student, User
 from flask_jwt_extended import get_jwt
-
+from utils import staff_or_admin_required
 
 def generate_checkin_code():
     return secrets.token_hex(4).upper()
@@ -142,3 +142,55 @@ class BookingCancelResource(Resource):
         db.session.commit()
 
         return {"message": "Booking cancelled, seat freed", "booking": booking.to_dict()}, 200    
+
+
+
+class StudentBookingHistoryResource(Resource):
+    @jwt_required()
+    def get(self):
+        user_id = get_jwt_identity()
+
+        bookings = (
+            Booking.query.filter_by(user_id=user_id)
+            .order_by(Booking.booking_date.desc(), Booking.start_time.desc())
+            .all()
+        )
+
+        result = []
+        for b in bookings:
+            data = b.to_dict()
+            seat = db.session.get(Seat, b.seat_id)
+            data["seat_number"] = seat.seat_number if seat else None
+            result.append(data)
+
+        return {"total_bookings": len(result), "bookings": result}, 200
+
+
+class StaffTodayBookingsResource(Resource):
+    @staff_or_admin_required
+    def get(self):
+        today = date_cls.today()
+
+        bookings = (
+            Booking.query.filter_by(booking_date=today, status="Confirmed")
+            .order_by(Booking.start_time.asc())
+            .all()
+        )
+
+        result = []
+        for b in bookings:
+            data = b.to_dict()
+            seat = db.session.get(Seat, b.seat_id)
+            user = db.session.get(User, b.user_id)
+            student = Student.query.filter_by(user_id=b.user_id).first()
+
+            data["seat_number"] = seat.seat_number if seat else None
+            data["username"] = user.username if user else None
+            data["full_name"] = student.full_name if student else None
+            result.append(data)
+
+        return {
+            "date": str(today),
+            "total_expected": len(result),
+            "bookings": result,
+        }, 200
