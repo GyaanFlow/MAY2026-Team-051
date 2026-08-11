@@ -500,3 +500,54 @@ def test_no_show_endpoints_role_restriction(client, student_token, overdue_booki
     response = client.post(f"/api/staff/bookings/{overdue_booking['booking_id']}/no-show", headers=headers)
     assert response.status_code == 403
 
+
+# --- STORY 4.4: STUDY SESSION CHECK-OUT ---
+
+@pytest.fixture
+def checked_in_booking(client, staff_token, todays_booking):
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post("/api/staff/checkin", json={"checkin_code": todays_booking["checkin_code"]}, headers=headers)
+    return todays_booking
+
+def test_checkout_success(client, student_token, checked_in_booking):
+    """The booking's own student can check out of a Checked-In booking"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(f"/api/bookings/{checked_in_booking['booking_id']}/checkout", headers=headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["attendance"]["booking"]["status"] == "Completed"
+    assert body["attendance"]["checkout_time"] is not None
+
+def test_checkout_by_staff_allowed(client, staff_token, checked_in_booking):
+    """Staff can also check out a booking on the student's behalf"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(f"/api/bookings/{checked_in_booking['booking_id']}/checkout", headers=headers)
+    assert response.status_code == 200
+
+def test_checkout_not_checked_in_rejected(client, student_token, confirmed_booking):
+    """A booking that was never checked in cannot be checked out"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(f"/api/bookings/{confirmed_booking['booking_id']}/checkout", headers=headers)
+    assert response.status_code == 400
+
+def test_checkout_not_found(client, student_token):
+    """Unknown booking_id returns 404"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/bookings/9999/checkout", headers=headers)
+    assert response.status_code == 404
+
+def test_checkout_not_owner_rejected(client, student_token, checked_in_booking, admin_token):
+    """A different student cannot check out someone else's booking"""
+    other_token = register_and_approve_student(client, admin_token, "checkoutstudent2")
+    headers = {"Authorization": f"Bearer {other_token}"}
+    response = client.post(f"/api/bookings/{checked_in_booking['booking_id']}/checkout", headers=headers)
+    assert response.status_code == 403
+
+def test_checkout_twice_rejected(client, student_token, checked_in_booking):
+    """A second checkout attempt on an already-Completed booking returns 400"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    url = f"/api/bookings/{checked_in_booking['booking_id']}/checkout"
+    client.post(url, headers=headers)
+    response = client.post(url, headers=headers)
+    assert response.status_code == 400
+

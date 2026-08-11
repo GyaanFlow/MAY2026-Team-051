@@ -31,6 +31,7 @@ from resources.bookings import (
     BookingListResource,
     BookingDetailResource,
     BookingCancelResource,
+    BookingCheckoutResource,
     StudentBookingHistoryResource,
     StaffTodayBookingsResource,
     WalkInBookingResource,
@@ -89,6 +90,7 @@ def create_app(config_class=Config):
     api.add_resource(BookingListResource, "/bookings")
     api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
     api.add_resource(BookingCancelResource, "/bookings/<int:booking_id>/cancel")
+    api.add_resource(BookingCheckoutResource, "/bookings/<int:booking_id>/checkout")
 
     api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
     api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")

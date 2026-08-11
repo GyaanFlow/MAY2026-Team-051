@@ -55,7 +55,8 @@ seProject/
 |     |                                   seat availability search (Story 3.1)
 |     |-- bookings.py                   -> advance booking, modification, cancellation,
 |     |                                   booking history, daily overview, walk-in
-|     |                                   admission (Stories 3.2-3.6)
+|     |                                   admission (Stories 3.2-3.6), and study
+|     |                                   session check-out (Story 4.4)
 |     |-- extension_requests.py          -> booking extension request/approve/reject
 |                                          and seat reassignment (Story 3.7)
 |     |-- checkin.py                      -> staff verifies a checkin_code and records
@@ -304,9 +305,9 @@ POST   /api/staff/checkin
     Looks up the Confirmed booking with this checkin_code, creates an
     attendance row (checkin_time = now, verified_by = acting staff/admin),
     and flips the booking's status to "Checked-In". Booking status values
-    are now "Confirmed" / "Checked-In" / "Cancelled" / "No-Show"
-    (Checked-In added by this story, No-Show added by Story 4.3 below;
-    Completed still belongs to Story 4.4 and is not implemented yet).
+    are now "Confirmed" / "Checked-In" / "Cancelled" / "No-Show" /
+    "Completed" (Checked-In added by this story, No-Show by Story 4.3,
+    Completed by Story 4.4 - see sections 5.13/5.14 below).
     The booking must be dated today - this endpoint verifies a student
     physically arriving right now, so a checkin_code for a future advance
     booking is rejected until its date arrives. (No time-of-day window
@@ -332,6 +333,23 @@ POST   /api/staff/bookings/<booking_id>/no-show
     status="Confirmed", so nothing else needs updating).
     Errors: 404 booking not found; 400 booking not Confirmed (already
     Checked-In/Cancelled/No-Show) or still within the grace period.
+
+5.14 STUDY SESSION CHECK-OUT (Story 4.4 - own booking, or Staff/Admin)
+POST   /api/bookings/<booking_id>/checkout
+    Body: none. Closes out a Checked-In booking: finds its open (still
+    checkout_time=null) attendance row, stamps checkout_time = now, and
+    flips the booking's status to "Completed". Ownership rule matches
+    PUT /bookings/<id> and POST /bookings/<id>/cancel - only the
+    booking's own student, or Staff/Admin, may call this.
+    The seat itself was already excluded from every overlap/
+    availability query the moment check-in flipped status away from
+    "Confirmed" (see section 15 item 11), so checkout doesn't need to
+    do anything extra to "free" it - it only closes the attendance
+    record and finalizes the booking's status.
+    Errors: 404 booking not found (or, in the unexpected case a
+    Checked-In booking somehow has no open attendance row, 404); 403
+    not your booking; 400 booking not currently Checked-In (never
+    checked in, cancelled, already checked out, etc.).
 
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
@@ -506,14 +524,40 @@ Story 4.3 (2026-08-11):
   404 on unknown booking, rejection of an already-cancelled booking,
   and role restriction.
 
+Story 4.4 (2026-08-11):
+- Implemented Study Session Check-Out
+  (resources/bookings.py: BookingCheckoutResource; POST
+  /bookings/<id>/checkout). Kept in bookings.py rather than a new file
+  since it's the same /bookings/<id>/... URL family and ownership rule
+  as BookingDetailResource (PUT) and BookingCancelResource (cancel) -
+  own student or Staff/Admin, not staff-only like checkin.py/no_show.py.
+- Closes the attendance loop Story 4.1/4.2 opened: finds the booking's
+  attendance row with checkout_time still null, stamps it, and moves
+  Booking.status from "Checked-In" to "Completed" - the last unused
+  value in dbSchema.docx's booking_status enum is now implemented.
+  This is now the full lifecycle: Confirmed -> Checked-In -> Completed
+  (or -> Cancelled / No-Show as off-ramps).
+- No new "free the seat" code needed, and for a subtly different reason
+  than Story 4.3's no-show freeing: a Checked-In booking already isn't
+  "Confirmed", so it was already excluded from every overlap/
+  availability query from the moment of check-in, not checkout. See
+  section 15 item 11.
+- Added pytest coverage in test_app.py (fixture: checked_in_booking,
+  which checks in the todays_booking fixture via staff_token first) for
+  success by the owning student, success when Staff calls it instead,
+  rejection when the booking was never checked in, 404 on unknown
+  booking, 403 for a non-owner student, and 400 on a second checkout
+  attempt.
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
 
 - Confirm whether membership_id needs a separate Membership table
 - Connect frontend (Vue) to these endpoints
-- Add remaining stories (Story 4.4 study session check-out, Epic 5
-  payments, Epic 6 complaints/announcements) if required
+- Epic 4 (Check-in & Attendance Management) is now fully implemented
+  (Stories 4.1-4.4). Remaining stories: Epic 5 (payments), Epic 6
+  (complaints/announcements), Story 2.4 (reports/analytics) - see below.
 - Local `dev` is still stale relative to origin/dev - pull before
   branching further work off it
 - Story 2.4 (Library Reports & Analytics) intentionally deferred - not
@@ -933,6 +977,18 @@ Negative: with student_token -> 403
 Then: confirm the same seat/slot can be booked again by another student
 (the seat was released).
 
+TEST 32 - Student checks out of a study session (Story 4.4)
+(First check in via TEST 29's pattern so the booking is Checked-In.)
+Method: POST
+URL:    http://localhost:5000/api/bookings/<booking_id>/checkout
+Auth:   Bearer {{student_token}}
+Expected: 200, booking.status becomes "Completed", attendance.checkout_time set
+Negative: call again -> 400 (no longer Checked-In)
+Negative: /api/bookings/999/checkout -> 404
+Negative: checkout a booking that was never checked in (still Confirmed) -> 400
+Negative: a different student's token on this booking -> 403
+Also verify: staff_token/admin_token can check out on the student's behalf -> 200
+
 CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
@@ -984,6 +1040,12 @@ CHECKLIST
 [ ] No-show is rejected while still within the configured grace period
 [ ] No-show rejects an unknown booking_id (404) or non-Confirmed booking (400)
 [ ] Students are blocked (403) from both no-show endpoints
+[ ] The owning student can check out a Checked-In booking
+[ ] Staff/Admin can check out a booking on the student's behalf
+[ ] Checkout is rejected for a booking that was never checked in (400)
+[ ] Checkout rejects an unknown booking_id (404)
+[ ] A non-owner student is blocked (403) from checking out someone else's booking
+[ ] A second checkout attempt on the same booking is blocked (400)
 
 ========================================================================
 13. DATABASE SCHEMA (ERD SUMMARY)
@@ -1052,14 +1114,16 @@ start_time      Time            required
 end_time        Time            required, must be after start_time
 checkin_code    String(20)      unique, auto-generated (secrets.token_hex)
 status          String(20)      "Confirmed" / "Checked-In" / "Cancelled" /
-                                "No-Show", defaults to Confirmed
-                                (Checked-In added by Story 4.1/4.2,
-                                No-Show added by Story 4.3; Completed
-                                still unimplemented - Story 4.4)
+                                "No-Show" / "Completed", defaults to
+                                Confirmed (Checked-In: Story 4.1/4.2,
+                                No-Show: Story 4.3, Completed: Story 4.4
+                                - this is now the full dbSchema.docx
+                                booking_status enum, Booked-vs-Confirmed
+                                naming drift aside, see section 15 item 8)
 created_at      DateTime        set on creation
 
 Managed via /bookings, /students/me/bookings, /staff/bookings/*,
-/staff/checkin (Stories 3.1-3.7, 4.1/4.2).
+/staff/checkin (Stories 3.1-3.7, 4.1-4.4).
 
 TABLE: attendance
 --------------------------------------------------------------------
@@ -1067,12 +1131,14 @@ Column          Type            Notes
 attendance_id   Integer PK      auto-increment
 booking_id      Integer FK      -> bookings.booking_id
 checkin_time    DateTime        set when staff verifies the checkin_code
-checkout_time   DateTime        nullable; set by Story 4.4 (not built yet)
+checkout_time   DateTime        nullable; set via POST
+                                /bookings/<id>/checkout (Story 4.4)
 verified_by     Integer FK      -> users.user_id, the staff/admin who
                                 checked the student in
 
-Created via POST /staff/checkin (Story 4.1/4.2). One row per successful
-check-in; a booking can only be checked in once since the underlying
+Created via POST /staff/checkin (Story 4.1/4.2), closed via POST
+/bookings/<id>/checkout (Story 4.4). One row per successful check-in;
+a booking can only be checked in once since the underlying
 Booking's status leaves "Confirmed" the moment attendance is recorded,
 and only Confirmed bookings are eligible for check-in.
 
@@ -1183,13 +1249,14 @@ is_active (Seat)    - true = bookable, false = out of service (see section
 checkin_code        - auto-generated unique code returned when a booking is
                       created; will be what Epic 4's check-in flow verifies
                       against, once built
-booking status      - "Confirmed", "Checked-In", "Cancelled", or
-                      "No-Show" (added by Story 4.3); there is no
-                      "Completed" status yet - that belongs to Story 4.4
+booking status      - "Confirmed", "Checked-In", "Cancelled", "No-Show"
+                      (Story 4.3), or "Completed" (Story 4.4, set by
+                      POST /bookings/<id>/checkout)
 checkin_time        - set on the attendance row when staff verifies a
                       student's checkin_code (Story 4.1/4.2)
-checkout_time       - set on the attendance row when the student checks
-                      out; null until Story 4.4 is implemented
+checkout_time       - set on the attendance row when the student (or
+                      Staff/Admin on their behalf) calls POST
+                      /bookings/<id>/checkout (Story 4.4)
 verified_by         - the staff/admin user_id who performed the check-in
 no_show_grace_minutes - minutes after a Confirmed booking's start_time
                       before it becomes eligible to be marked No-Show;
@@ -1270,6 +1337,28 @@ status                Pending  -> just submitted, awaiting staff decision
    already split date and time into separate columns rather than using
    combined datetimes). Kept consistent with the existing Booking model
    rather than the schema doc's literal type.
+
+10. no_show_grace_minutes defaults to 0 when unset
+    Unlike extension_limit_minutes (Story 3.7), which is simply
+    unenforced (no cap) until an Admin sets it, Story 4.3 treats a null
+    no_show_grace_minutes as 0 rather than "no-show never applies" -
+    the no-show endpoints are the entire point of that story, so they
+    need to work without any DB setup. Confirm this default is
+    acceptable, or set no_show_grace_minutes directly in the DB (no
+    admin route exposes it yet - same gap as extension_limit_minutes).
+
+11. A booking's seat is released at check-in, not checkout
+    Every overlap/availability query (booking creation, modification,
+    seat availability search, walk-in auto-assignment, extension
+    approval) filters on Booking.status == "Confirmed". A booking
+    already stops blocking its slot the moment Story 4.1's check-in
+    flips it to "Checked-In" - well before Story 4.4's checkout flips
+    it again to "Completed". Story 4.3's "mark no-show, release seat"
+    and Story 4.4's "record checkout, free seat" wording both describe
+    this same status-leaves-Confirmed mechanism, but for a Checked-In
+    booking the seat was administratively free from check-in onward;
+    checkout's role is closing the attendance record and marking the
+    session finished, not the seat release itself.
 
 ========================================================================
 16. ENVIRONMENT VARIABLES (OPTIONAL, FOR PRODUCTION SETUP)
