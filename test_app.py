@@ -618,3 +618,78 @@ def test_staff_record_payment_role_restriction(client, student_token, payment_st
     }, headers=headers)
     assert response.status_code == 403
 
+
+# --- STORY 5.2: PAYMENT HISTORY ---
+
+@pytest.fixture
+def payment_student(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    client.post("/api/staff/students/register", json={
+        "username": "payhistorystudent", "password": "password123",
+        "email": "payhistorystudent@library.com", "full_name": "Pay History Student",
+    }, headers=headers)
+    login = client.post("/api/auth/login", json={"username": "payhistorystudent", "password": "password123"})
+    token = login.get_json()["access_token"]
+    pending = client.get("/api/admin/memberships/pending", headers=headers).get_json()
+    student_id = next(s["student_id"] for s in pending if s["full_name"] == "Pay History Student")
+    return {"token": token, "student_id": student_id}
+
+def test_student_views_own_payment_history(client, staff_token, payment_student):
+    """A student can see their own recorded payments"""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post("/api/staff/payments", json={
+        "student_id": payment_student["student_id"], "amount": 300, "payment_mode": "UPI"
+    }, headers=staff_headers)
+
+    student_headers = {"Authorization": f"Bearer {payment_student['token']}"}
+    response = client.get("/api/students/me/payments", headers=student_headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total_payments"] == 1
+    assert body["payments"][0]["amount"] == 300.0
+
+def test_student_payment_history_empty_when_no_payments(client, student_token):
+    """A student with no recorded payments gets an empty list, not an error"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/students/me/payments", headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()["total_payments"] == 0
+
+def test_staff_views_student_payment_history(client, staff_token, payment_student):
+    """Staff can view a specific student's full payment history"""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post("/api/staff/payments", json={
+        "student_id": payment_student["student_id"], "amount": 200, "payment_mode": "Card"
+    }, headers=staff_headers)
+    client.post("/api/staff/payments", json={
+        "student_id": payment_student["student_id"], "amount": 100, "payment_mode": "Cash"
+    }, headers=staff_headers)
+
+    response = client.get(
+        f"/api/staff/students/{payment_student['student_id']}/payments", headers=staff_headers
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total_payments"] == 2
+    assert body["full_name"] == "Pay History Student"
+
+def test_staff_payment_history_student_not_found(client, staff_token):
+    """Unknown student_id returns 404"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get("/api/staff/students/9999/payments", headers=headers)
+    assert response.status_code == 404
+
+def test_student_payment_history_role_restriction(client, staff_token):
+    """Staff cannot call the student-only /students/me/payments route"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get("/api/students/me/payments", headers=headers)
+    assert response.status_code == 403
+
+def test_staff_payment_history_role_restriction(client, student_token, payment_student):
+    """Students cannot call the staff-only student payment history route"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get(
+        f"/api/staff/students/{payment_student['student_id']}/payments", headers=headers
+    )
+    assert response.status_code == 403
+
