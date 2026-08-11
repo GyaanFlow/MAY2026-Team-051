@@ -3,6 +3,7 @@ from flask import Flask
 from flask_cors import CORS
 from flask_restful import Api
 from flask_jwt_extended import JWTManager
+from sqlalchemy import inspect, text
 from werkzeug.security import generate_password_hash
 
 from config import Config
@@ -35,6 +36,35 @@ from resources.bookings import (
     StudentBookingHistoryResource,
     StaffTodayBookingsResource,
     WalkInBookingResource,
+)
+from resources.checkin import StaffCheckinResource
+from resources.extension_requests import (
+    StudentExtensionRequestResource,
+    StaffExtensionRequestListResource,
+    StaffExtensionRequestApproveResource,
+    StaffExtensionRequestRejectResource,
+)
+from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
+from resources.payments import (
+    StaffPaymentListResource,
+    StudentPaymentHistoryResource,
+    StaffStudentPaymentHistoryResource,
+)
+from resources.complaints import (
+    StudentComplaintCreateResource,
+    StaffComplaintListResource,
+    StaffComplaintUpdateResource,
+)
+from resources.announcements import (
+    AdminAnnouncementListCreateResource,
+    AnnouncementListResource,
+    AdminAnnouncementDetailResource,
+)
+from resources.reports import (
+    OccupancyReportResource,
+    PeakHoursReportResource,
+    RevenueReportResource,
+    MembershipStatsReportResource,
 )
 
 def create_app(config_class=Config):
@@ -87,14 +117,75 @@ def create_app(config_class=Config):
     api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
     api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
     api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
+
+    api.add_resource(StaffCheckinResource, "/staff/checkin")
+    api.add_resource(
+        StudentExtensionRequestResource,
+        "/students/me/bookings/<int:booking_id>/extension-request",
+    )
+    api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
+    api.add_resource(
+        StaffExtensionRequestApproveResource,
+        "/staff/extension-requests/<int:extension_request_id>/approve",
+    )
+    api.add_resource(
+        StaffExtensionRequestRejectResource,
+        "/staff/extension-requests/<int:extension_request_id>/reject",
+    )
+
+    api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
+    api.add_resource(
+        MarkNoShowResource,
+        "/staff/bookings/<int:booking_id>/no-show",
+    )
+
+    api.add_resource(StaffPaymentListResource, "/staff/payments")
+    api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")
+    api.add_resource(
+        StaffStudentPaymentHistoryResource,
+        "/staff/students/<int:student_id>/payments",
+    )
+
+    api.add_resource(StudentComplaintCreateResource, "/students/me/complaints")
+    api.add_resource(StaffComplaintListResource, "/staff/complaints")
+    api.add_resource(
+        StaffComplaintUpdateResource,
+        "/staff/complaints/<int:complaint_id>",
+    )
+
+    api.add_resource(AdminAnnouncementListCreateResource, "/admin/announcements")
+    api.add_resource(AnnouncementListResource, "/announcements")
+    api.add_resource(
+        AdminAnnouncementDetailResource,
+        "/admin/announcements/<int:announcement_id>",
+    )
+
+    api.add_resource(OccupancyReportResource, "/admin/reports/occupancy")
+    api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
+    api.add_resource(RevenueReportResource, "/admin/reports/revenue")
+    api.add_resource(MembershipStatsReportResource, "/admin/reports/membership-stats")
     
          
 
     with app.app_context():
         db.create_all()
+        upgrade_sqlite_schema()
         seed_data()
 
     return app
+
+
+def upgrade_sqlite_schema():
+    """Apply compatibility changes needed by older local SQLite databases."""
+    if db.engine.dialect.name != "sqlite":
+        return
+
+    columns = {column["name"] for column in inspect(db.engine).get_columns("membership_plans")}
+    if "is_active" not in columns:
+        db.session.execute(
+            text("ALTER TABLE membership_plans ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+        )
+        db.session.commit()
 
 
 def seed_data():

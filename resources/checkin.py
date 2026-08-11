@@ -1,4 +1,4 @@
-from datetime import date as date_cls, datetime
+from datetime import date as date_cls, datetime, timezone
 from flask import request
 from flask_restful import Resource
 from flask_jwt_extended import get_jwt_identity
@@ -31,7 +31,7 @@ class StaffCheckinResource(Resource):
 
         attendance = Attendance(
             booking_id=booking.booking_id,
-            checkin_time=datetime.utcnow(),
+            checkin_time=datetime.now(timezone.utc),
             verified_by=int(get_jwt_identity()),
         )
         booking.status = "Checked-In"

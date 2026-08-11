@@ -6,7 +6,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from models import db, Seat, Booking, Student, User, Attendance
 from flask_jwt_extended import get_jwt
 from utils import staff_or_admin_required
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def generate_checkin_code():
     return secrets.token_hex(4).upper()
@@ -170,7 +170,7 @@ class BookingCheckoutResource(Resource):
         if not attendance:
             return {"message": "No open attendance record found for this booking"}, 404
 
-        attendance.checkout_time = datetime.utcnow()
+        attendance.checkout_time = datetime.now(timezone.utc)
         booking.status = "Completed"
         db.session.commit()
 

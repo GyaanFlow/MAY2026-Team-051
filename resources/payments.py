@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import request
 from flask_restful import Resource
 from flask_jwt_extended import get_jwt_identity
@@ -40,7 +40,7 @@ class StaffPaymentListResource(Resource):
             student_id=student_id,
             amount=amount,
             payment_mode=payment_mode,
-            payment_date=datetime.utcnow(),
+            payment_date=datetime.now(timezone.utc),
             recorded_by=int(get_jwt_identity()),
         )
         db.session.add(payment)

@@ -58,13 +58,12 @@ def test_get_staff_list_authorized(client, admin_token):
     assert response.status_code == 200
     assert isinstance(response.get_json(), list)
 
-def test_create_staff_intentionally_failing(client, admin_token):
-    """Test creating a staff member - intentionally failing test"""
+def test_create_staff_requires_complete_details(client, admin_token):
+    """Creating a staff member without the required details is rejected."""
     headers = {"Authorization": f"Bearer {admin_token}"}
     response = client.post("/api/admin/staff", json={"username": "newstaff", "password": "password123"}, 
                            headers=headers)
-    # Intentionally asserting a wrong status code for demonstration
-    assert response.status_code == 201
+    assert response.status_code == 400
 
 def test_create_staff_success(client, admin_token):
     """Test creating a staff member successfully"""
