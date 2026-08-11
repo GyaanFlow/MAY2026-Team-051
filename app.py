@@ -44,6 +44,7 @@ from resources.extension_requests import (
 )
 from resources.checkin import StaffCheckinResource
 from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
+from resources.payments import StaffPaymentListResource
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -107,6 +108,8 @@ def create_app(config_class=Config):
 
     api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
     api.add_resource(MarkNoShowResource, "/staff/bookings/<int:booking_id>/no-show")
+
+    api.add_resource(StaffPaymentListResource, "/staff/payments")
 
     with app.app_context():
         db.create_all()
