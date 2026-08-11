@@ -410,3 +410,93 @@ def test_staff_checkin_role_restriction(client, student_token, todays_booking):
     )
     assert response.status_code == 403
 
+
+# --- STORY 4.3: NO-SHOW MANAGEMENT ---
+
+@pytest.fixture
+def overdue_booking(client, student_token):
+    from datetime import datetime as dt, timedelta as td
+    headers = {"Authorization": f"Bearer {student_token}"}
+    now = dt.now()
+    start = (now - td(minutes=90)).time().replace(microsecond=0)
+    end = (now - td(minutes=30)).time().replace(microsecond=0)
+    response = client.post("/api/bookings", json={
+        "seat_id": 5, "date": str(date.today()),
+        "start_time": start.strftime("%H:%M"), "end_time": end.strftime("%H:%M"),
+    }, headers=headers)
+    return response.get_json()["booking"]
+
+def test_no_show_candidates_lists_overdue_booking(client, staff_token, overdue_booking):
+    """A Confirmed booking whose slot has already passed shows up as a candidate"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get("/api/staff/bookings/no-show-candidates", headers=headers)
+    assert response.status_code == 200
+    ids = [c["booking_id"] for c in response.get_json()["candidates"]]
+    assert overdue_booking["booking_id"] in ids
+
+def test_no_show_candidates_excludes_future_booking(client, staff_token, confirmed_booking):
+    """A booking dated in the future is not a no-show candidate"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get("/api/staff/bookings/no-show-candidates", headers=headers)
+    assert response.status_code == 200
+    ids = [c["booking_id"] for c in response.get_json()["candidates"]]
+    assert confirmed_booking["booking_id"] not in ids
+
+def test_mark_no_show_success(client, staff_token, overdue_booking):
+    """Staff can mark an overdue Confirmed booking as No-Show"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(f"/api/staff/bookings/{overdue_booking['booking_id']}/no-show", headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()["booking"]["status"] == "No-Show"
+
+def test_mark_no_show_frees_seat_for_new_booking(client, staff_token, overdue_booking, admin_token):
+    """After marking no-show, the same seat/slot can be booked again"""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post(f"/api/staff/bookings/{overdue_booking['booking_id']}/no-show", headers=staff_headers)
+
+    other_token = register_and_approve_student(client, admin_token, "noshowstudent2")
+    response = client.post("/api/bookings", json={
+        "seat_id": overdue_booking["seat_id"],
+        "date": overdue_booking["booking_date"],
+        "start_time": overdue_booking["start_time"],
+        "end_time": overdue_booking["end_time"],
+    }, headers={"Authorization": f"Bearer {other_token}"})
+    assert response.status_code == 201
+
+def test_mark_no_show_before_grace_period_rejected(client, staff_token, todays_booking):
+    """A booking still within the configured grace period cannot be marked no-show yet"""
+    from app import db
+    from models import LibrarySettings
+    with client.application.app_context():
+        settings = LibrarySettings.query.first()
+        settings.no_show_grace_minutes = 100000
+        db.session.commit()
+
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(f"/api/staff/bookings/{todays_booking['booking_id']}/no-show", headers=headers)
+    assert response.status_code == 400
+
+def test_mark_no_show_not_found(client, staff_token):
+    """Unknown booking_id returns 404"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/bookings/9999/no-show", headers=headers)
+    assert response.status_code == 404
+
+def test_mark_no_show_already_cancelled_rejected(client, staff_token, student_token, todays_booking):
+    """A Cancelled booking cannot be marked no-show"""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    client.post(f"/api/bookings/{todays_booking['booking_id']}/cancel", headers=student_headers)
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(f"/api/staff/bookings/{todays_booking['booking_id']}/no-show", headers=staff_headers)
+    assert response.status_code == 400
+
+def test_no_show_endpoints_role_restriction(client, student_token, overdue_booking):
+    """Students cannot list candidates or mark bookings as no-show"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/staff/bookings/no-show-candidates", headers=headers)
+    assert response.status_code == 403
+
+    response = client.post(f"/api/staff/bookings/{overdue_booking['booking_id']}/no-show", headers=headers)
+    assert response.status_code == 403
+

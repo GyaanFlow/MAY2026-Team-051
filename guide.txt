@@ -60,6 +60,8 @@ seProject/
 |                                          and seat reassignment (Story 3.7)
 |     |-- checkin.py                      -> staff verifies a checkin_code and records
 |                                          attendance (Story 4.1/4.2)
+|     |-- no_show.py                       -> staff lists overdue Confirmed bookings and
+|                                          marks them No-Show, releasing the seat (Story 4.3)
 
 NOTE: resources/students.py (the original generic student CRUD file) was
 removed. It duplicated functionality that staff_students.py and
@@ -302,16 +304,34 @@ POST   /api/staff/checkin
     Looks up the Confirmed booking with this checkin_code, creates an
     attendance row (checkin_time = now, verified_by = acting staff/admin),
     and flips the booking's status to "Checked-In". Booking status values
-    are now "Confirmed" / "Checked-In" / "Cancelled" (Checked-In added by
-    this story; Completed/No-Show belong to Stories 4.3/4.4 and are not
-    implemented yet).
+    are now "Confirmed" / "Checked-In" / "Cancelled" / "No-Show"
+    (Checked-In added by this story, No-Show added by Story 4.3 below;
+    Completed still belongs to Story 4.4 and is not implemented yet).
     The booking must be dated today - this endpoint verifies a student
     physically arriving right now, so a checkin_code for a future advance
     booking is rejected until its date arrives. (No time-of-day window
-    check yet - that belongs to Story 4.3's no_show_grace_minutes logic.)
+    check here - that's Story 4.3's no_show_grace_minutes logic, see
+    section 5.13.)
     Errors: 400 missing/empty checkin_code, 404 checkin_code not found,
     400 booking not Confirmed (already checked in, cancelled, etc.) or
     not dated today.
+
+5.13 NO-SHOW MANAGEMENT (Story 4.3 - Staff or Admin)
+GET    /api/staff/bookings/no-show-candidates
+    Body: none. Lists every Confirmed booking whose slot (booking_date +
+    start_time) is at or past library_settings.no_show_grace_minutes
+    from now. If no_show_grace_minutes is unset (null), grace defaults
+    to 0 - a booking becomes a candidate the moment its start_time
+    passes. Response includes grace_minutes used and each candidate
+    annotated with seat_number/full_name/username/minutes_overdue,
+    sorted most-overdue first.
+POST   /api/staff/bookings/<booking_id>/no-show
+    Body: none. Marks a Confirmed booking No-Show once it's past the
+    same grace cutoff used above, freeing its seat immediately (the
+    same overlap queries that block double-booking only match
+    status="Confirmed", so nothing else needs updating).
+    Errors: 404 booking not found; 400 booking not Confirmed (already
+    Checked-In/Cancelled/No-Show) or still within the grace period.
 
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
@@ -458,14 +478,42 @@ Story 4.1/4.2 (2026-08-11):
   success, missing/invalid checkin_code, already-checked-in, wrong-date,
   cancelled-booking, and role-restriction cases.
 
+Story 4.3 (2026-08-11):
+- Implemented No-Show Management
+  (resources/no_show.py: NoShowCandidatesResource, MarkNoShowResource;
+  GET /staff/bookings/no-show-candidates, POST
+  /staff/bookings/<id>/no-show).
+- Wires up library_settings.no_show_grace_minutes, the last remaining
+  unused column left over from Story 2.1's schema (see section 5.8/13).
+  Unlike extension_limit_minutes (Story 3.7), which is unenforced until
+  an Admin sets it, a null grace period here defaults to 0 minutes -
+  the story's entire purpose is marking overdue bookings, so it needs
+  to work out of the box without any DB setup.
+  There is still no PUT /admin/settings support for this column - only
+  settable directly in the DB or a future admin route.
+  No schema/model change was needed for Booking.status: it's a free
+  string column, so "No-Show" is just a new value alongside the
+  existing Confirmed/Checked-In/Cancelled (dbSchema.docx's
+  booking_status enum already lists No-Show). Marking a booking
+  No-Show frees its seat automatically, with no extra code - every
+  overlap/availability query already filters on status="Confirmed", so
+  a booking that's left that status stops blocking the slot.
+- Added pytest coverage in test_app.py (fixture: overdue_booking, a
+  Confirmed booking dated today with start/end times already in the
+  past) for: candidate listing includes overdue/excludes future
+  bookings, successful no-show marking, seat becomes rebookable
+  afterward, rejection while still within a configured grace period,
+  404 on unknown booking, rejection of an already-cancelled booking,
+  and role restriction.
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
 
 - Confirm whether membership_id needs a separate Membership table
 - Connect frontend (Vue) to these endpoints
-- Add remaining stories (Epic 4 check-in/attendance, Epic 5 payments,
-  Epic 6 complaints/announcements) if required
+- Add remaining stories (Story 4.4 study session check-out, Epic 5
+  payments, Epic 6 complaints/announcements) if required
 - Local `dev` is still stale relative to origin/dev - pull before
   branching further work off it
 - Story 2.4 (Library Reports & Analytics) intentionally deferred - not
@@ -859,6 +907,32 @@ Negative: checkin_code from a booking dated in the future -> 400
 Negative: checkin_code from a Cancelled booking -> 400
 Negative: with student_token -> 403
 
+TEST 30 - Staff lists no-show candidates (Story 4.3)
+(First create a Confirmed booking whose date/start_time is already in
+the past, e.g. today's date with a start_time earlier than now, and
+leave it un-checked-in.)
+Method: GET
+URL:    http://localhost:5000/api/staff/bookings/no-show-candidates
+Auth:   Bearer {{staff_token}}
+Expected: 200, includes grace_minutes (0 unless configured), and the
+overdue booking with seat_number/full_name/username/minutes_overdue
+Negative: a future-dated Confirmed booking does not appear in the list
+Negative: with student_token -> 403
+
+TEST 31 - Staff marks a booking No-Show (Story 4.3)
+Method: POST
+URL:    http://localhost:5000/api/staff/bookings/<booking_id>/no-show
+Auth:   Bearer {{staff_token}}
+Expected: 200, booking.status becomes "No-Show"
+Negative: call again on the same booking -> 400 (no longer Confirmed)
+Negative: /api/staff/bookings/999/no-show -> 404
+Negative: a booking still within the grace period (e.g. set
+library_settings.no_show_grace_minutes very high first) -> 400
+Negative: a Cancelled booking -> 400
+Negative: with student_token -> 403
+Then: confirm the same seat/slot can be booked again by another student
+(the seat was released).
+
 CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
@@ -903,6 +977,13 @@ CHECKLIST
 [ ] Check-in rejects an unknown checkin_code (404)
 [ ] Check-in rejects a future-dated or Cancelled booking (400)
 [ ] Students are blocked (403) from POST /staff/checkin
+[ ] Staff can list no-show candidates (overdue Confirmed bookings only)
+[ ] No-show candidates list excludes future-dated bookings
+[ ] Staff can mark an overdue Confirmed booking as No-Show
+[ ] No-show marking frees the seat for a new booking in that slot
+[ ] No-show is rejected while still within the configured grace period
+[ ] No-show rejects an unknown booking_id (404) or non-Confirmed booking (400)
+[ ] Students are blocked (403) from both no-show endpoints
 
 ========================================================================
 13. DATABASE SCHEMA (ERD SUMMARY)
@@ -970,10 +1051,11 @@ booking_date    Date            required
 start_time      Time            required
 end_time        Time            required, must be after start_time
 checkin_code    String(20)      unique, auto-generated (secrets.token_hex)
-status          String(20)      "Confirmed" / "Checked-In" / "Cancelled",
-                                defaults to Confirmed (Checked-In added by
-                                Story 4.1/4.2; Completed/No-Show still
-                                unimplemented - Stories 4.3/4.4)
+status          String(20)      "Confirmed" / "Checked-In" / "Cancelled" /
+                                "No-Show", defaults to Confirmed
+                                (Checked-In added by Story 4.1/4.2,
+                                No-Show added by Story 4.3; Completed
+                                still unimplemented - Story 4.4)
 created_at      DateTime        set on creation
 
 Managed via /bookings, /students/me/bookings, /staff/bookings/*,
@@ -1022,7 +1104,15 @@ setting_id                Integer PK      auto-increment
 open_time                 Time            set via PUT /admin/settings (Story 2.1)
 close_time                Time            set via PUT /admin/settings (Story 2.1)
 total_seats                Integer         not yet managed by any story - null
-no_show_grace_minutes      Integer         not yet managed by any story - null
+no_show_grace_minutes      Integer         managed by Story 4.3 - when set (non-
+                                           null), a Confirmed booking becomes a
+                                           no-show candidate this many minutes
+                                           after its start_time; null defaults to
+                                           0 (candidate as soon as start_time
+                                           passes). No PUT /admin/settings
+                                           support for it yet - only settable
+                                           directly in the DB or a future admin
+                                           route
 cancellation_period        Integer         not yet managed by any story - null
 max_booking_days_ahead     Integer         not yet managed by any story - null
 extension_limit_minutes    Integer         managed by Story 3.7 - when set (non-
@@ -1093,14 +1183,20 @@ is_active (Seat)    - true = bookable, false = out of service (see section
 checkin_code        - auto-generated unique code returned when a booking is
                       created; will be what Epic 4's check-in flow verifies
                       against, once built
-booking status      - "Confirmed", "Checked-In", or "Cancelled" (there is
-                      no "Completed" or "No-Show" status yet - those
-                      belong to Stories 4.3/4.4)
+booking status      - "Confirmed", "Checked-In", "Cancelled", or
+                      "No-Show" (added by Story 4.3); there is no
+                      "Completed" status yet - that belongs to Story 4.4
 checkin_time        - set on the attendance row when staff verifies a
                       student's checkin_code (Story 4.1/4.2)
 checkout_time       - set on the attendance row when the student checks
                       out; null until Story 4.4 is implemented
 verified_by         - the staff/admin user_id who performed the check-in
+no_show_grace_minutes - minutes after a Confirmed booking's start_time
+                      before it becomes eligible to be marked No-Show;
+                      null/unset behaves as 0 (Story 4.3)
+minutes_overdue     - computed, not stored; how far past the no-show
+                      cutoff a candidate booking is, returned by
+                      GET /staff/bookings/no-show-candidates
 requested_end_time  - the new end_time a student is asking for on an
                       extension request; must be after the booking's current
                       end_time and, if extension_limit_minutes is set, within
