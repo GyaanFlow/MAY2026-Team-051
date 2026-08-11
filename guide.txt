@@ -39,7 +39,8 @@ seProject/
 |-- app.py                  -> creates Flask app, registers all routes, seeds admin+plans
 |-- config.py                -> app config (secret keys, database URL, JWT expiry)
 |-- models.py                 -> SQLAlchemy models: User, MembershipPlan, Student,
-|                                 Seat, LibrarySettings, Booking, ExtensionRequest
+|                                 Seat, LibrarySettings, Booking, Attendance,
+|                                 ExtensionRequest, Payment
 |-- utils.py                   -> admin_required, staff_or_admin_required, student_required decorators
 |-- requirements.txt            -> pinned dependency versions
 |-- resources/
@@ -63,6 +64,8 @@ seProject/
 |                                          attendance (Story 4.1/4.2)
 |     |-- no_show.py                       -> staff lists overdue Confirmed bookings and
 |                                          marks them No-Show, releasing the seat (Story 4.3)
+|     |-- payments.py                       -> staff records an offline payment against a
+|                                          student (Story 5.1)
 
 NOTE: resources/students.py (the original generic student CRUD file) was
 removed. It duplicated functionality that staff_students.py and
@@ -351,6 +354,24 @@ POST   /api/bookings/<booking_id>/checkout
     not your booking; 400 booking not currently Checked-In (never
     checked in, cancelled, already checked out, etc.).
 
+5.15 OFFLINE PAYMENT RECORDING (Story 5.1 - Staff or Admin)
+POST   /api/staff/payments
+    Body: { "student_id": 1, "amount": 500, "payment_mode": "Cash" }
+    payment_mode must be one of "Cash" / "UPI" / "Card" (the fixed set
+    dbSchema.docx documents for this column, unlike free-text fields
+    such as id_type/seat_type). payment_date and recorded_by are always
+    server-set (payment_date = now, recorded_by = the acting staff/
+    admin) - the client cannot backdate a payment or claim it was
+    recorded by someone else.
+    New Payment model (payment_id, student_id, amount, payment_mode,
+    payment_date, recorded_by) - see section 13. dbSchema.docx's
+    payments table also has a membership_id column; it's omitted here
+    because, per the existing membership_id == student_id convention
+    (section 15 item 1), it would just duplicate student_id with no new
+    information.
+    Errors: 400 missing/invalid student_id, amount (must be a positive
+    number), or payment_mode; 404 student not found.
+
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
 ========================================================================
@@ -549,15 +570,46 @@ Story 4.4 (2026-08-11):
   booking, 403 for a non-owner student, and 400 on a second checkout
   attempt.
 
+Story 5.1 (2026-08-11):
+- Implemented Offline Payment Recording
+  (models.py: new Payment model; resources/payments.py:
+  StaffPaymentListResource; POST /staff/payments).
+- dbSchema.docx's payments table includes a membership_id column;
+  omitted here since, per the existing membership_id == student_id
+  convention (section 15 item 1), it would just be a second column
+  holding the same value as student_id. Flag this with the team if a
+  real memberships table gets built later - see section 15 item 12.
+- payment_mode is validated against a fixed set (Cash/UPI/Card, per
+  dbSchema.docx's inline comment) - the first payment-mode-shaped field
+  in the project to get allowlist validation rather than free text.
+- payment_date and recorded_by are always server-set, never accepted
+  from the request body, consistent with created_at/checkin_time/
+  requested_at elsewhere in the app.
+- Added pytest coverage in test_app.py (fixture: payment_student_id) for
+  successful recording, invalid payment_mode, missing/non-positive
+  amount, unknown student_id, and role restriction.
+- Drive-by fix: Story 4.3's overdue_booking fixture computed
+  start_time/end_time as (now - N minutes).time() but kept booking_date
+  pinned to today. Near midnight, now-minus-90-minutes wraps to
+  yesterday and .time() silently drops the date change, leaving a
+  start_time that's actually still hours in the future relative to
+  today's date - the fixture stopped producing an overdue booking and
+  every no-show test using it failed. Fixed by dating the fixture's
+  booking yesterday with a fixed 10:00-11:00 slot, which is always in
+  the past regardless of wall-clock time. Caught by chance running this
+  story's tests right after midnight.
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
 
 - Confirm whether membership_id needs a separate Membership table
 - Connect frontend (Vue) to these endpoints
-- Epic 4 (Check-in & Attendance Management) is now fully implemented
-  (Stories 4.1-4.4). Remaining stories: Epic 5 (payments), Epic 6
-  (complaints/announcements), Story 2.4 (reports/analytics) - see below.
+- Epic 4 (Check-in & Attendance Management) is fully implemented
+  (Stories 4.1-4.4). Story 5.1 (Offline Payment Recording) is done;
+  Story 5.2 (Payment History) is not yet implemented. Epic 6
+  (complaints/announcements), Story 2.4 (reports/analytics) also remain
+  - see below.
 - Local `dev` is still stale relative to origin/dev - pull before
   branching further work off it
 - Story 2.4 (Library Reports & Analytics) intentionally deferred - not
@@ -989,6 +1041,23 @@ Negative: checkout a booking that was never checked in (still Confirmed) -> 400
 Negative: a different student's token on this booking -> 403
 Also verify: staff_token/admin_token can check out on the student's behalf -> 200
 
+TEST 33 - Staff records an offline payment (Story 5.1)
+Method: POST
+URL:    http://localhost:5000/api/staff/payments
+Auth:   Bearer {{staff_token}}
+Body:
+{
+  "student_id": 1,
+  "amount": 500,
+  "payment_mode": "Cash"
+}
+Expected: 201, response includes payment_date/recorded_by set by the server
+Negative body: { "student_id": 1, "amount": 500, "payment_mode": "Cheque" } -> 400
+Negative body: { "student_id": 1, "payment_mode": "UPI" } -> 400 (amount missing)
+Negative body: { "student_id": 1, "amount": -50, "payment_mode": "Cash" } -> 400
+Negative: "student_id": 999 -> 404
+Negative: with student_token -> 403
+
 CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
@@ -1046,6 +1115,11 @@ CHECKLIST
 [ ] Checkout rejects an unknown booking_id (404)
 [ ] A non-owner student is blocked (403) from checking out someone else's booking
 [ ] A second checkout attempt on the same booking is blocked (400)
+[ ] Staff can record a payment with a valid payment_mode
+[ ] Payment recording rejects an invalid payment_mode (400)
+[ ] Payment recording rejects missing/non-positive amount (400)
+[ ] Payment recording rejects an unknown student_id (404)
+[ ] Students are blocked (403) from recording payments
 
 ========================================================================
 13. DATABASE SCHEMA (ERD SUMMARY)
@@ -1163,6 +1237,25 @@ Managed via /students/me/bookings/<id>/extension-request and
 new booking - it mutates the existing Booking row's end_time (and
 seat_id, if the staff member reassigns to a different seat).
 
+TABLE: payments
+--------------------------------------------------------------------
+Column          Type            Notes
+payment_id      Integer PK      auto-increment
+student_id      Integer FK      -> students.student_id
+amount          Numeric(10,2)   required, must be positive
+payment_mode    String(20)      "Cash" / "UPI" / "Card" only (validated,
+                                unlike most other free-text fields)
+payment_date    DateTime        server-set to now on creation - not
+                                accepted from the request body
+recorded_by     Integer FK      -> users.user_id, the staff/admin who
+                                recorded the payment
+
+Created via POST /staff/payments (Story 5.1). dbSchema.docx's payments
+table also has a membership_id FK; omitted here because, under the
+existing membership_id == student_id convention (see IMPORTANT note
+below), it would just duplicate student_id - see section 15 item 12.
+No GET route yet (Story 5.2 - Payment History - is not implemented).
+
 TABLE: library_settings
 --------------------------------------------------------------------
 Column                    Type            Notes
@@ -1207,12 +1300,16 @@ bookings (1) ----- (many) extension_requests  [a booking can accumulate multiple
 users (1) ----- (many) extension_requests.approved_by  [tracks which staff/admin resolved each request]
 bookings (1) ----- (many) attendance  [in practice one per booking, since check-in is only allowed once per Confirmed booking]
 users (1) ----- (many) attendance.verified_by  [tracks which staff/admin performed the check-in]
+students (1) ----- (many) payments  [a student can have many recorded payments over time]
+users (1) ----- (many) payments.recorded_by  [tracks which staff/admin recorded each payment]
 
 IMPORTANT: There is currently NO separate "memberships" table. The admin
 membership routes (/api/admin/memberships/...) reuse student_id as the
-membership_id. If your project brief requires a separate membership
-history table (e.g. to track multiple past memberships per student),
-this needs a new model - flag this with your team before final submission.
+membership_id, and payments.membership_id (present in dbSchema.docx) is
+dropped for the same reason (section 15 item 12). If your project brief
+requires a separate membership history table (e.g. to track multiple
+past memberships per student), this needs a new model - flag this with
+your team before final submission.
 
 ========================================================================
 14. FIELD REFERENCE (WHAT EACH FIELD MEANS)
@@ -1274,6 +1371,14 @@ status                Pending  -> just submitted, awaiting staff decision
                                  reassigned to a different one)
                       Rejected -> staff declined the request; the original
                                  booking is untouched
+amount              - the payment value; must be a positive number
+                      (Story 5.1)
+payment_mode        - one of: Cash, UPI, Card - how the offline payment
+                      was collected (Story 5.1)
+payment_date        - when the payment was recorded; always server-set
+                      to the current time, never accepted from the
+                      client (Story 5.1)
+recorded_by         - the staff/admin user_id who recorded the payment
 
 ========================================================================
 15. DESIGN ASSUMPTIONS AND KNOWN LIMITATIONS
@@ -1359,6 +1464,15 @@ status                Pending  -> just submitted, awaiting staff decision
     booking the seat was administratively free from check-in onward;
     checkout's role is closing the attendance record and marking the
     session finished, not the seat release itself.
+
+12. payments.membership_id (dbSchema.docx) is not stored
+    dbSchema.docx's payments table has both student_id and
+    membership_id FKs. Since there is no separate memberships table
+    (item 1 above - membership_id is just student_id), a membership_id
+    column on payments would always hold the exact same value as
+    student_id. Rather than add a redundant column, Story 5.1's Payment
+    model only has student_id. If a real memberships table gets built
+    later, add membership_id to Payment at the same time.
 
 ========================================================================
 16. ENVIRONMENT VARIABLES (OPTIONAL, FOR PRODUCTION SETUP)

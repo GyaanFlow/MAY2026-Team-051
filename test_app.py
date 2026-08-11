@@ -415,14 +415,15 @@ def test_staff_checkin_role_restriction(client, student_token, todays_booking):
 
 @pytest.fixture
 def overdue_booking(client, student_token):
-    from datetime import datetime as dt, timedelta as td
+    from datetime import timedelta as td
     headers = {"Authorization": f"Bearer {student_token}"}
-    now = dt.now()
-    start = (now - td(minutes=90)).time().replace(microsecond=0)
-    end = (now - td(minutes=30)).time().replace(microsecond=0)
+    # Dated yesterday so the slot is unambiguously in the past regardless of
+    # the current wall-clock time (a same-day now-minus-N-minutes offset can
+    # wrap past midnight and land in the future - see guide.txt section 15).
+    yesterday = date.today() - td(days=1)
     response = client.post("/api/bookings", json={
-        "seat_id": 5, "date": str(date.today()),
-        "start_time": start.strftime("%H:%M"), "end_time": end.strftime("%H:%M"),
+        "seat_id": 5, "date": str(yesterday),
+        "start_time": "10:00", "end_time": "11:00",
     }, headers=headers)
     return response.get_json()["booking"]
 
@@ -550,4 +551,70 @@ def test_checkout_twice_rejected(client, student_token, checked_in_booking):
     client.post(url, headers=headers)
     response = client.post(url, headers=headers)
     assert response.status_code == 400
+
+
+# --- STORY 5.1: OFFLINE PAYMENT RECORDING ---
+
+@pytest.fixture
+def payment_student_id(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    client.post("/api/staff/students/register", json={
+        "username": "paystudent", "password": "password123",
+        "email": "paystudent@library.com", "full_name": "Pay Student",
+    }, headers=headers)
+    pending = client.get("/api/admin/memberships/pending", headers=headers).get_json()
+    return next(s["student_id"] for s in pending if s["full_name"] == "Pay Student")
+
+def test_staff_record_payment_success(client, staff_token, payment_student_id):
+    """Staff can record an offline payment against a student"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": payment_student_id, "amount": 500, "payment_mode": "Cash"
+    }, headers=headers)
+    assert response.status_code == 201
+    body = response.get_json()["payment"]
+    assert body["amount"] == 500.0
+    assert body["payment_mode"] == "Cash"
+    assert body["student_id"] == payment_student_id
+    assert body["full_name"] == "Pay Student"
+
+def test_staff_record_payment_invalid_mode(client, staff_token, payment_student_id):
+    """An unsupported payment_mode returns 400"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": payment_student_id, "amount": 500, "payment_mode": "Cheque"
+    }, headers=headers)
+    assert response.status_code == 400
+
+def test_staff_record_payment_missing_amount(client, staff_token, payment_student_id):
+    """Missing amount returns 400"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": payment_student_id, "payment_mode": "UPI"
+    }, headers=headers)
+    assert response.status_code == 400
+
+def test_staff_record_payment_negative_amount(client, staff_token, payment_student_id):
+    """Non-positive amount returns 400"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": payment_student_id, "amount": -50, "payment_mode": "Cash"
+    }, headers=headers)
+    assert response.status_code == 400
+
+def test_staff_record_payment_student_not_found(client, staff_token):
+    """Unknown student_id returns 404"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": 9999, "amount": 500, "payment_mode": "Cash"
+    }, headers=headers)
+    assert response.status_code == 404
+
+def test_staff_record_payment_role_restriction(client, student_token, payment_student_id):
+    """Students cannot record payments"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": payment_student_id, "amount": 500, "payment_mode": "Cash"
+    }, headers=headers)
+    assert response.status_code == 403
 

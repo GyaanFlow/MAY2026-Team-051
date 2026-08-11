@@ -182,3 +182,24 @@ class ExtensionRequest(db.Model):
             "approved_by": self.approved_by,
             "requested_at": str(self.requested_at),
         }
+
+
+class Payment(db.Model):
+    __tablename__ = "payments"
+
+    payment_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.student_id"), nullable=False)
+    amount = db.Column(db.Numeric(10, 2), nullable=False)
+    payment_mode = db.Column(db.String(20), nullable=False)
+    payment_date = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+    recorded_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
+
+    def to_dict(self):
+        return {
+            "payment_id": self.payment_id,
+            "student_id": self.student_id,
+            "amount": float(self.amount) if self.amount is not None else None,
+            "payment_mode": self.payment_mode,
+            "payment_date": str(self.payment_date) if self.payment_date else None,
+            "recorded_by": self.recorded_by,
+        }
