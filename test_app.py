@@ -1,5 +1,6 @@
 import pytest
 import json
+from datetime import date
 from app import create_app, db
 from models import User
 from werkzeug.security import generate_password_hash
@@ -331,4 +332,81 @@ def test_extension_limit_minutes_enforced(client, staff_token, student_token, co
         json={"requested_end_time": "11:10"}, headers=student_headers,
     )
     assert within_limit.status_code == 201
+
+
+# --- STORY 4.1/4.2: STUDENT CHECK-IN / CHECK-IN VERIFICATION ---
+
+@pytest.fixture
+def todays_booking(client, student_token):
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/bookings", json={
+        "seat_id": 2, "date": str(date.today()), "start_time": "10:00", "end_time": "11:00"
+    }, headers=headers)
+    return response.get_json()["booking"]
+
+def test_staff_checkin_missing_body(client, staff_token):
+    """Non-JSON body returns 400"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/checkin", data="not json", headers=headers)
+    assert response.status_code == 400
+
+def test_staff_checkin_missing_code(client, staff_token):
+    """Missing checkin_code returns 400"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/checkin", json={}, headers=headers)
+    assert response.status_code == 400
+
+def test_staff_checkin_invalid_code(client, staff_token):
+    """Unknown checkin_code returns 404"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/checkin", json={"checkin_code": "NOPE1234"}, headers=headers)
+    assert response.status_code == 404
+
+def test_staff_checkin_success(client, staff_token, todays_booking):
+    """Valid checkin_code for a today-dated Confirmed booking creates attendance and updates status"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        "/api/staff/checkin", json={"checkin_code": todays_booking["checkin_code"]}, headers=headers
+    )
+    assert response.status_code == 201
+    body = response.get_json()
+    assert body["attendance"]["booking_id"] == todays_booking["booking_id"]
+    assert body["attendance"]["checkin_time"] is not None
+    assert body["attendance"]["booking"]["status"] == "Checked-In"
+    assert body["attendance"]["seat_number"] == "S02"
+
+def test_staff_checkin_already_checked_in(client, staff_token, todays_booking):
+    """A second check-in attempt on the same booking returns 400"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    url = "/api/staff/checkin"
+    client.post(url, json={"checkin_code": todays_booking["checkin_code"]}, headers=headers)
+    response = client.post(url, json={"checkin_code": todays_booking["checkin_code"]}, headers=headers)
+    assert response.status_code == 400
+
+def test_staff_checkin_wrong_date_rejected(client, staff_token, confirmed_booking):
+    """A booking not scheduled for today cannot be checked in"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        "/api/staff/checkin", json={"checkin_code": confirmed_booking["checkin_code"]}, headers=headers
+    )
+    assert response.status_code == 400
+
+def test_staff_checkin_cancelled_booking_rejected(client, staff_token, student_token, todays_booking):
+    """A cancelled booking cannot be checked in"""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    client.post(f"/api/bookings/{todays_booking['booking_id']}/cancel", headers=student_headers)
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        "/api/staff/checkin", json={"checkin_code": todays_booking["checkin_code"]}, headers=staff_headers
+    )
+    assert response.status_code == 400
+
+def test_staff_checkin_role_restriction(client, student_token, todays_booking):
+    """Students cannot call the staff check-in endpoint"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(
+        "/api/staff/checkin", json={"checkin_code": todays_booking["checkin_code"]}, headers=headers
+    )
+    assert response.status_code == 403
 

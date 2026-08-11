@@ -144,6 +144,25 @@ class Booking(db.Model):
         }
 
 
+class Attendance(db.Model):
+    __tablename__ = "attendance"
+
+    attendance_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("bookings.booking_id"), nullable=False)
+    checkin_time = db.Column(db.DateTime, nullable=False)
+    checkout_time = db.Column(db.DateTime, nullable=True)
+    verified_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
+
+    def to_dict(self):
+        return {
+            "attendance_id": self.attendance_id,
+            "booking_id": self.booking_id,
+            "checkin_time": str(self.checkin_time) if self.checkin_time else None,
+            "checkout_time": str(self.checkout_time) if self.checkout_time else None,
+            "verified_by": self.verified_by,
+        }
+
+
 class ExtensionRequest(db.Model):
     __tablename__ = "extension_requests"
 

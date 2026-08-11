@@ -41,6 +41,7 @@ from resources.extension_requests import (
     StaffExtensionRequestApproveResource,
     StaffExtensionRequestRejectResource,
 )
+from resources.checkin import StaffCheckinResource
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -98,6 +99,8 @@ def create_app(config_class=Config):
     api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
     api.add_resource(StaffExtensionRequestApproveResource, "/staff/extension-requests/<int:extension_request_id>/approve")
     api.add_resource(StaffExtensionRequestRejectResource, "/staff/extension-requests/<int:extension_request_id>/reject")
+
+    api.add_resource(StaffCheckinResource, "/staff/checkin")
 
     with app.app_context():
         db.create_all()

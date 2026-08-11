@@ -58,6 +58,8 @@ seProject/
 |     |                                   admission (Stories 3.2-3.6)
 |     |-- extension_requests.py          -> booking extension request/approve/reject
 |                                          and seat reassignment (Story 3.7)
+|     |-- checkin.py                      -> staff verifies a checkin_code and records
+|                                          attendance (Story 4.1/4.2)
 
 NOTE: resources/students.py (the original generic student CRUD file) was
 removed. It duplicated functionality that staff_students.py and
@@ -294,6 +296,23 @@ availability search, and extension approval alike):
 This correctly blocks partial overlaps while still allowing back-to-back
 bookings (one ending exactly when another starts).
 
+5.12 CHECK-IN & ATTENDANCE (Story 4.1/4.2 - Staff or Admin)
+POST   /api/staff/checkin
+    Body: { "checkin_code": "" }
+    Looks up the Confirmed booking with this checkin_code, creates an
+    attendance row (checkin_time = now, verified_by = acting staff/admin),
+    and flips the booking's status to "Checked-In". Booking status values
+    are now "Confirmed" / "Checked-In" / "Cancelled" (Checked-In added by
+    this story; Completed/No-Show belong to Stories 4.3/4.4 and are not
+    implemented yet).
+    The booking must be dated today - this endpoint verifies a student
+    physically arriving right now, so a checkin_code for a future advance
+    booking is rejected until its date arrives. (No time-of-day window
+    check yet - that belongs to Story 4.3's no_show_grace_minutes logic.)
+    Errors: 400 missing/empty checkin_code, 404 checkin_code not found,
+    400 booking not Confirmed (already checked in, cancelled, etc.) or
+    not dated today.
+
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
 ========================================================================
@@ -421,6 +440,23 @@ Merge + Story 3.7 (2026-08-10):
   requests an extension.
 - Added pytest coverage for the new endpoints in test_app.py (fixtures:
   student_token, staff_token, confirmed_booking).
+
+Story 4.1/4.2 (2026-08-11):
+- Implemented Student Check-In / Check-In Verification
+  (resources/checkin.py: StaffCheckinResource, POST /staff/checkin).
+- Added the Attendance model (attendance_id, booking_id, checkin_time,
+  checkout_time, verified_by) matching dbSchema.docx's attendance table.
+  checkout_time stays null until Story 4.4 (Study Session Check-Out)
+  implements it.
+- Booking.status gained a third value, "Checked-In", alongside the
+  existing Confirmed/Cancelled. dbSchema.docx's booking_status enum is
+  Booked/Checked-In/Cancelled/Completed/No-Show; consistent with the
+  existing Confirmed-instead-of-Booked drift (see section 15 item 8),
+  this only adds Checked-In now - Completed and No-Show are Story 4.4
+  and 4.3's job respectively.
+- Added pytest coverage in test_app.py (fixture: todays_booking) for
+  success, missing/invalid checkin_code, already-checked-in, wrong-date,
+  cancelled-booking, and role-restriction cases.
 
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
@@ -807,6 +843,22 @@ POST /api/students/me/bookings/<id>/extension-request with staff_token -> 403
 GET  /api/staff/extension-requests with student_token -> 403
 POST /api/staff/extension-requests/<id>/approve with student_token -> 403
 
+TEST 29 - Staff checks in a student (Story 4.1/4.2)
+(First book a seat for TODAY'S date, e.g. via TEST 22's pattern with
+"date" set to today.)
+Method: POST
+URL:    http://localhost:5000/api/staff/checkin
+Auth:   Bearer {{staff_token}}
+Body: { "checkin_code": "<checkin_code from the today-dated booking>" }
+Expected: 201, booking.status becomes "Checked-In", response includes
+seat_number/full_name
+Negative: call again with the same checkin_code -> 400 (no longer Confirmed)
+Negative body: {} -> 400 (checkin_code required)
+Negative body: { "checkin_code": "BOGUSCODE" } -> 404
+Negative: checkin_code from a booking dated in the future -> 400
+Negative: checkin_code from a Cancelled booking -> 400
+Negative: with student_token -> 403
+
 CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
@@ -845,6 +897,12 @@ CHECKLIST
 [ ] Staff reject leaves the underlying booking untouched
 [ ] Already-resolved extension requests can't be approved/rejected again
 [ ] extension_limit_minutes, when set, is enforced on the student's request
+[ ] Staff can check in a student via a valid today-dated checkin_code
+[ ] Check-in creates an attendance row and flips booking status to Checked-In
+[ ] Duplicate check-in on the same booking is blocked (400)
+[ ] Check-in rejects an unknown checkin_code (404)
+[ ] Check-in rejects a future-dated or Cancelled booking (400)
+[ ] Students are blocked (403) from POST /staff/checkin
 
 ========================================================================
 13. DATABASE SCHEMA (ERD SUMMARY)
@@ -912,12 +970,29 @@ booking_date    Date            required
 start_time      Time            required
 end_time        Time            required, must be after start_time
 checkin_code    String(20)      unique, auto-generated (secrets.token_hex)
-status          String(20)      "Confirmed" / "Cancelled", defaults to Confirmed
+status          String(20)      "Confirmed" / "Checked-In" / "Cancelled",
+                                defaults to Confirmed (Checked-In added by
+                                Story 4.1/4.2; Completed/No-Show still
+                                unimplemented - Stories 4.3/4.4)
 created_at      DateTime        set on creation
 
-Managed via /bookings, /students/me/bookings, /staff/bookings/*
-(Stories 3.1-3.7). No separate "attendance" table yet - check-in/
-check-out (Epic 4) hasn't been built.
+Managed via /bookings, /students/me/bookings, /staff/bookings/*,
+/staff/checkin (Stories 3.1-3.7, 4.1/4.2).
+
+TABLE: attendance
+--------------------------------------------------------------------
+Column          Type            Notes
+attendance_id   Integer PK      auto-increment
+booking_id      Integer FK      -> bookings.booking_id
+checkin_time    DateTime        set when staff verifies the checkin_code
+checkout_time   DateTime        nullable; set by Story 4.4 (not built yet)
+verified_by     Integer FK      -> users.user_id, the staff/admin who
+                                checked the student in
+
+Created via POST /staff/checkin (Story 4.1/4.2). One row per successful
+check-in; a booking can only be checked in once since the underlying
+Booking's status leaves "Confirmed" the moment attendance is recorded,
+and only Confirmed bookings are eligible for check-in.
 
 TABLE: extension_requests
 --------------------------------------------------------------------
@@ -974,6 +1049,8 @@ users (1) ----- (many) bookings     [a user can have many bookings over time]
 seats (1) ----- (many) bookings     [a seat can be booked many times, never overlapping while Confirmed]
 bookings (1) ----- (many) extension_requests  [a booking can accumulate multiple requests over time, only one Pending at once]
 users (1) ----- (many) extension_requests.approved_by  [tracks which staff/admin resolved each request]
+bookings (1) ----- (many) attendance  [in practice one per booking, since check-in is only allowed once per Confirmed booking]
+users (1) ----- (many) attendance.verified_by  [tracks which staff/admin performed the check-in]
 
 IMPORTANT: There is currently NO separate "memberships" table. The admin
 membership routes (/api/admin/memberships/...) reuse student_id as the
@@ -1016,8 +1093,14 @@ is_active (Seat)    - true = bookable, false = out of service (see section
 checkin_code        - auto-generated unique code returned when a booking is
                       created; will be what Epic 4's check-in flow verifies
                       against, once built
-booking status      - "Confirmed" or "Cancelled" (there is no "Completed" or
-                      "No-Show" status yet - those belong to Epic 4)
+booking status      - "Confirmed", "Checked-In", or "Cancelled" (there is
+                      no "Completed" or "No-Show" status yet - those
+                      belong to Stories 4.3/4.4)
+checkin_time        - set on the attendance row when staff verifies a
+                      student's checkin_code (Story 4.1/4.2)
+checkout_time       - set on the attendance row when the student checks
+                      out; null until Story 4.4 is implemented
+verified_by         - the staff/admin user_id who performed the check-in
 requested_end_time  - the new end_time a student is asking for on an
                       extension request; must be after the booking's current
                       end_time and, if extension_limit_minutes is set, within
