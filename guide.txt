@@ -65,7 +65,8 @@ seProject/
 |     |-- no_show.py                       -> staff lists overdue Confirmed bookings and
 |                                          marks them No-Show, releasing the seat (Story 4.3)
 |     |-- payments.py                       -> staff records an offline payment against a
-|                                          student (Story 5.1)
+|                                          student (Story 5.1), student/staff view
+|                                          payment history (Story 5.2)
 
 NOTE: resources/students.py (the original generic student CRUD file) was
 removed. It duplicated functionality that staff_students.py and
@@ -372,6 +373,16 @@ POST   /api/staff/payments
     Errors: 400 missing/invalid student_id, amount (must be a positive
     number), or payment_mode; 404 student not found.
 
+5.16 PAYMENT HISTORY (Story 5.2)
+GET    /api/students/me/payments   (Student - own payments only)
+    Body: none. Full payment history for the logged-in student, newest
+    first (ordered by payment_date descending). Returns an empty list
+    (not an error) if the student has no recorded payments yet.
+GET    /api/staff/students/<student_id>/payments   (Staff or Admin)
+    Body: none. Full payment history for the given student, newest
+    first, response includes full_name for context.
+    Errors: 404 student not found.
+
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
 ========================================================================
@@ -599,6 +610,25 @@ Story 5.1 (2026-08-11):
   the past regardless of wall-clock time. Caught by chance running this
   story's tests right after midnight.
 
+Story 5.2 (2026-08-12):
+- Implemented Payment History
+  (resources/payments.py: StudentPaymentHistoryResource,
+  StaffStudentPaymentHistoryResource; GET /students/me/payments, GET
+  /staff/students/<id>/payments). Kept in payments.py alongside
+  StaffPaymentListResource rather than student_profile.py/
+  staff_students.py, matching the precedent set by bookings.py (which
+  groups StudentBookingHistoryResource and StaffTodayBookingsResource
+  together by resource type rather than by which URL prefix owns them).
+- Both routes order by payment_date descending (newest first), matching
+  StudentBookingHistoryResource's convention, and return an empty list
+  rather than an error for a student with no payments yet.
+- Added pytest coverage in test_app.py (fixture: payment_student, a
+  fresh registered+logged-in student distinct from payment_student_id
+  since this story needs a login token, not just a student_id) for: a
+  student viewing their own history, an empty history for a student
+  with no payments, staff viewing a specific student's history, 404 on
+  an unknown student_id, and role restriction both directions.
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
@@ -606,10 +636,9 @@ Story 5.1 (2026-08-11):
 - Confirm whether membership_id needs a separate Membership table
 - Connect frontend (Vue) to these endpoints
 - Epic 4 (Check-in & Attendance Management) is fully implemented
-  (Stories 4.1-4.4). Story 5.1 (Offline Payment Recording) is done;
-  Story 5.2 (Payment History) is not yet implemented. Epic 6
-  (complaints/announcements), Story 2.4 (reports/analytics) also remain
-  - see below.
+  (Stories 4.1-4.4). Epic 5 (Payment Management) is now fully
+  implemented (Stories 5.1-5.2). Epic 6 (complaints/announcements) and
+  Story 2.4 (reports/analytics) remain - see below.
 - Local `dev` is still stale relative to origin/dev - pull before
   branching further work off it
 - Story 2.4 (Library Reports & Analytics) intentionally deferred - not
@@ -1058,6 +1087,20 @@ Negative body: { "student_id": 1, "amount": -50, "payment_mode": "Cash" } -> 400
 Negative: "student_id": 999 -> 404
 Negative: with student_token -> 403
 
+TEST 34 - Payment history (Story 5.2)
+Method: GET
+URL:    http://localhost:5000/api/students/me/payments
+Auth:   Bearer {{student_token}}
+Expected: 200, total_payments/payments array (empty list if none recorded)
+
+Method: GET
+URL:    http://localhost:5000/api/staff/students/1/payments
+Auth:   Bearer {{staff_token}}
+Expected: 200, total_payments/payments array, plus full_name
+Negative: /api/staff/students/999/payments -> 404
+Negative: GET /students/me/payments with staff_token -> 403
+Negative: GET /staff/students/1/payments with student_token -> 403
+
 CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
@@ -1120,6 +1163,11 @@ CHECKLIST
 [ ] Payment recording rejects missing/non-positive amount (400)
 [ ] Payment recording rejects an unknown student_id (404)
 [ ] Students are blocked (403) from recording payments
+[ ] A student can view their own payment history (empty list when none recorded)
+[ ] Staff can view a specific student's payment history
+[ ] Payment history rejects an unknown student_id (404)
+[ ] Staff are blocked (403) from GET /students/me/payments
+[ ] Students are blocked (403) from GET /staff/students/<id>/payments
 
 ========================================================================
 13. DATABASE SCHEMA (ERD SUMMARY)
@@ -1254,7 +1302,8 @@ Created via POST /staff/payments (Story 5.1). dbSchema.docx's payments
 table also has a membership_id FK; omitted here because, under the
 existing membership_id == student_id convention (see IMPORTANT note
 below), it would just duplicate student_id - see section 15 item 12.
-No GET route yet (Story 5.2 - Payment History - is not implemented).
+Read via GET /students/me/payments and GET /staff/students/<id>/payments
+(Story 5.2).
 
 TABLE: library_settings
 --------------------------------------------------------------------

@@ -3,7 +3,7 @@ from flask import request
 from flask_restful import Resource
 from flask_jwt_extended import get_jwt_identity
 from models import db, Payment, Student
-from utils import staff_or_admin_required
+from utils import staff_or_admin_required, student_required
 
 VALID_PAYMENT_MODES = ("Cash", "UPI", "Card")
 
@@ -50,3 +50,44 @@ class StaffPaymentListResource(Resource):
         result["full_name"] = student.full_name
 
         return {"message": "Payment recorded", "payment": result}, 201
+
+
+class StudentPaymentHistoryResource(Resource):
+    @student_required
+    def get(self):
+        uid = int(get_jwt_identity())
+        student = Student.query.filter_by(user_id=uid).first()
+        if not student:
+            return {"message": "Student not found"}, 404
+
+        payments = (
+            Payment.query.filter_by(student_id=student.student_id)
+            .order_by(Payment.payment_date.desc())
+            .all()
+        )
+
+        return {
+            "total_payments": len(payments),
+            "payments": [p.to_dict() for p in payments],
+        }, 200
+
+
+class StaffStudentPaymentHistoryResource(Resource):
+    @staff_or_admin_required
+    def get(self, student_id):
+        student = Student.query.filter_by(student_id=student_id).first()
+        if not student:
+            return {"message": "Student not found"}, 404
+
+        payments = (
+            Payment.query.filter_by(student_id=student_id)
+            .order_by(Payment.payment_date.desc())
+            .all()
+        )
+
+        return {
+            "student_id": student_id,
+            "full_name": student.full_name,
+            "total_payments": len(payments),
+            "payments": [p.to_dict() for p in payments],
+        }, 200
