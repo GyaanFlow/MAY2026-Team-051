@@ -3,7 +3,7 @@ from datetime import date as date_cls
 from flask import request
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from models import db, Seat, Booking, Student, User
+from models import db, Seat, Booking, Student, User, Attendance
 from flask_jwt_extended import get_jwt
 from utils import staff_or_admin_required
 from datetime import datetime, timedelta
@@ -142,7 +142,49 @@ class BookingCancelResource(Resource):
         booking.status = "Cancelled"
         db.session.commit()
 
-        return {"message": "Booking cancelled, seat freed", "booking": booking.to_dict()}, 200    
+        return {"message": "Booking cancelled, seat freed", "booking": booking.to_dict()}, 200
+
+
+class BookingCheckoutResource(Resource):
+    @jwt_required()
+    def post(self, booking_id):
+        booking = db.session.get(Booking, booking_id)
+        if not booking:
+            return {"message": "Booking not found"}, 404
+
+        user_id = get_jwt_identity()
+        role = get_jwt().get("role")
+        if str(booking.user_id) != str(user_id) and role not in ("Staff", "Admin"):
+            return {"message": "Not authorized to check out this booking"}, 403
+
+        if booking.status != "Checked-In":
+            return {
+                "message": f"Only checked-in bookings can be checked out (status: {booking.status})"
+            }, 400
+
+        attendance = (
+            Attendance.query.filter_by(booking_id=booking.booking_id, checkout_time=None)
+            .order_by(Attendance.checkin_time.desc())
+            .first()
+        )
+        if not attendance:
+            return {"message": "No open attendance record found for this booking"}, 404
+
+        attendance.checkout_time = datetime.utcnow()
+        booking.status = "Completed"
+        db.session.commit()
+
+        result = attendance.to_dict()
+        result["booking"] = booking.to_dict()
+
+        seat = db.session.get(Seat, booking.seat_id)
+        student = Student.query.filter_by(user_id=booking.user_id).first()
+        user = db.session.get(User, booking.user_id)
+        result["seat_number"] = seat.seat_number if seat else None
+        result["full_name"] = student.full_name if student else None
+        result["username"] = user.username if user else None
+
+        return {"message": "Checked out, seat closed", "attendance": result}, 200
 
 
 

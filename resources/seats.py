@@ -1,8 +1,65 @@
 from datetime import datetime
 from flask import request
 from flask_restful import Resource
-from models import db, Seat, Booking
 from flask_jwt_extended import jwt_required
+from models import db, Seat, Booking
+from utils import admin_required
+
+
+class SeatListResource(Resource):
+    @admin_required
+    def get(self):
+        seats = Seat.query.all()
+        return [s.to_dict() for s in seats], 200
+
+    @admin_required
+    def post(self):
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
+
+        seat_number = data.get("seat_number")
+        if not seat_number:
+            return {"message": "seat_number is required"}, 400
+
+        if Seat.query.filter_by(seat_number=seat_number).first():
+            return {"message": "Seat number already exists"}, 409
+
+        is_active = data.get("is_active", True)
+        if not isinstance(is_active, bool):
+            return {"message": "is_active must be true or false"}, 400
+
+        seat = Seat(seat_number=seat_number, seat_type=data.get("seat_type"), is_active=is_active)
+        db.session.add(seat)
+        db.session.commit()
+        return seat.to_dict(), 201
+
+
+class SeatResource(Resource):
+    @admin_required
+    def put(self, seat_id):
+        seat = db.session.get(Seat, seat_id)
+        if not seat:
+            return {"message": "Seat not found"}, 404
+
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
+
+        if "is_active" not in data and "seat_type" not in data:
+            return {"message": "is_active or seat_type is required"}, 400
+
+        if "is_active" in data:
+            is_active = data.get("is_active")
+            if not isinstance(is_active, bool):
+                return {"message": "is_active must be true or false"}, 400
+            seat.is_active = is_active
+
+        if "seat_type" in data:
+            seat.seat_type = data.get("seat_type")
+
+        db.session.commit()
+        return {"message": "Seat updated", "seat": seat.to_dict()}, 200
 
 
 class SeatAvailabilityResource(Resource):

@@ -1,8 +1,8 @@
 from flask import request
 from flask_restful import Resource
-from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from models import db, Complaint, User
-from utils import staff_or_admin_required
+from flask_jwt_extended import get_jwt_identity
+from models import db, Complaint, User, Student
+from utils import staff_or_admin_required, student_required
 
 
 class StaffComplaintListResource(Resource):
@@ -19,7 +19,8 @@ class StaffComplaintListResource(Resource):
         result = []
         for c in complaints:
             data = c.to_dict()
-            user = db.session.get(User, c.user_id)
+            student = db.session.get(Student, c.student_id)
+            user = db.session.get(User, student.user_id) if student else None
             if user:
                 data["username"] = user.username
                 data["role"] = user.role
@@ -41,9 +42,41 @@ class StaffComplaintUpdateResource(Resource):
 
         new_status = data.get("status")
         if new_status not in ("Open", "InProgress", "Resolved"):
-            return {"message": "status must be one of: Open, InProgress, Resolved"}, 400
+            return {
+                "message": "status must be one of: Open, InProgress, Resolved"
+            }, 400
 
         complaint.status = new_status
         db.session.commit()
 
         return {"message": "Complaint updated", "complaint": complaint.to_dict()}, 200
+
+
+class StudentComplaintCreateResource(Resource):
+    @student_required
+    def post(self):
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"message": "Request body must be JSON"}, 400
+
+        title = data.get("title")
+        description = data.get("description")
+        if not title or not description:
+            return {"message": "title and description are required"}, 400
+
+        uid = int(get_jwt_identity())
+        student = Student.query.filter_by(user_id=uid).first()
+        if not student:
+            return {"message": "Student not found"}, 404
+
+        complaint = Complaint(
+            student_id=student.student_id,
+            title=title,
+            description=description,
+            status="Open",
+        )
+
+        db.session.add(complaint)
+        db.session.commit()
+
+        return {"message": "Complaint submitted", "complaint": complaint.to_dict()}, 201
