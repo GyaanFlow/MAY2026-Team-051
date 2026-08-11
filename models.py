@@ -37,6 +37,7 @@ class MembershipPlan(db.Model):
     plan_name = db.Column(db.String(100), nullable=False)
     duration_days = db.Column(db.Integer, nullable=True)
     price = db.Column(db.Numeric(10, 2), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     def to_dict(self):
         return {
@@ -44,6 +45,7 @@ class MembershipPlan(db.Model):
             "plan_name": self.plan_name,
             "duration_days": self.duration_days,
             "price": float(self.price) if self.price is not None else None,
+            "is_active": self.is_active,
         }
 
 
@@ -86,6 +88,35 @@ class Seat(db.Model):
         }
 
 
+class LibrarySettings(db.Model):
+    __tablename__ = "library_settings"
+
+    setting_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    open_time = db.Column(db.Time, nullable=True)
+    close_time = db.Column(db.Time, nullable=True)
+    total_seats = db.Column(db.Integer, nullable=True)
+    no_show_grace_minutes = db.Column(db.Integer, nullable=True)
+    cancellation_period = db.Column(db.Integer, nullable=True)
+    max_booking_days_ahead = db.Column(db.Integer, nullable=True)
+    extension_limit_minutes = db.Column(db.Integer, nullable=True)
+    updated_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "setting_id": self.setting_id,
+            "open_time": self.open_time.strftime("%H:%M") if self.open_time else None,
+            "close_time": self.close_time.strftime("%H:%M") if self.close_time else None,
+            "total_seats": self.total_seats,
+            "no_show_grace_minutes": self.no_show_grace_minutes,
+            "cancellation_period": self.cancellation_period,
+            "max_booking_days_ahead": self.max_booking_days_ahead,
+            "extension_limit_minutes": self.extension_limit_minutes,
+            "updated_by": self.updated_by,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class Booking(db.Model):
     __tablename__ = "bookings"
 
@@ -110,4 +141,25 @@ class Booking(db.Model):
             "checkin_code": self.checkin_code,
             "status": self.status,
             "created_at": str(self.created_at),
+        }
+
+
+class ExtensionRequest(db.Model):
+    __tablename__ = "extension_requests"
+
+    extension_request_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    booking_id = db.Column(db.Integer, db.ForeignKey("bookings.booking_id"), nullable=False)
+    requested_end_time = db.Column(db.Time, nullable=False)
+    status = db.Column(db.String(20), default="Pending", nullable=False)
+    approved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
+    requested_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "extension_request_id": self.extension_request_id,
+            "booking_id": self.booking_id,
+            "requested_end_time": self.requested_end_time.strftime("%H:%M"),
+            "status": self.status,
+            "approved_by": self.approved_by,
+            "requested_at": str(self.requested_at),
         }

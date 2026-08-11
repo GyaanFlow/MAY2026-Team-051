@@ -1,3 +1,4 @@
+from datetime import time
 from flask import Flask
 from flask_cors import CORS
 from flask_restful import Api
@@ -5,29 +6,27 @@ from flask_jwt_extended import JWTManager
 from werkzeug.security import generate_password_hash
 
 from config import Config
-from models import db, User, MembershipPlan, Seat, Booking
+from models import db, User, MembershipPlan, LibrarySettings, Seat, Booking
 from resources.auth import LoginResource
-from resources.seats import SeatAvailabilityResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
 from resources.membership import MembershipPlanListResource, MembershipPlanResource
-from resources.students import (
-    StudentListResource,
-    StudentResource,
-    VerifyMembershipResource,
-    ApproveStudentResource,
-    RejectStudentResource,
-    DisapproveStudentResource,
-)
+from resources.settings import LibrarySettingsResource
+from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
 from resources.profile import ProfileResource, ResetPasswordResource
-from resources.staff_students import StaffRegisterStudentResource, StaffStudentDetailResource
+from resources.student_profile import StudentMeResource
+from resources.staff_students import (
+    StaffRegisterStudentResource,
+    StaffStudentDetailResource,
+    StaffVerifyStudentMembershipResource,
+)
 from resources.admin_memberships import (
     PendingMembershipsResource,
     MembershipListResource,
     ApproveMembershipResource,
     RejectMembershipResource,
+    DisapproveMembershipResource,
     MembershipDetailResource,
 )
-from resources.seats import SeatAvailabilityResource
 from resources.bookings import (
     BookingListResource,
     BookingDetailResource,
@@ -35,6 +34,12 @@ from resources.bookings import (
     StudentBookingHistoryResource,
     StaffTodayBookingsResource,
     WalkInBookingResource,
+)
+from resources.extension_requests import (
+    StudentExtensionRequestResource,
+    StaffExtensionRequestListResource,
+    StaffExtensionRequestApproveResource,
+    StaffExtensionRequestRejectResource,
 )
 
 def create_app(config_class=Config):
@@ -50,30 +55,32 @@ def create_app(config_class=Config):
 
     api.add_resource(LoginResource, "/auth/login")
 
-    api.add_resource(StaffListResource, "/staff")
-    api.add_resource(StaffResource, "/staff/<int:user_id>")
-    api.add_resource(DeactivateStaffResource, "/staff/<int:user_id>/deactivate")
+    api.add_resource(StaffListResource, "/admin/staff")
+    api.add_resource(StaffResource, "/admin/staff/<int:user_id>")
+    api.add_resource(DeactivateStaffResource, "/admin/staff/<int:user_id>/deactivate")
 
-    api.add_resource(MembershipPlanListResource, "/membership-plans")
-    api.add_resource(MembershipPlanResource, "/membership-plans/<int:plan_id>")
+    api.add_resource(MembershipPlanListResource, "/admin/membership-plans")
+    api.add_resource(MembershipPlanResource, "/admin/membership-plans/<int:plan_id>")
 
-    api.add_resource(StudentListResource, "/students")
-    api.add_resource(StudentResource, "/students/<int:student_id>")
-    api.add_resource(VerifyMembershipResource, "/students/<int:student_id>/verify")
-    api.add_resource(ApproveStudentResource, "/students/<int:student_id>/approve")
-    api.add_resource(RejectStudentResource, "/students/<int:student_id>/reject")
-    api.add_resource(DisapproveStudentResource, "/students/<int:student_id>/disapprove")
+    api.add_resource(LibrarySettingsResource, "/admin/settings")
+
+    api.add_resource(SeatListResource, "/admin/seats")
+    api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
 
     api.add_resource(ProfileResource, "/profile")
     api.add_resource(ResetPasswordResource, "/auth/reset-password")
 
+    api.add_resource(StudentMeResource, "/students/me")
+
     api.add_resource(StaffRegisterStudentResource, "/staff/students/register")
     api.add_resource(StaffStudentDetailResource, "/staff/students/<int:student_id>")
+    api.add_resource(StaffVerifyStudentMembershipResource, "/staff/students/<int:student_id>/verify")
 
     api.add_resource(PendingMembershipsResource, "/admin/memberships/pending")
     api.add_resource(MembershipListResource, "/admin/memberships")
     api.add_resource(ApproveMembershipResource, "/admin/memberships/<int:membership_id>/approve")
     api.add_resource(RejectMembershipResource, "/admin/memberships/<int:membership_id>/reject")
+    api.add_resource(DisapproveMembershipResource, "/admin/memberships/<int:membership_id>/disapprove")
     api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
 
     api.add_resource(SeatAvailabilityResource, "/seats/availability")
@@ -84,8 +91,13 @@ def create_app(config_class=Config):
     api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
     api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
     api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
-    
-         
+
+    api.add_resource(
+        StudentExtensionRequestResource, "/students/me/bookings/<int:booking_id>/extension-request"
+    )
+    api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
+    api.add_resource(StaffExtensionRequestApproveResource, "/staff/extension-requests/<int:extension_request_id>/approve")
+    api.add_resource(StaffExtensionRequestRejectResource, "/staff/extension-requests/<int:extension_request_id>/reject")
 
     with app.app_context():
         db.create_all()
@@ -99,7 +111,7 @@ def seed_data():
     if not admin:
         admin = User(
             username="admin",
-            password_hash=generate_password_hash("admin123"),
+            password_hash=generate_password_hash("test-password"),
             email="admin@library.com",
             role="Admin",
             status=True,
@@ -119,6 +131,9 @@ def seed_data():
             for i in range(1, 21)
         ])
         db.session.commit()
+
+    if not LibrarySettings.query.first():
+        db.session.add(LibrarySettings(open_time=time(9, 0), close_time=time(21, 0)))
 
     db.session.commit()
 
