@@ -40,7 +40,7 @@ seProject/
 |-- config.py                -> app config (secret keys, database URL, JWT expiry)
 |-- models.py                 -> SQLAlchemy models: User, MembershipPlan, Student,
 |                                 Seat, LibrarySettings, Booking, Attendance,
-|                                 ExtensionRequest, Payment
+|                                 ExtensionRequest, Payment, Complaint
 |-- utils.py                   -> admin_required, staff_or_admin_required, student_required decorators
 |-- requirements.txt            -> pinned dependency versions
 |-- resources/
@@ -67,6 +67,7 @@ seProject/
 |     |-- payments.py                       -> staff records an offline payment against a
 |                                          student (Story 5.1), student/staff view
 |                                          payment history (Story 5.2)
+|     |-- complaints.py                      -> student submits a complaint (Story 6.1)
 
 NOTE: resources/students.py (the original generic student CRUD file) was
 removed. It duplicated functionality that staff_students.py and
@@ -383,6 +384,24 @@ GET    /api/staff/students/<student_id>/payments   (Staff or Admin)
     first, response includes full_name for context.
     Errors: 404 student not found.
 
+5.17 COMPLAINT SUBMISSION (Story 6.1 - Student only)
+POST   /api/students/me/complaints
+    Body: { "title": "", "description": "" }
+    Both title and description are required - a complaint with no
+    description would carry no information for staff to act on.
+    Creates a Complaint row with status "Open" (server-set, not
+    client-settable) against the logged-in student.
+    New Complaint model (complaint_id, student_id, title, description,
+    status, resolved_by, created_at) - see section 13. created_at isn't
+    in dbSchema.docx's complaints table, but every other story-created
+    table has one for ordering/audit (Booking.created_at,
+    ExtensionRequest.requested_at, Payment.payment_date); Story 6.2
+    (Complaint Management) will need it to list complaints sensibly, so
+    it's added now rather than as a later migration.
+    Errors: 400 missing/empty title or description.
+    No GET route yet - Story 6.2 (Complaint Management) owns listing/
+    resolving complaints and is not implemented.
+
 ========================================================================
 6. TESTING METHODS - THUNDER CLIENT SETUP
 ========================================================================
@@ -629,6 +648,25 @@ Story 5.2 (2026-08-12):
   with no payments, staff viewing a specific student's history, 404 on
   an unknown student_id, and role restriction both directions.
 
+Story 6.1 (2026-08-12):
+- Implemented Complaint Submission
+  (models.py: new Complaint model; resources/complaints.py:
+  StudentComplaintListResource; POST /students/me/complaints).
+- Added created_at to the Complaint model even though dbSchema.docx's
+  complaints table doesn't have one - every other story-created table
+  has some form of creation timestamp for ordering/audit, and Story 6.2
+  will need it to list complaints meaningfully. Kept consistent with
+  the project's established pattern of extending the schema modestly
+  where the doc looks like an omission (see section 15 item 13).
+- status defaults to "Open" and is server-set, not accepted from the
+  client, matching the role/status-controlled-server-side pattern used
+  everywhere else (booking status, membership_status, etc.).
+- No GET route in this story - only submission. Story 6.2 (Complaint
+  Management) owns listing/filtering/resolving complaints.
+- Added pytest coverage in test_app.py for: successful submission,
+  missing title, missing description, non-JSON body, and role
+  restriction (staff cannot submit).
+
 ========================================================================
 10. NEXT STEPS / OPEN ITEMS
 ========================================================================
@@ -636,9 +674,10 @@ Story 5.2 (2026-08-12):
 - Confirm whether membership_id needs a separate Membership table
 - Connect frontend (Vue) to these endpoints
 - Epic 4 (Check-in & Attendance Management) is fully implemented
-  (Stories 4.1-4.4). Epic 5 (Payment Management) is now fully
-  implemented (Stories 5.1-5.2). Epic 6 (complaints/announcements) and
-  Story 2.4 (reports/analytics) remain - see below.
+  (Stories 4.1-4.4). Epic 5 (Payment Management) is fully implemented
+  (Stories 5.1-5.2). Epic 6: Story 6.1 (Complaint Submission) is done;
+  Stories 6.2 (Complaint Management) and 6.3 (Announcements) remain,
+  along with Story 2.4 (reports/analytics) - see below.
 - Local `dev` is still stale relative to origin/dev - pull before
   branching further work off it
 - Story 2.4 (Library Reports & Analytics) intentionally deferred - not
@@ -1101,6 +1140,20 @@ Negative: /api/staff/students/999/payments -> 404
 Negative: GET /students/me/payments with staff_token -> 403
 Negative: GET /staff/students/1/payments with student_token -> 403
 
+TEST 35 - Student submits a complaint (Story 6.1)
+Method: POST
+URL:    http://localhost:5000/api/students/me/complaints
+Auth:   Bearer {{student_token}}
+Body:
+{
+  "title": "Noisy neighbors",
+  "description": "Students at the next table were talking loudly."
+}
+Expected: 201, status defaults to "Open"
+Negative body: { "description": "..." } -> 400 (title missing)
+Negative body: { "title": "..." } -> 400 (description missing)
+Negative: with staff_token -> 403
+
 CHECKLIST
 [ ] Admin login works
 [ ] Staff creation + login works
@@ -1168,6 +1221,9 @@ CHECKLIST
 [ ] Payment history rejects an unknown student_id (404)
 [ ] Staff are blocked (403) from GET /students/me/payments
 [ ] Students are blocked (403) from GET /staff/students/<id>/payments
+[ ] Student can submit a complaint (status defaults to "Open")
+[ ] Complaint submission rejects missing title or description (400)
+[ ] Staff are blocked (403) from submitting a complaint
 
 ========================================================================
 13. DATABASE SCHEMA (ERD SUMMARY)
@@ -1305,6 +1361,27 @@ below), it would just duplicate student_id - see section 15 item 12.
 Read via GET /students/me/payments and GET /staff/students/<id>/payments
 (Story 5.2).
 
+TABLE: complaints
+--------------------------------------------------------------------
+Column          Type            Notes
+complaint_id    Integer PK      auto-increment
+student_id      Integer FK      -> students.student_id
+title           String(200)     required
+description     Text            required (see section 5.17)
+status          String(20)      defaults to "Open"; Story 6.2 (not yet
+                                implemented) will add further values
+                                and the staff workflow to change them
+resolved_by     Integer FK      -> users.user_id, nullable; set by
+                                Story 6.2 when a staff/admin resolves
+                                the complaint - always null for now
+created_at      DateTime        set on creation; not in dbSchema.docx,
+                                added for ordering/audit consistent
+                                with every other story-created table -
+                                see section 15 item 13
+
+Created via POST /students/me/complaints (Story 6.1). No GET/PUT route
+yet - those belong to Story 6.2 (Complaint Management).
+
 TABLE: library_settings
 --------------------------------------------------------------------
 Column                    Type            Notes
@@ -1351,6 +1428,8 @@ bookings (1) ----- (many) attendance  [in practice one per booking, since check-
 users (1) ----- (many) attendance.verified_by  [tracks which staff/admin performed the check-in]
 students (1) ----- (many) payments  [a student can have many recorded payments over time]
 users (1) ----- (many) payments.recorded_by  [tracks which staff/admin recorded each payment]
+students (1) ----- (many) complaints  [a student can submit multiple complaints over time]
+users (1) ----- (many) complaints.resolved_by  [will track which staff/admin resolved each complaint, once Story 6.2 exists]
 
 IMPORTANT: There is currently NO separate "memberships" table. The admin
 membership routes (/api/admin/memberships/...) reuse student_id as the
@@ -1428,6 +1507,14 @@ payment_date        - when the payment was recorded; always server-set
                       to the current time, never accepted from the
                       client (Story 5.1)
 recorded_by         - the staff/admin user_id who recorded the payment
+complaint title      - short required summary of the issue (Story 6.1)
+complaint description - required details of the issue (Story 6.1)
+complaint status     - defaults to "Open" on submission; server-set,
+                      not client-settable. Story 6.2 will define what
+                      other values exist and how staff transition
+                      between them
+resolved_by (complaint) - staff/admin user_id who resolved the
+                      complaint; always null until Story 6.2 exists
 
 ========================================================================
 15. DESIGN ASSUMPTIONS AND KNOWN LIMITATIONS
@@ -1522,6 +1609,16 @@ recorded_by         - the staff/admin user_id who recorded the payment
     student_id. Rather than add a redundant column, Story 5.1's Payment
     model only has student_id. If a real memberships table gets built
     later, add membership_id to Payment at the same time.
+
+13. Complaint.created_at added beyond dbSchema.docx
+    dbSchema.docx's complaints table has no timestamp column. Every
+    other table this project has built on top of the schema doc
+    (bookings, attendance, extension_requests, payments) has some form
+    of creation timestamp, used for ordering and audit. Complaint gets
+    one too (created_at, DateTime, server-set) so Story 6.2 can list
+    complaints in a sensible order without a later migration. This is
+    additive only - it doesn't change or remove anything dbSchema.docx
+    specifies.
 
 ========================================================================
 16. ENVIRONMENT VARIABLES (OPTIONAL, FOR PRODUCTION SETUP)
