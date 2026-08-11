@@ -49,6 +49,7 @@ from resources.payments import (
     StudentPaymentHistoryResource,
     StaffStudentPaymentHistoryResource,
 )
+from resources.complaints import StudentComplaintListResource
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -116,6 +117,8 @@ def create_app(config_class=Config):
     api.add_resource(StaffPaymentListResource, "/staff/payments")
     api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")
     api.add_resource(StaffStudentPaymentHistoryResource, "/staff/students/<int:student_id>/payments")
+
+    api.add_resource(StudentComplaintListResource, "/students/me/complaints")
 
     with app.app_context():
         db.create_all()

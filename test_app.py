@@ -693,3 +693,48 @@ def test_staff_payment_history_role_restriction(client, student_token, payment_s
     )
     assert response.status_code == 403
 
+
+# --- STORY 6.1: COMPLAINT SUBMISSION ---
+
+def test_student_submit_complaint_success(client, student_token):
+    """A student can submit a complaint"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/students/me/complaints", json={
+        "title": "Noisy neighbors",
+        "description": "Students at the next table were talking loudly.",
+    }, headers=headers)
+    assert response.status_code == 201
+    body = response.get_json()["complaint"]
+    assert body["title"] == "Noisy neighbors"
+    assert body["status"] == "Open"
+
+def test_student_submit_complaint_missing_title(client, student_token):
+    """Missing title returns 400"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/students/me/complaints", json={
+        "description": "Something happened"
+    }, headers=headers)
+    assert response.status_code == 400
+
+def test_student_submit_complaint_missing_description(client, student_token):
+    """Missing description returns 400"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/students/me/complaints", json={
+        "title": "Issue"
+    }, headers=headers)
+    assert response.status_code == 400
+
+def test_student_submit_complaint_missing_body(client, student_token):
+    """Non-JSON body returns 400"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/students/me/complaints", data="not json", headers=headers)
+    assert response.status_code == 400
+
+def test_student_submit_complaint_role_restriction(client, staff_token):
+    """Staff cannot call the student-only complaint submission route"""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/students/me/complaints", json={
+        "title": "Issue", "description": "Details"
+    }, headers=headers)
+    assert response.status_code == 403
+

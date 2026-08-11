@@ -203,3 +203,26 @@ class Payment(db.Model):
             "payment_date": str(self.payment_date) if self.payment_date else None,
             "recorded_by": self.recorded_by,
         }
+
+
+class Complaint(db.Model):
+    __tablename__ = "complaints"
+
+    complaint_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.student_id"), nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(20), default="Open", nullable=False)
+    resolved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "complaint_id": self.complaint_id,
+            "student_id": self.student_id,
+            "title": self.title,
+            "description": self.description,
+            "status": self.status,
+            "resolved_by": self.resolved_by,
+            "created_at": str(self.created_at),
+        }
