@@ -111,3 +111,46 @@ class Booking(db.Model):
             "status": self.status,
             "created_at": str(self.created_at),
         }
+
+    
+class Complaint(db.Model):
+    __tablename__ = "complaints"
+
+    complaint_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=False)
+    subject = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), default="Open", nullable=False)  # Open / InProgress / Resolved
+    created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "complaint_id": self.complaint_id,
+            "user_id": self.user_id,
+            "subject": self.subject,
+            "description": self.description,
+            "status": self.status,
+            "created_at": str(self.created_at),
+            "updated_at": str(self.updated_at),
+        }
+
+class Announcement(db.Model):
+    __tablename__ = "announcements"
+
+    announcement_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    title = db.Column(db.String(200), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
+    updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now(), nullable=False)
+
+    def to_dict(self):
+        return {
+            "announcement_id": self.announcement_id,
+            "title": self.title,
+            "content": self.content,
+            "is_active": self.is_active,
+            "created_at": str(self.created_at),
+            "updated_at": str(self.updated_at),
+        }

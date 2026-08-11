@@ -36,6 +36,19 @@ from resources.bookings import (
     StaffTodayBookingsResource,
     WalkInBookingResource,
 )
+from resources.complaints import StaffComplaintListResource, StaffComplaintUpdateResource
+from resources.announcements import (
+    AdminAnnouncementListCreateResource,
+    AnnouncementListResource,
+    AdminAnnouncementDetailResource,
+)
+
+from resources.reports import (
+    OccupancyReportResource,
+    PeakHoursReportResource,
+    RevenueReportResource,
+    MembershipStatsReportResource,
+)
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -84,8 +97,17 @@ def create_app(config_class=Config):
     api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
     api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
     api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
-    
-         
+    api.add_resource(StaffComplaintListResource, "/staff/complaints")
+    api.add_resource(StaffComplaintUpdateResource, "/staff/complaints/<int:complaint_id>")
+
+    api.add_resource(AdminAnnouncementListCreateResource, "/admin/announcements")
+    api.add_resource(AnnouncementListResource, "/announcements")
+    api.add_resource(AdminAnnouncementDetailResource, "/admin/announcements/<int:announcement_id>")
+
+    api.add_resource(OccupancyReportResource, "/admin/reports/occupancy")
+    api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
+    api.add_resource(RevenueReportResource, "/admin/reports/revenue")
+    api.add_resource(MembershipStatsReportResource, "/admin/reports/memberships")
 
     with app.app_context():
         db.create_all()
