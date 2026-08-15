@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Library Management System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div id="app">
+    <div class="page">
+
+      <div class="brand">
+        <div class="brand-mark">SLMS</div>
+        <h1>Study Library Management System</h1>
+        <p>Your quiet space, organized.</p>
+      </div>
+
+      <div class="auth-wrapper">
+        <div class="auth-card">
+          <form class="auth-form" @submit.prevent="handleLogin" novalidate>
+            <h2>Log In</h2>
+            <p class="form-subtitle">Welcome back. Enter your details to continue.</p>
+
+            <label class="field">
+              <span>Username</span>
+              <input type="text" v-model.trim="loginForm.username" autocomplete="username" placeholder="Enter your username">
+            </label>
+
+            <label class="field">
+              <span>Password</span>
+              <input type="password" v-model="loginForm.password" autocomplete="current-password" placeholder="Enter your password">
+            </label>
+
+            <p class="form-error" v-if="loginError">{% raw %}{{ loginError }}{% endraw %}</p>
+
+            <button type="submit" class="btn-primary">Log In</button>
+
+            <p class="switch-line muted-note">
+              Don't have an account? Student accounts are created by library staff; staff accounts are created by the admin.
+            </p>
+          </form>
+        </div>
+      </div>
+
+      <!-- <p class="demo-link">
+        Demo only —
+        <a href="/staff/dashboard">preview staff dashboard</a>
+        ·
+        <a href="/admin/dashboard">preview admin dashboard</a>
+      </p> -->
+
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>
