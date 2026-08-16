@@ -10,6 +10,67 @@ from config import Config
 from models import db, User, MembershipPlan, LibrarySettings, Seat, Booking
 from resources.auth import LoginResource
 from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
+from resources.membership import (
+    MembershipPlanListResource,
+    MembershipPlanResource,
+    StaffMembershipPlanListResource,
+)
+# from resources.settings import LibrarySettingsResource
+# from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
+# from resources.profile import ProfileResource, ResetPasswordResource
+# from resources.student_profile import StudentMeResource
+from resources.staff_students import (
+    StaffRegisterStudentResource,
+    StaffStudentListResource,
+    StaffStudentDetailResource,
+    StaffVerifyStudentMembershipResource,
+)
+from resources.admin_memberships import (
+    PendingMembershipsResource,
+    MembershipListResource,
+    ApproveMembershipResource,
+    RejectMembershipResource,
+    DisapproveMembershipResource,
+    MembershipDetailResource,
+)
+# from resources.bookings import (
+#     BookingListResource,
+#     BookingDetailResource,
+#     BookingCancelResource,
+#     BookingCheckoutResource,
+#     StudentBookingHistoryResource,
+#     StaffTodayBookingsResource,
+#     WalkInBookingResource,
+# )
+# from resources.checkin import StaffCheckinResource
+# from resources.extension_requests import (
+#     StudentExtensionRequestResource,
+#     StaffExtensionRequestListResource,
+#     StaffExtensionRequestApproveResource,
+#     StaffExtensionRequestRejectResource,
+# )
+# from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
+# from resources.payments import (
+#     StaffPaymentListResource,
+#     StudentPaymentHistoryResource,
+#     StaffStudentPaymentHistoryResource,
+# )
+# from resources.complaints import (
+#     StudentComplaintCreateResource,
+#     StaffComplaintListResource,
+#     StaffComplaintUpdateResource,
+# )
+# from resources.announcements import (
+#     AdminAnnouncementListCreateResource,
+#     AnnouncementListResource,
+#     AdminAnnouncementDetailResource,
+# )
+# from resources.reports import (
+#     OccupancyReportResource,
+#     PeakHoursReportResource,
+#     RevenueReportResource,
+#     MembershipStatsReportResource,
+# )
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -28,6 +89,91 @@ def create_app(config_class=Config):
     api.add_resource(StaffResource, "/admin/staff/<int:user_id>")
     api.add_resource(DeactivateStaffResource, "/admin/staff/<int:user_id>/deactivate")
 
+    api.add_resource(MembershipPlanListResource, "/admin/membership-plans")
+    api.add_resource(StaffMembershipPlanListResource, "/staff/membership-plans")
+    api.add_resource(MembershipPlanResource, "/admin/membership-plans/<int:plan_id>")
+
+    # api.add_resource(LibrarySettingsResource, "/admin/settings")
+
+    # api.add_resource(SeatListResource, "/admin/seats")
+    # api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
+
+    # api.add_resource(ProfileResource, "/profile")
+    # api.add_resource(ResetPasswordResource, "/auth/reset-password")
+
+    # api.add_resource(StudentMeResource, "/students/me")
+
+    api.add_resource(StaffRegisterStudentResource, "/staff/students/register")
+    api.add_resource(StaffStudentListResource, "/staff/students")
+    api.add_resource(StaffStudentDetailResource, "/staff/students/<int:student_id>")
+    api.add_resource(StaffVerifyStudentMembershipResource, "/staff/students/<int:student_id>/verify")
+
+    api.add_resource(PendingMembershipsResource, "/admin/memberships/pending")
+    api.add_resource(MembershipListResource, "/admin/memberships")
+    api.add_resource(ApproveMembershipResource, "/admin/memberships/<int:membership_id>/approve")
+    api.add_resource(RejectMembershipResource, "/admin/memberships/<int:membership_id>/reject")
+    api.add_resource(DisapproveMembershipResource, "/admin/memberships/<int:membership_id>/disapprove")
+    api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
+
+    # api.add_resource(SeatAvailabilityResource, "/seats/availability")
+    # api.add_resource(BookingListResource, "/bookings")
+    # api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
+    # api.add_resource(BookingCancelResource, "/bookings/<int:booking_id>/cancel")
+    # api.add_resource(BookingCheckoutResource, "/bookings/<int:booking_id>/checkout")
+
+    # api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
+    # api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
+    # api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
+
+    # api.add_resource(StaffCheckinResource, "/staff/checkin")
+    # api.add_resource(
+    #     StudentExtensionRequestResource,
+    #     "/students/me/bookings/<int:booking_id>/extension-request",
+    # )
+    # api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
+    # api.add_resource(
+    #     StaffExtensionRequestApproveResource,
+    #     "/staff/extension-requests/<int:extension_request_id>/approve",
+    # )
+    # api.add_resource(
+    #     StaffExtensionRequestRejectResource,
+    #     "/staff/extension-requests/<int:extension_request_id>/reject",
+    # )
+
+    # api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
+    # api.add_resource(
+    #     MarkNoShowResource,
+    #     "/staff/bookings/<int:booking_id>/no-show",
+    # )
+
+    # api.add_resource(StaffPaymentListResource, "/staff/payments")
+    # api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")
+    # api.add_resource(
+    #     StaffStudentPaymentHistoryResource,
+    #     "/staff/students/<int:student_id>/payments",
+    # )
+
+    # api.add_resource(StudentComplaintCreateResource, "/students/me/complaints")
+    # api.add_resource(StaffComplaintListResource, "/staff/complaints")
+    # api.add_resource(
+    #     StaffComplaintUpdateResource,
+    #     "/staff/complaints/<int:complaint_id>",
+    # )
+
+    # api.add_resource(AdminAnnouncementListCreateResource, "/admin/announcements")
+    # api.add_resource(AnnouncementListResource, "/announcements")
+    # api.add_resource(
+    #     AdminAnnouncementDetailResource,
+    #     "/admin/announcements/<int:announcement_id>",
+    # )
+
+    # api.add_resource(OccupancyReportResource, "/admin/reports/occupancy")
+    # api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
+    # api.add_resource(RevenueReportResource, "/admin/reports/revenue")
+    # api.add_resource(MembershipStatsReportResource, "/admin/reports/membership-stats")
+
+    # Frontend routes. The frontend templates/static assets are served by
+    # this same Flask application, so browser calls to /api/* remain same-origin.
     @app.route("/")
     def login_page():
         return render_template("login.html")
@@ -77,6 +223,17 @@ def upgrade_sqlite_schema():
         if column_name not in user_columns:
             db.session.execute(text(statement))
             changed = True
+    student_columns = {column["name"] for column in inspect(db.engine).get_columns("students")}
+    student_columns_to_add = {
+        "roll_number": "ALTER TABLE students ADD COLUMN roll_number VARCHAR(100)",
+        "dob": "ALTER TABLE students ADD COLUMN dob DATE",
+        "gender": "ALTER TABLE students ADD COLUMN gender VARCHAR(50)",
+    }
+    for column_name, statement in student_columns_to_add.items():
+        if column_name not in student_columns:
+            db.session.execute(text(statement))
+            changed = True
+
     if changed:
         db.session.commit()
 

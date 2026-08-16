@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Library Management System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body class="dashboard-body">
+  {% raw %}
+  <div id="app">
+    <div class="dash">
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-mark">SLMS</div>
+          <span class="sidebar-brand-name">Study Library</span>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            class="nav-item"
+            :class="{ active: activeTab === tab.id, disabled: !tab.enabled }"
+            :disabled="!tab.enabled"
+            @click="setActiveTab(tab.id)"
+          >
+            <span class="nav-icon" v-html="tab.icon"></span>
+            <span class="nav-label">{{ tab.label }}</span>
+            <span class="nav-soon" v-if="!tab.enabled">Soon</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button class="nav-item logout" @click="handleLogout">
+            <span class="nav-icon" v-html="icons.logout"></span>
+            <span class="nav-label">Log Out</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main content -->
+      <main class="main">
+        <header class="main-header">
+          <div>
+            <h1>{{ currentTabLabel }}</h1>
+            <p class="main-subtitle" v-if="currentTabSubtitle">{{ currentTabSubtitle }}</p>
+          </div>
+          <div class="header-user">
+            <div class="header-avatar">{{ initials }}</div>
+            <div class="header-user-info">
+              <span class="header-user-name">{{ staff.fullName || 'Staff' }}</span>
+              <span class="header-user-sub">{{ staff.staffId || '—' }}</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- OVERVIEW -->
+        <section class="tab-panel" v-if="activeTab === 'overview'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ overviewStats.total }}</span>
+              <span class="stat-card-label">Bookings today</span>
+            </div>
+            <div class="stat-card stat-card-success">
+              <span class="stat-card-value">{{ overviewStats.checkedIn }}</span>
+              <span class="stat-card-label">Checked in</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ overviewStats.unarrived }}</span>
+              <span class="stat-card-label">Unarrived</span>
+            </div>
+            <div class="stat-card stat-card-warning">
+              <span class="stat-card-value">{{ pendingList.length }}</span>
+              <span class="stat-card-label">Pending extensions</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ complaintFilterCounts.open }}</span>
+              <span class="stat-card-label">Open complaints</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Today's Schedule</h2>
+              <p class="panel-subtitle">A quick look — see the full list under Daily Bookings.</p>
+            </div>
+            <div class="record-list" v-if="overviewSchedulePreview.length">
+              <div class="record-row" v-for="b in overviewSchedulePreview" :key="b.id">
+                <div class="record-avatar">{{ initialsOf(b.studentName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ b.studentName }}</span>
+                  <span class="record-sub">{{ b.seatName }} · {{ b.slot.label }}</span>
+                </div>
+                <span class="badge" :class="overviewBadgeClass(b.status)">{{ overviewStatusLabel(b.status) }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No bookings on record for today.</p>
+          </div>
+
+          <div class="booking-layout">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Pending Extension Requests</h2>
+                <p class="panel-subtitle">Approve or reject without leaving Overview.</p>
+              </div>
+              <div class="record-list" v-if="overviewPendingExtensions.length">
+                <div class="record-row" v-for="req in overviewPendingExtensions" :key="req.id">
+                  <div class="record-info">
+                    <span class="record-name">{{ req.studentName }}</span>
+                    <span class="record-sub">{{ req.currentSeatName }} · +{{ req.requestedMinutes }} min</span>
+                  </div>
+                  <div class="record-actions">
+                    <button class="btn-outline" @click="approveExtendCurrent(req)">Approve</button>
+                    <button class="btn-outline btn-outline-danger" @click="rejectExtension(req)">Reject</button>
+                  </div>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No pending extension requests.</p>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Latest Announcements</h2>
+                <p class="panel-subtitle">Published by the library admin.</p>
+              </div>
+              <div class="record-list" v-if="overviewAnnouncements.length">
+                <div class="record-row" v-for="a in overviewAnnouncements" :key="a.id">
+                  <div class="record-info">
+                    <span class="record-name">{{ a.title }}</span>
+                    <span class="record-sub">{{ a.createdAt }}</span>
+                  </div>
+                  <span class="badge" :class="announcementPriorityBadgeClass(a.priority)">{{ a.priority }}</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No announcements right now.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3.5 DAILY BOOKING OVERVIEW -->
+        <section class="tab-panel" v-else-if="activeTab === 'dailyOverview'">
+
+          <div class="stat-card-row">
+            <div class="stat-card stat-card-accent">
+              <span class="stat-card-value">{{ overviewStats.total }}</span>
+              <span class="stat-card-label">Bookings today</span>
+            </div>
+            <div class="stat-card stat-card-warning">
+              <span class="stat-card-value">{{ overviewStats.expectedArrivals }}</span>
+              <span class="stat-card-label">Expected arrivals</span>
+            </div>
+            <div class="stat-card stat-card-success">
+              <span class="stat-card-value">{{ overviewStats.checkedIn }}</span>
+              <span class="stat-card-label">Checked in</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ overviewStats.unarrived }}</span>
+              <span class="stat-card-label">Unarrived</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-card-value">{{ overviewStats.occupancyPct }}%</span>
+              <span class="stat-card-label">Current occupancy</span>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-card-header reports-toolbar">
+              <div>
+                <h2>Today's Schedule</h2>
+                <p class="panel-subtitle">Sorted by arrival time · {{ overviewDate }}</p>
+              </div>
+              <input type="date" v-model="overviewDate" class="hours-time-input">
+            </div>
+
+            <div class="record-list" v-if="overviewBookings.length">
+              <div class="record-row" v-for="b in overviewBookings" :key="b.id">
+                <div class="record-avatar">{{ initialsOf(b.studentName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ b.studentName }}</span>
+                  <span class="record-sub">{{ b.seatName }} · {{ b.slot.label }} · {{ b.studentId }}</span>
+                </div>
+                <span class="badge" :class="overviewBadgeClass(b.status)">{{ overviewStatusLabel(b.status) }}</span>
+                <div class="record-actions" v-if="b.status === 'upcoming'">
+                  <button class="btn-outline" @click="markArrived(b)">Mark Arrived</button>
+                  <button
+                    class="btn-outline btn-outline-danger"
+                    :disabled="!canMarkUnarrived(b)"
+                    :title="!canMarkUnarrived(b) ? 'Wait out the grace period before releasing the seat' : ''"
+                    @click="markUnarrived(b)"
+                  >{{ canMarkUnarrived(b) ? 'Mark Unarrived' : (unarrivedWaitLabel(b) || 'Mark Unarrived') }}</button>
+                </div>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No bookings on record for this date in the demo data.</p>
+          </div>
+        </section>
+
+        <!-- 4.2 CHECK-IN VERIFICATION -->
+        <section class="tab-panel" v-else-if="activeTab === 'checkIn'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Verify Check-In Code</h2>
+                <p class="panel-subtitle">Ask the student for their unique check-in code.</p>
+              </div>
+
+              <label class="field">
+                <span>Check-In Code</span>
+                <input
+                  type="text"
+                  v-model.trim="checkInCodeInput"
+                  placeholder="e.g. 482913"
+                  @keyup.enter="verifyCheckInCode"
+                >
+              </label>
+
+              <p class="field-hint">Demo tip: try 482913, 205774, or 917364.</p>
+              <p class="form-error" v-if="checkInError">{{ checkInError }}</p>
+
+              <button class="btn-primary btn-small" @click="verifyCheckInCode">Verify Code</button>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Booking Match</h2>
+                <p class="panel-subtitle">Confirm the details before checking the student in.</p>
+              </div>
+
+              <div class="record-list" v-if="checkInMatch">
+                <div class="record-row">
+                  <div class="record-avatar">{{ initialsOf(checkInMatch.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ checkInMatch.studentName }}</span>
+                    <span class="record-sub">{{ checkInMatch.seatName }} · {{ checkInMatch.slot.label }} · {{ checkInMatch.studentId }}</span>
+                  </div>
+                  <span class="badge">Upcoming</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>Verify a code to see the matching booking here.</p>
+
+              <button
+                class="btn-primary btn-small"
+                v-if="checkInMatch"
+                @click="confirmCheckIn(checkInMatch)"
+              >Confirm Check-In</button>
+            </div>
+          </div>
+
+          <div class="booking-success-toast" v-if="checkInSuccess">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Student Checked In</h2>
+                <p class="panel-subtitle">{{ checkInSuccess.id }}</p>
+              </div>
+              <p class="identity-meta">
+                {{ checkInSuccess.studentName }} → {{ checkInSuccess.seatName }}
+              </p>
+              <button class="btn-outline" @click="dismissCheckInSuccess">Got it</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3.6 WALK-IN ADMISSION -->
+        <section class="tab-panel" v-else-if="activeTab === 'walkIn'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Walk-In Details</h2>
+                <p class="panel-subtitle">Capture the student, then assign a free seat.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field field-full">
+                  <span>Student Name</span>
+                  <input type="text" v-model.trim="walkInForm.fullName" placeholder="Full name">
+                </label>
+                <label class="field field-full">
+                  <span>Student ID <span class="identity-meta muted">(optional)</span></span>
+                  <input type="text" v-model.trim="walkInForm.studentId" placeholder="e.g. STU-2026-0199, leave blank if none">
+                </label>
+                <label class="field">
+                  <span>Zone</span>
+                  <select v-model="walkInForm.zone">
+                    <option value="all">Any zone</option>
+                    <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Type</span>
+                  <select v-model="walkInForm.type">
+                    <option value="all">Seat or room</option>
+                    <option value="seat">Individual seat</option>
+                    <option value="room">Study room</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Assign a Seat</h2>
+                <p class="panel-subtitle">{{ availableForWalkIn.length }} available right now.</p>
+              </div>
+
+              <div class="seat-grid" v-if="availableForWalkIn.length">
+                <button
+                  type="button"
+                  class="seat-card seat-pick"
+                  v-for="seat in availableForWalkIn"
+                  :key="seat.id"
+                  :class="{ 'seat-pick-selected': walkInForm.seatId === seat.id }"
+                  @click="walkInForm.seatId = seat.id"
+                >
+                  <div class="seat-card-top">
+                    <span class="seat-card-name">{{ seat.name }}</span>
+                  </div>
+                  <p class="seat-card-meta">
+                    {{ seat.type === 'room' ? 'Room · seats ' + seat.capacity : 'Single seat' }}
+                    <span v-if="seat.hasPower"> · Power outlet</span>
+                  </p>
+                </button>
+              </div>
+              <p class="data-list-empty" v-else>Nothing free matching these filters right now.</p>
+
+              <p class="form-error" v-if="walkInError">{{ walkInError }}</p>
+
+              <div class="booking-confirm-row">
+                <p class="booking-selected-summary" v-if="walkInForm.seatId">
+                  Assigning <strong>{{ availableForWalkIn.find(s => s.id === walkInForm.seatId)?.name }}</strong>
+                </p>
+                <span v-else></span>
+                <button class="btn-primary btn-small" @click="assignWalkIn">Admit &amp; Assign Seat</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="booking-success-toast" v-if="walkInSuccess">
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Walk-In Admitted</h2>
+                <p class="panel-subtitle">{{ walkInSuccess.id }}</p>
+              </div>
+              <p class="identity-meta">
+                {{ walkInSuccess.studentName }} → {{ walkInSuccess.seatName }}
+              </p>
+              <button class="btn-outline" @click="dismissWalkInSuccess">Got it</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3.7 EXTENSION APPROVAL & SEAT ALLOCATION -->
+        <section class="tab-panel" v-else-if="activeTab === 'extensions'">
+
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Pending Requests</h2>
+              <p class="panel-subtitle">Extend the student's current seat, or move them to a different available one.</p>
+            </div>
+
+            <div class="record-list" v-if="pendingList.length">
+              <div class="record-row booking-row" v-for="req in pendingList" :key="req.id">
+
+                <template v-if="reassigningId !== req.id">
+                  <div class="record-avatar">{{ initialsOf(req.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ req.studentName }}</span>
+                    <span class="record-sub">{{ req.currentSeatName }} · {{ req.studentId }}</span>
+                    <span class="record-sub">Requesting +{{ req.requestedMinutes }} min — "{{ req.reason }}"</span>
+                  </div>
+                  <span class="badge badge-warning">Pending</span>
+                  <div class="record-actions">
+                    <button class="btn-outline" @click="approveExtendCurrent(req)">Extend Same Seat</button>
+                    <button class="btn-outline" @click="startReassign(req)">Assign New Seat</button>
+                    <button class="btn-outline btn-outline-danger" @click="rejectExtension(req)">Reject</button>
+                  </div>
+                </template>
+
+                <template v-else>
+                  <div class="record-avatar">{{ initialsOf(req.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ req.studentName }}</span>
+                    <span class="record-sub">Currently at {{ req.currentSeatName }}</span>
+                  </div>
+                  <div class="record-edit-grid record-edit-grid-wide">
+                    <label class="field field-full">
+                      <span>New Seat / Room</span>
+                      <select v-model="reassignSeatId">
+                        <option :value="null" disabled>Select an available seat or room</option>
+                        <option v-for="s in availableForReassign" :key="s.id" :value="s.id">{{ s.name }}</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="record-actions">
+                    <button class="btn-primary btn-small" @click="confirmReassign(req)">Confirm Reassignment</button>
+                    <button class="btn-ghost" @click="cancelReassign">Cancel</button>
+                  </div>
+                </template>
+
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No pending extension requests.</p>
+          </div>
+
+          <div class="panel-card" v-if="resolvedList.length">
+            <div class="panel-card-header">
+              <h2>Recently Handled</h2>
+              <p class="panel-subtitle">Resolved during this session.</p>
+            </div>
+            <div class="record-list">
+              <div class="record-row" v-for="req in resolvedList" :key="req.id">
+                <div class="record-avatar">{{ initialsOf(req.studentName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ req.studentName }}</span>
+                  <span class="record-sub">{{ req.resolution }}</span>
+                </div>
+                <span class="badge" :class="req.status === 'approved' ? 'badge-success' : 'badge-muted'">{{ req.status }}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 5.1 OFFLINE PAYMENT RECORDING -->
+        <section class="tab-panel" v-else-if="activeTab === 'payments'">
+          <div class="booking-layout">
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Record a Payment</h2>
+                <p class="panel-subtitle">Log cash, UPI, or card payments made in person.</p>
+              </div>
+
+              <div class="field-grid">
+                <label class="field field-full">
+                  <span>Student Name</span>
+                  <input type="text" v-model.trim="paymentForm.studentName" placeholder="Full name">
+                </label>
+                <label class="field field-full">
+                  <span>Student ID <span class="identity-meta muted">(optional)</span></span>
+                  <input type="text" v-model.trim="paymentForm.studentId" placeholder="e.g. STU-2026-0142">
+                </label>
+                <label class="field">
+                  <span>Amount (₹)</span>
+                  <input type="number" min="0" step="1" v-model.number="paymentForm.amount" placeholder="e.g. 500">
+                </label>
+                <label class="field">
+                  <span>Payment Mode</span>
+                  <select v-model="paymentForm.mode">
+                    <option v-for="m in PAYMENT_MODES" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                </label>
+                <label class="field field-full">
+                  <span>Purpose</span>
+                  <input type="text" v-model.trim="paymentForm.purpose" placeholder="e.g. Premium Membership — Monthly">
+                </label>
+              </div>
+
+              <p class="form-error" v-if="paymentError">{{ paymentError }}</p>
+              <p class="form-success" v-if="paymentSuccess">Payment of ₹{{ paymentSuccess.amount }} recorded for {{ paymentSuccess.studentName }}.</p>
+              <button class="btn-primary btn-small" @click="recordPayment">Record Payment</button>
+            </div>
+
+            <div class="panel-card">
+              <div class="panel-card-header">
+                <h2>Recorded This Session</h2>
+                <p class="panel-subtitle">{{ recordedPayments.length }} payment(s) logged.</p>
+              </div>
+
+              <div class="record-list" v-if="recordedPayments.length">
+                <div class="record-row" v-for="p in recordedPayments" :key="p.id">
+                  <div class="record-avatar">{{ initialsOf(p.studentName) }}</div>
+                  <div class="record-info">
+                    <span class="record-name">{{ p.studentName }}</span>
+                    <span class="record-sub">{{ p.purpose }} · {{ p.studentId }}</span>
+                  </div>
+                  <span class="badge" :class="paymentModeBadgeClass(p.mode)">{{ p.mode }}</span>
+                  <span class="record-amount">₹{{ p.amount }}</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No payments recorded yet this session.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- CREATE STUDENT ACCOUNT TAB -->
+        <section class="tab-panel" v-else-if="activeTab === 'createStudent'">
+
+          <div class="profile-layout">
+
+            <!-- Recently created accounts -->
+            <div class="panel-card identity-card">
+              <div class="panel-card-header" style="text-align:left; width:100%;">
+                <h2>Recently Created</h2>
+                <p class="panel-subtitle">Students you've onboarded this session.</p>
+              </div>
+
+              <div class="data-list" style="width:100%;" v-if="createdStudents.length">
+                <div class="data-row" v-for="student in createdStudents" :key="student.studentId">
+                  <div class="data-row-avatar">{{ initialsOf(student.fullName) }}</div>
+                  <div class="data-row-info">
+                    <span class="data-row-name">{{ student.fullName }}</span>
+                    <span class="data-row-sub">{{ student.username }} · {{ student.studentId }}</span>
+                  </div>
+                  <span class="badge">Student</span>
+                </div>
+              </div>
+              <p class="data-list-empty" v-else>No accounts created yet this session.</p>
+            </div>
+
+            <!-- Form -->
+            <div class="forms-col">
+
+              <form class="panel-card" @submit.prevent="createStudentAccount">
+                <div class="panel-card-header">
+                  <h2>Student Details</h2>
+                  <p class="panel-subtitle">Basic personal information for the new student.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Full Name</span>
+                    <input type="text" v-model.trim="newStudent.fullName" placeholder="Student's full name">
+                  </label>
+
+                  <label class="field">
+                    <span>Date of Birth</span>
+                    <input type="date" v-model="newStudent.dob">
+                  </label>
+
+                  <label class="field">
+                    <span>Gender</span>
+                    <select v-model="newStudent.gender">
+                      <option value="" disabled>Select gender</option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Phone</span>
+                    <input type="tel" v-model.trim="newStudent.phone" placeholder="10-digit phone number">
+                  </label>
+
+                  <label class="field">
+                    <span>Email</span>
+                    <input type="email" v-model.trim="newStudent.email" placeholder="student@example.com">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Address</span>
+                    <input type="text" v-model.trim="newStudent.address" placeholder="Student's address">
+                  </label>
+                </div>
+              </form>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Library Information</h2>
+                  <p class="panel-subtitle">Membership and seating details.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Student / Roll Number</span>
+                    <input type="text" v-model.trim="newStudent.studentId" placeholder="e.g. STU-2026-0143">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Membership Plan</span>
+                    <select v-model="newStudent.membershipPlanId" :disabled="membershipPlansLoading">
+                      <option value="" disabled>{{ membershipPlansLoading ? 'Loading plans...' : 'Select membership plan' }}</option>
+                      <option v-for="plan in membershipPlans" :key="plan.plan_id" :value="plan.plan_id">
+                        {{ plan.plan_name }} · {{ plan.duration_days }} days · ₹{{ plan.price }}
+                      </option>
+                    </select>
+                  </label>
+
+                  <p class="field-hint field-full">The membership starts as <strong>Pending</strong>. An Admin approves it before the student becomes eligible to use the library.</p>
+                </div>
+              </div>
+
+              <div class="panel-card">
+                <div class="panel-card-header">
+                  <h2>Login Credentials</h2>
+                  <p class="panel-subtitle">The student will use these to log in. They can change the password later.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Username</span>
+                    <input type="text" v-model.trim="newStudent.username" placeholder="Choose a username">
+                  </label>
+
+                  <label class="field">
+                    <span>Temporary Password</span>
+                    <input type="password" v-model="newStudent.password" placeholder="Set a temporary password">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Confirm Password</span>
+                    <input type="password" v-model="newStudent.confirmPassword" placeholder="Re-enter password">
+                  </label>
+                </div>
+                <p class="field-hint">The student cannot log in until this account is created here.</p>
+
+                <p class="form-error" v-if="createError">{{ createError }}</p>
+                <p class="form-success" v-if="createSuccess">Student account created successfully.</p>
+                <button type="button" class="btn-primary btn-small" @click="createStudentAccount">Create Student Account</button>
+              </div>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- VERIFY MEMBERSHIPS TAB -->
+        <section class="tab-panel" v-else-if="activeTab === 'verifyMemberships'">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Student Memberships</h2>
+              <p class="panel-subtitle">Check the current membership status and validity of registered students.</p>
+            </div>
+
+            <p class="form-error" v-if="verifyError">{{ verifyError }}</p>
+            <div class="record-list" v-if="membershipsToVerify.length">
+              <div class="record-row" v-for="m in membershipsToVerify" :key="m.student_id">
+                <div class="record-avatar">{{ initialsOf(m.full_name) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ m.full_name }}</span>
+                  <span class="record-sub">
+                    {{ m.roll_number || ('Student #' + m.student_id) }} · {{ m.email || 'No email' }}
+                    <span v-if="m.membership_plan"> · {{ m.membership_plan.plan_name }}</span>
+                  </span>
+                </div>
+                <span class="badge" :class="m.membership_status === 'Active' ? 'badge-success' : 'badge-warning'">
+                  {{ m.membership_status }}
+                </span>
+                <div class="record-actions">
+                  <button class="btn-outline" @click="verifyMembership(m)" :disabled="verifyLoadingId === m.student_id">
+                    {{ verifyLoadingId === m.student_id ? 'Checking...' : 'Verify Membership' }}
+                  </button>
+                </div>
+                <div class="record-sub" v-if="m.verification">
+                  {{ m.verification }}<span v-if="m.membership_expiry"> · Valid until {{ m.membership_expiry }}</span>
+                </div>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No registered students to verify.</p>
+          </div>
+        </section>
+
+        <!-- 6.2 COMPLAINT MANAGEMENT -->
+        <section class="tab-panel" v-else-if="activeTab === 'complaints'">
+
+          <div class="panel-card">
+            <div class="panel-card-header reports-toolbar">
+              <div>
+                <h2>Student Complaints</h2>
+                <p class="panel-subtitle">Review, take ownership of, and resolve reported issues.</p>
+              </div>
+              <div class="range-toggle">
+                <button
+                  class="range-btn"
+                  v-for="opt in [{id:'open',label:'Open'},{id:'in-progress',label:'In Progress'},{id:'resolved',label:'Resolved'},{id:'all',label:'All'}]"
+                  :key="opt.id"
+                  :class="{ active: complaintFilter === opt.id }"
+                  @click="complaintFilter = opt.id"
+                >{{ opt.label }} ({{ complaintFilterCounts[opt.id] }})</button>
+              </div>
+            </div>
+
+            <div class="record-list" v-if="filteredComplaints.length">
+              <div class="record-row booking-row" v-for="c in filteredComplaints" :key="c.id">
+
+                <div class="record-avatar">{{ initialsOf(c.studentName) }}</div>
+                <div class="record-info">
+                  <span class="record-name">{{ c.subject }}</span>
+                  <span class="record-sub">{{ c.category }} · {{ c.studentName }} ({{ c.studentId }}) · {{ c.date }}</span>
+                  <span class="record-sub">{{ c.description }}</span>
+                  <span class="record-sub" v-if="c.status === 'resolved'">Resolution: {{ c.resolutionNote }} — {{ c.resolvedBy }}</span>
+                </div>
+                <span class="badge" :class="complaintStatusBadgeClass(c.status)">{{ COMPLAINT_STATUS_LABELS[c.status] }}</span>
+
+                <div class="record-actions" v-if="resolvingComplaintId !== c.id">
+                  <button class="btn-outline" v-if="c.status === 'open'" @click="startReview(c)">Start Review</button>
+                  <button class="btn-primary btn-small" v-if="c.status !== 'resolved'" @click="startResolve(c)">Resolve</button>
+                </div>
+
+                <div class="record-edit-grid record-edit-grid-wide" v-else style="width:100%;">
+                  <label class="field field-full">
+                    <span>Resolution Note</span>
+                    <textarea rows="3" v-model.trim="resolutionDraft" placeholder="Describe how this complaint was resolved…"></textarea>
+                  </label>
+                  <div class="record-actions">
+                    <button class="btn-primary btn-small" :disabled="!resolutionDraft.trim()" @click="confirmResolve(c)">Mark Resolved</button>
+                    <button class="btn-ghost" @click="cancelResolve">Cancel</button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No complaints in this category.</p>
+          </div>
+        </section>
+
+        <!-- 6.3 ANNOUNCEMENTS (VIEW ONLY FOR STAFF) -->
+        <section class="tab-panel" v-else-if="activeTab === 'announcements'">
+          <div class="panel-card">
+            <div class="panel-card-header">
+              <h2>Latest Announcements</h2>
+              <p class="panel-subtitle">Published by the library admin for staff and everyone.</p>
+            </div>
+
+            <div class="record-list" v-if="sortedAnnouncements.length">
+              <div class="record-row" v-for="a in sortedAnnouncements" :key="a.id">
+                <div class="record-info">
+                  <span class="record-name">{{ a.title }}</span>
+                  <span class="record-sub">{{ a.message }}</span>
+                  <span class="record-sub">{{ a.createdAt }} · {{ a.createdBy }}</span>
+                </div>
+                <span class="badge" :class="announcementPriorityBadgeClass(a.priority)">{{ a.priority }}</span>
+              </div>
+            </div>
+            <p class="data-list-empty" v-else>No announcements right now.</p>
+          </div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section class="tab-panel" v-else-if="activeTab === 'settings'">
+
+          <div class="profile-layout">
+
+            <!-- Avatar / identity card -->
+            <div class="panel-card identity-card">
+              <div class="avatar-wrap">
+                <div class="avatar-circle" :style="avatarStyle">
+                  <span v-if="!staff.avatarUrl">{{ initials }}</span>
+                </div>
+                <label class="avatar-upload-btn">
+                  Change Photo
+                  <input type="file" accept="image/*" @change="handleAvatarChange" hidden>
+                </label>
+                <button class="avatar-remove-btn" v-if="staff.avatarUrl" @click="removeAvatar">Remove</button>
+              </div>
+              <h3 class="identity-name">{{ staff.fullName || 'Unnamed Staff' }}</h3>
+              <p class="identity-meta">{{ staff.designation || 'Library Staff' }}</p>
+              <p class="identity-meta muted">Staff ID: {{ staff.staffId || '—' }}</p>
+              <p class="identity-meta muted">Joined {{ staff.dateJoined || '—' }}</p>
+            </div>
+
+            <!-- Forms -->
+            <div class="forms-col">
+
+              <!-- Personal Information -->
+              <form class="panel-card" @submit.prevent="savePersonal">
+                <div class="panel-card-header">
+                  <h2>Personal Information</h2>
+                  <p class="panel-subtitle">Your basic personal details.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Full Name</span>
+                    <input type="text" v-model.trim="staff.fullName" placeholder="Your full name">
+                  </label>
+
+                  <label class="field">
+                    <span>Email</span>
+                    <input type="email" v-model.trim="staff.email" placeholder="you@studylibrary.com">
+                  </label>
+
+                  <label class="field">
+                    <span>Date of Birth</span>
+                    <input type="date" v-model="staff.dob">
+                  </label>
+
+                  <label class="field">
+                    <span>Gender</span>
+                    <select v-model="staff.gender">
+                      <option value="" disabled>Select gender</option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                      <option value="other">Other</option>
+                      <option value="prefer_not_to_say">Prefer not to say</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Phone</span>
+                    <input type="tel" v-model.trim="staff.phone" placeholder="10-digit phone number">
+                  </label>
+
+                  <label class="field field-full">
+                    <span>Address</span>
+                    <input type="text" v-model.trim="staff.address" placeholder="Your address">
+                  </label>
+                </div>
+
+                <p class="form-success" v-if="savedSection === 'personal'">Personal details saved.</p>
+                <button type="submit" class="btn-primary btn-small">Save Changes</button>
+              </form>
+
+              <!-- Account & Security -->
+              <form class="panel-card" @submit.prevent="changePassword">
+                <div class="panel-card-header">
+                  <h2>Account &amp; Security</h2>
+                  <p class="panel-subtitle">Your login credentials.</p>
+                </div>
+
+                <div class="field-grid">
+                  <label class="field">
+                    <span>Username</span>
+                    <input type="text" :value="staff.username" disabled>
+                  </label>
+
+                  <label class="field">
+                    <span>Current Password</span>
+                    <input type="password" v-model="security.currentPassword" placeholder="Enter current password">
+                  </label>
+
+                  <label class="field">
+                    <span>New Password</span>
+                    <input type="password" v-model="security.newPassword" placeholder="Enter new password">
+                  </label>
+
+                  <label class="field">
+                    <span>Confirm New Password</span>
+                    <input type="password" v-model="security.confirmPassword" placeholder="Re-enter new password">
+                  </label>
+                </div>
+
+                <p class="form-error" v-if="securityError">{{ securityError }}</p>
+                <p class="form-success" v-if="savedSection === 'security'">Password updated.</p>
+                <button type="submit" class="btn-primary btn-small">Update Password</button>
+              </form>
+
+            </div>
+          </div>
+        </section>
+
+        <!-- PLACEHOLDER TABS -->
+        <section class="tab-panel tab-placeholder" v-else>
+          <div class="placeholder-box">
+            <span class="placeholder-icon" v-html="icons.soon"></span>
+            <h2>{{ currentTabLabel }} is coming soon</h2>
+            <p>This section isn't built yet. Check back later.</p>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+  {% endraw %}
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="{{ url_for('static', filename='js/library-data.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/staff_dashboard.js') }}"></script>
+</body>
+</html>

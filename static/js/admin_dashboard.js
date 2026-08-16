@@ -457,40 +457,84 @@ const app = createApp({
 
     /* ---------------- Student Membership Management ---------------- */
 
-    const memberships = ref([
-      { fullName: 'Ananya Sharma', studentId: 'STU-2026-0142', membershipType: 'Premium', status: 'Approved', validUntil: 'Dec 31, 2026' },
-      { fullName: 'Vikram Singh', studentId: 'STU-2026-0150', membershipType: 'Regular', status: 'Pending', validUntil: '' },
-      { fullName: 'Neha Joshi', studentId: 'STU-2026-0151', membershipType: 'Day Pass', status: 'Pending', validUntil: '' },
-      { fullName: 'Arjun Kapoor', studentId: 'STU-2026-0130', membershipType: 'Regular', status: 'Suspended', validUntil: 'Sep 30, 2026' }
-    ]);
+    const memberships = ref([]);
+    const membershipError = ref('');
+    const membershipLoading = ref(false);
+
+    const STATUS_LABELS = {
+      Pending: 'Pending',
+      Active: 'Approved',
+      Rejected: 'Rejected',
+      Disapproved: 'Suspended'
+    };
+
+    function mapMembership(student) {
+      return {
+        id: student.student_id,
+        student_id: student.student_id,
+        studentId: student.roll_number || `STU-${String(student.student_id).padStart(4, '0')}`,
+        fullName: student.full_name,
+        membershipType: (student.membership_plan && student.membership_plan.plan_name) || 'Unassigned',
+        status: STATUS_LABELS[student.membership_status] || student.membership_status,
+        validUntil: student.membership_expiry || ''
+      };
+    }
+
+    async function loadMemberships() {
+      membershipLoading.value = true;
+      membershipError.value = '';
+      try {
+        const data = await apiFetch('/admin/memberships');
+        memberships.value = data.map(mapMembership);
+      } catch (error) {
+        membershipError.value = error.message;
+      } finally {
+        membershipLoading.value = false;
+      }
+    }
 
     const pendingMemberships = computed(() => memberships.value.filter((m) => m.status === 'Pending'));
     const approvedMemberships = computed(() => memberships.value.filter((m) => m.status === 'Approved'));
     const suspendedMemberships = computed(() => memberships.value.filter((m) => m.status === 'Suspended'));
 
-    function approveMembership(m) {
-      // TODO: PATCH /api/admin/memberships/{studentId}/approve once the backend endpoint exists
-      m.status = 'Approved';
-      if (!m.validUntil) {
-        const nextYear = new Date();
-        nextYear.setFullYear(nextYear.getFullYear() + 1);
-        m.validUntil = nextYear.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    async function approveMembership(m) {
+      membershipError.value = '';
+      try {
+        await apiFetch(`/admin/memberships/${m.student_id}/approve`, { method: 'POST' });
+        await loadMemberships();
+      } catch (error) {
+        membershipError.value = error.message;
       }
     }
 
-    function rejectMembership(m) {
-      // TODO: DELETE /api/admin/memberships/{studentId} once the backend endpoint exists
-      memberships.value = memberships.value.filter((item) => item.studentId !== m.studentId);
+    async function rejectMembership(m) {
+      membershipError.value = '';
+      try {
+        await apiFetch(`/admin/memberships/${m.student_id}/reject`, { method: 'POST' });
+        await loadMemberships();
+      } catch (error) {
+        membershipError.value = error.message;
+      }
     }
 
-    function suspendMembership(m) {
-      // TODO: PATCH /api/admin/memberships/{studentId}/suspend once the backend endpoint exists
-      m.status = 'Suspended';
+    async function suspendMembership(m) {
+      membershipError.value = '';
+      try {
+        await apiFetch(`/admin/memberships/${m.student_id}/disapprove`, { method: 'POST' });
+        await loadMemberships();
+      } catch (error) {
+        membershipError.value = error.message;
+      }
     }
 
-    function reactivateMembership(m) {
-      // TODO: PATCH /api/admin/memberships/{studentId}/approve once the backend endpoint exists
-      m.status = 'Approved';
+    async function reactivateMembership(m) {
+      membershipError.value = '';
+      try {
+        await apiFetch(`/admin/memberships/${m.student_id}/approve`, { method: 'POST' });
+        await loadMemberships();
+      } catch (error) {
+        membershipError.value = error.message;
+      }
     }
 
     
@@ -831,6 +875,7 @@ const app = createApp({
 
     onMounted(() => {
       loadStaffAccounts();
+      loadMemberships();
     });
 
     // ---------------------------------------------------------------
@@ -966,6 +1011,8 @@ const app = createApp({
       toggleStaffStatus,
 
       memberships,
+      membershipError,
+      membershipLoading,
       pendingMemberships,
       approvedMemberships,
       suspendedMemberships,
