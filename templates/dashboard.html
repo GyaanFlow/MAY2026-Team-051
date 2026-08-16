@@ -573,39 +573,60 @@
                 <button type="submit" class="btn-primary btn-small">Save Changes</button>
               </form>
 
-              <!-- Library Info -->
-              <form class="panel-card" @submit.prevent="saveLibrary">
-                <div class="panel-card-header">
-                  <h2>Library Information</h2>
-                  <p class="panel-subtitle">Your membership and seating details.</p>
-                </div>
+              <div class="panel-card">
+  <div class="panel-card-header">
+    <h2>Membership Information</h2>
+    <p class="panel-subtitle">
+      Your current study library membership details.
+    </p>
+  </div>
 
-                <div class="field-grid">
-                  <label class="field">
-                    <span>Student / Roll Number</span>
-                    <input type="text" v-model.trim="profile.studentId" placeholder="e.g. STU-2026-0142">
-                  </label>
+  <div class="field-grid">
 
-                  <label class="field">
-                    <span>Membership Type</span>
-                    <select v-model="profile.membershipType">
-                      <option value="" disabled>Select membership</option>
-                      <option value="Regular">Regular</option>
-                      <option value="Premium">Premium</option>
-                      <option value="Day Pass">Day Pass</option>
-                    </select>
-                  </label>
+    <label class="field">
+      <span>Student / Roll Number</span>
+      <input
+        type="text"
+        :value="profile.studentId"
+        disabled
+      >
+    </label>
 
-                  <label class="field">
-                    <span>Membership Start Date</span>
-                    <input type="date" v-model="profile.membershipStart">
-                  </label>
+    <label class="field">
+      <span>Membership Type</span>
+      <input
+        type="text"
+        :value="profile.membershipType || 'Not assigned'"
+        disabled
+      >
+    </label>
 
-                  <label class="field">
-                    <span>Membership Valid Until</span>
-                    <input type="date" v-model="profile.membershipValidUntil">
-                  </label>
+    <label class="field">
+      <span>Membership Status</span>
+      <input
+        type="text"
+        :value="profile.membershipStatus || 'Unknown'"
+        disabled
+      >
+    </label>
 
+    <label class="field">
+      <span>Valid Until / Renewal Date</span>
+      <input
+        type="date"
+        :value="profile.membershipValidUntil"
+        disabled
+      >
+    </label>
+
+    <label class="field">
+      <span>Membership Validity</span>
+      <input
+        type="text"
+        :value="profile.membershipValid ? 'Valid' : 'Not Valid'"
+        disabled
+      >
+    </label>
                   <label class="field field-full">
                     <span>Preferred Seat / Slot</span>
                     <input type="text" v-model.trim="profile.preferredSeat" placeholder="e.g. Hall B, Seat 14, Morning Slot">
@@ -777,6 +798,7 @@
 
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script src="{{ url_for('static', filename='js/library-data.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
   <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html>

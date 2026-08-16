@@ -17,8 +17,8 @@ from resources.membership import (
 )
 # from resources.settings import LibrarySettingsResource
 # from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
-# from resources.profile import ProfileResource, ResetPasswordResource
-# from resources.student_profile import StudentMeResource
+from resources.profile import ProfileResource, ResetPasswordResource
+from resources.student_profile import StudentMeResource
 from resources.staff_students import (
     StaffRegisterStudentResource,
     StaffStudentListResource,
@@ -98,10 +98,10 @@ def create_app(config_class=Config):
     # api.add_resource(SeatListResource, "/admin/seats")
     # api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
 
-    # api.add_resource(ProfileResource, "/profile")
-    # api.add_resource(ResetPasswordResource, "/auth/reset-password")
+    api.add_resource(ProfileResource, "/profile")
+    api.add_resource(ResetPasswordResource, "/auth/reset-password")
 
-    # api.add_resource(StudentMeResource, "/students/me")
+    api.add_resource(StudentMeResource, "/students/me")
 
     api.add_resource(StaffRegisterStudentResource, "/staff/students/register")
     api.add_resource(StaffStudentListResource, "/staff/students")
