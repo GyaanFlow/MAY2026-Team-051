@@ -80,6 +80,47 @@ def _validate_holiday_closures(holiday_closures):
     return None, normalized
 
 
+def _parse_optional_int(data, key, *, minimum=0):
+    if key not in data:
+        return None
+    raw = data.get(key)
+    if raw is None or raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be a number")
+    if value < minimum:
+        raise ValueError(f"{key} must be at least {minimum}")
+    return value
+
+
+def _validate_seat_zones(seat_zones):
+    if not isinstance(seat_zones, list):
+        return "seat_zones must be a list", None
+
+    normalized = []
+    seen = set()
+    for entry in seat_zones:
+        if not isinstance(entry, dict):
+            return "Each seat zone must be an object", None
+        zone = (entry.get("zone") or "").strip()
+        if not zone:
+            return "Each seat zone needs a name", None
+        key = zone.lower()
+        if key in seen:
+            return f"Duplicate seat zone '{zone}'", None
+        seen.add(key)
+        try:
+            seats = int(entry.get("seats"))
+        except (TypeError, ValueError):
+            return f"Seat count for {zone} must be a number", None
+        if seats <= 0:
+            return f"Seat count for {zone} must be greater than zero", None
+        normalized.append({"zone": zone, "seats": seats})
+    return None, normalized
+
+
 class LibrarySettingsResource(Resource):
     @admin_required
     def get(self):
@@ -101,8 +142,21 @@ class LibrarySettingsResource(Resource):
         has_hours = "open_time" in data or "close_time" in data
         has_weekly = "weekly_hours" in data
         has_closures = "holiday_closures" in data
-        if not has_hours and not has_weekly and not has_closures:
-            return {"message": "open_time, close_time, weekly_hours or holiday_closures is required"}, 400
+        has_zones = "seat_zones" in data
+        limit_keys = {
+            "total_seats",
+            "min_booking_minutes",
+            "max_booking_hours",
+            "max_bookings_per_day",
+            "max_booking_days_ahead",
+            "cancellation_period",
+            "waitlist_enabled",
+        }
+        has_limits = any(key in data for key in limit_keys)
+        if not has_hours and not has_weekly and not has_closures and not has_limits and not has_zones:
+            return {
+                "message": "open_time, close_time, weekly_hours, holiday_closures, seat_zones or booking limits are required"
+            }, 400
 
         new_open = settings.open_time
         new_close = settings.close_time
@@ -140,8 +194,53 @@ class LibrarySettingsResource(Resource):
                 return {"message": error}, 400
             settings.holiday_closures = json.dumps(holiday_closures)
 
+        if has_zones:
+            error, seat_zones = _validate_seat_zones(data.get("seat_zones"))
+            if error:
+                return {"message": error}, 400
+            settings.seat_zones = json.dumps(seat_zones)
+
+        try:
+            if "total_seats" in data:
+                settings.total_seats = _parse_optional_int(data, "total_seats", minimum=1)
+            if "min_booking_minutes" in data:
+                settings.min_booking_minutes = _parse_optional_int(
+                    data, "min_booking_minutes", minimum=1
+                )
+            if "max_booking_hours" in data:
+                settings.max_booking_hours = _parse_optional_int(
+                    data, "max_booking_hours", minimum=1
+                )
+            if "max_bookings_per_day" in data:
+                settings.max_bookings_per_day = _parse_optional_int(
+                    data, "max_bookings_per_day", minimum=1
+                )
+            if "max_booking_days_ahead" in data:
+                settings.max_booking_days_ahead = _parse_optional_int(
+                    data, "max_booking_days_ahead", minimum=0
+                )
+            if "cancellation_period" in data:
+                settings.cancellation_period = _parse_optional_int(
+                    data, "cancellation_period", minimum=0
+                )
+        except ValueError as exc:
+            return {"message": str(exc)}, 400
+
+        if (
+            settings.min_booking_minutes
+            and settings.max_booking_hours
+            and settings.min_booking_minutes >= settings.max_booking_hours * 60
+        ):
+            return {"message": "Minimum booking duration must be less than the maximum"}, 400
+
+        if "waitlist_enabled" in data:
+            waitlist_enabled = data.get("waitlist_enabled")
+            if not isinstance(waitlist_enabled, bool):
+                return {"message": "waitlist_enabled must be true or false"}, 400
+            settings.waitlist_enabled = waitlist_enabled
+
         settings.updated_by = int(get_jwt_identity())
         settings.updated_at = datetime.now(timezone.utc)
 
         db.session.commit()
-        return {"message": "Operating hours updated", "settings": settings.to_dict()}, 200
+        return {"message": "Settings updated", "settings": settings.to_dict()}, 200

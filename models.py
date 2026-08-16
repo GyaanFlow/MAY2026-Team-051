@@ -136,8 +136,13 @@ class LibrarySettings(db.Model):
     cancellation_period = db.Column(db.Integer, nullable=True)
     max_booking_days_ahead = db.Column(db.Integer, nullable=True)
     extension_limit_minutes = db.Column(db.Integer, nullable=True)
+    min_booking_minutes = db.Column(db.Integer, nullable=True)
+    max_booking_hours = db.Column(db.Integer, nullable=True)
+    max_bookings_per_day = db.Column(db.Integer, nullable=True)
+    waitlist_enabled = db.Column(db.Boolean, default=False, nullable=True)
     weekly_hours = db.Column(db.Text, nullable=True)
     holiday_closures = db.Column(db.Text, nullable=True)
+    seat_zones = db.Column(db.Text, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=True)
 
@@ -146,6 +151,9 @@ class LibrarySettings(db.Model):
 
     def holiday_closures_list(self):
         return _parse_json_list(self.holiday_closures)
+
+    def seat_zones_list(self):
+        return _parse_json_list(self.seat_zones)
 
     def to_dict(self):
         return {
@@ -157,8 +165,13 @@ class LibrarySettings(db.Model):
             "cancellation_period": self.cancellation_period,
             "max_booking_days_ahead": self.max_booking_days_ahead,
             "extension_limit_minutes": self.extension_limit_minutes,
+            "min_booking_minutes": self.min_booking_minutes,
+            "max_booking_hours": self.max_booking_hours,
+            "max_bookings_per_day": self.max_bookings_per_day,
+            "waitlist_enabled": bool(self.waitlist_enabled),
             "weekly_hours": self.weekly_hours_list(),
             "holiday_closures": self.holiday_closures_list(),
+            "seat_zones": self.seat_zones_list(),
             "updated_by": self.updated_by,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

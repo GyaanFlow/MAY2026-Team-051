@@ -697,58 +697,208 @@ const app = createApp({
     
 
     const bookingLimits = reactive({
-      totalSeats: 60,
-      minBookingMinutes: 30,
+      totalSeats: 0,
+      minBookingMinutes: 15,
       maxBookingHours: 4,
-      maxBookingsPerDay: 2,
+      maxBookingsPerDay: 1,
       advanceBookingDays: 7,
-      cancellationWindowHours: 1,
-      waitlistEnabled: true
+      cancellationWindowHours: 2,
+      waitlistEnabled: false
     });
 
-    const seatZones = ref([
-      { zone: 'Silent Study Zone', seats: 25 },
-      { zone: 'Group Discussion Zone', seats: 15 },
-      { zone: 'Computer Zone', seats: 20 }
-    ]);
+    const seats = ref([]);
+    const seatsLoading = ref(false);
+    const seatZones = ref([]);
+    const zoneSeatTotal = computed(() =>
+      seatZones.value.reduce((sum, zone) => sum + Number(zone.seats || 0), 0)
+    );
+    const zoneSeatMismatch = computed(
+      () => zoneSeatTotal.value > 0 && zoneSeatTotal.value !== Number(bookingLimits.totalSeats)
+    );
 
-    const zoneSeatTotal = computed(() => seatZones.value.reduce((sum, z) => sum + Number(z.seats || 0), 0));
-    const zoneSeatMismatch = computed(() => zoneSeatTotal.value !== Number(bookingLimits.totalSeats));
+    async function loadSeats() {
+      seatsLoading.value = true;
+      try {
+        const data = await apiFetch('/admin/seats');
+        seats.value = data;
+        bookingLimits.totalSeats = seats.value.filter((seat) => seat.is_active).length;
+      } catch (error) {
+        bookingLimitsError.value = error.message;
+      } finally {
+        seatsLoading.value = false;
+      }
+    }
+
+    async function loadBookingLimits() {
+      try {
+        const data = await apiFetch('/admin/settings');
+        if (data.min_booking_minutes != null) {
+          bookingLimits.minBookingMinutes = data.min_booking_minutes;
+        }
+        if (data.max_booking_hours != null) {
+          bookingLimits.maxBookingHours = data.max_booking_hours;
+        }
+        if (data.max_bookings_per_day != null) {
+          bookingLimits.maxBookingsPerDay = data.max_bookings_per_day;
+        }
+        if (data.max_booking_days_ahead != null) {
+          bookingLimits.advanceBookingDays = data.max_booking_days_ahead;
+        }
+        if (data.cancellation_period != null) {
+          bookingLimits.cancellationWindowHours = data.cancellation_period;
+        }
+        bookingLimits.waitlistEnabled = Boolean(data.waitlist_enabled);
+        if (Array.isArray(data.seat_zones)) {
+          seatZones.value = data.seat_zones.map((zone) => ({
+            zone: zone.zone,
+            seats: Number(zone.seats)
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to load booking limits:', error);
+      }
+    }
 
     const newZone = reactive({ zone: '', seats: null });
 
-    function addSeatZone() {
+    async function persistSeatZones() {
+      await apiFetch('/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          seat_zones: seatZones.value.map((zone) => ({
+            zone: zone.zone,
+            seats: Number(zone.seats)
+          }))
+        })
+      });
+    }
+
+    async function addSeatZone() {
       if (!newZone.zone || !newZone.seats || newZone.seats <= 0) return;
+      if (seatZones.value.some((zone) => zone.zone.toLowerCase() === newZone.zone.toLowerCase())) {
+        bookingLimitsError.value = 'A zone with that name already exists.';
+        return;
+      }
+
       seatZones.value.push({ zone: newZone.zone, seats: Number(newZone.seats) });
       newZone.zone = '';
       newZone.seats = null;
+
+      try {
+        bookingLimitsError.value = '';
+        await persistSeatZones();
+        bookingLimitsSuccess.value = true;
+        setTimeout(() => {
+          bookingLimitsSuccess.value = false;
+        }, 2500);
+      } catch (error) {
+        bookingLimitsError.value = error.message || 'Unable to save seat zone.';
+        await loadBookingLimits();
+      }
     }
 
-    function removeSeatZone(index) {
+    async function removeSeatZone(index) {
       seatZones.value.splice(index, 1);
+      try {
+        bookingLimitsError.value = '';
+        await persistSeatZones();
+      } catch (error) {
+        bookingLimitsError.value = error.message || 'Unable to remove seat zone.';
+        await loadBookingLimits();
+      }
     }
 
     const bookingLimitsError = ref('');
     const bookingLimitsSuccess = ref(false);
 
-    function saveBookingLimits() {
+    function nextUnusedSeatNumbers(count) {
+      const used = new Set(seats.value.map((seat) => seat.seat_number));
+      const numbers = [];
+      let n = 1;
+      while (numbers.length < count) {
+        const label = `S${String(n).padStart(2, '0')}`;
+        if (!used.has(label)) {
+          numbers.push(label);
+        }
+        n += 1;
+      }
+      return numbers;
+    }
+
+    async function saveBookingLimits() {
       if (!bookingLimits.totalSeats || bookingLimits.totalSeats <= 0) {
         bookingLimitsError.value = 'Total seats must be greater than zero.';
         bookingLimitsSuccess.value = false;
         return;
       }
-      if (bookingLimits.minBookingMinutes >= bookingLimits.maxBookingHours * 60) {
+
+      if (
+        bookingLimits.minBookingMinutes &&
+        bookingLimits.maxBookingHours &&
+        bookingLimits.minBookingMinutes >= bookingLimits.maxBookingHours * 60
+      ) {
         bookingLimitsError.value = 'Minimum booking duration must be less than the maximum.';
         bookingLimitsSuccess.value = false;
         return;
       }
 
       bookingLimitsError.value = '';
-      // TODO: PUT /api/admin/settings/booking-limits once the backend endpoint exists.
-      console.log('Booking limits saved:', { ...bookingLimits, seatZones: seatZones.value });
+      bookingLimitsSuccess.value = false;
 
-      bookingLimitsSuccess.value = true;
-      setTimeout(() => { bookingLimitsSuccess.value = false; }, 2500);
+      try {
+        const activeSeats = seats.value.filter((seat) => seat.is_active);
+        const currentCount = activeSeats.length;
+        const requiredCount = Number(bookingLimits.totalSeats);
+
+        if (requiredCount > currentCount) {
+          const labels = nextUnusedSeatNumbers(requiredCount - currentCount);
+          for (const seatNumber of labels) {
+            await apiFetch('/admin/seats', {
+              method: 'POST',
+              body: JSON.stringify({
+                seat_number: seatNumber,
+                seat_type: 'Standard',
+                is_active: true
+              })
+            });
+          }
+        } else if (requiredCount < currentCount) {
+          const seatsToDeactivate = activeSeats.slice(requiredCount);
+          for (const seat of seatsToDeactivate) {
+            await apiFetch(`/admin/seats/${seat.seat_id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ is_active: false })
+            });
+          }
+        }
+
+        await apiFetch('/admin/settings', {
+          method: 'PUT',
+          body: JSON.stringify({
+            total_seats: requiredCount,
+            min_booking_minutes: bookingLimits.minBookingMinutes,
+            max_booking_hours: bookingLimits.maxBookingHours,
+            max_bookings_per_day: bookingLimits.maxBookingsPerDay,
+            max_booking_days_ahead: bookingLimits.advanceBookingDays,
+            cancellation_period: bookingLimits.cancellationWindowHours,
+            waitlist_enabled: Boolean(bookingLimits.waitlistEnabled),
+            seat_zones: seatZones.value.map((zone) => ({
+              zone: zone.zone,
+              seats: Number(zone.seats)
+            }))
+          })
+        });
+
+        await loadSeats();
+        await loadBookingLimits();
+
+        bookingLimitsSuccess.value = true;
+        setTimeout(() => {
+          bookingLimitsSuccess.value = false;
+        }, 2500);
+      } catch (error) {
+        bookingLimitsError.value = error.message;
+      }
     }
 
   
@@ -966,6 +1116,8 @@ const app = createApp({
 
     onMounted(() => {
       loadStaffAccounts();
+      loadBookingLimits();
+      loadSeats();
       loadMemberships();
       loadOperatingHours();
     });
