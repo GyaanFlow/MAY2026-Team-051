@@ -341,6 +341,12 @@
                     <template v-if="b.status === 'upcoming'">
                       <button class="btn-outline" :disabled="!canModify(b)" @click="startModify(b)">Modify</button>
                       <button class="btn-outline btn-outline-danger" :disabled="!canModify(b)" @click="cancelBooking(b)">Cancel</button>
+                      <button
+                        class="btn-outline"
+                        v-if="!extensionStatus(b)"
+                        @click="openExtendForm(b)"
+                      >Request Extension</button>
+                      <span class="badge badge-warning" v-else>Extension {{ extensionStatus(b) }}</span>
                     </template>
                     <template v-else-if="b.status === 'checked-in'">
                       <button
@@ -373,6 +379,7 @@
                       <button class="btn-primary btn-small" @click="submitExtension(b)">Submit Request</button>
                       <button class="btn-ghost" @click="cancelExtend">Cancel</button>
                     </div>
+                    <p class="form-error" v-if="extendError">{{ extendError }}</p>
                   </div>
                 </template>
 

@@ -685,3 +685,84 @@ def test_walk_in_admission_pending_membership(client, staff_token, admin_token):
     }, headers=staff_headers)
     assert response.status_code == 400
 
+
+def test_student_can_request_booking_extension(client, student_token, confirmed_booking):
+    """Students can request extra time on a confirmed booking."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(
+        f"/api/students/me/bookings/{confirmed_booking['booking_id']}/extension-request",
+        json={"requested_minutes": 60},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()["extension_request"]
+    assert body["status"] == "Pending"
+    assert body["requested_end_time"] == "12:00"
+
+    loaded = client.get("/api/students/me/bookings", headers=headers).get_json()
+    match = next(item for item in loaded["bookings"] if item["booking_id"] == confirmed_booking["booking_id"])
+    assert match["pending_extension"]["extension_request_id"] == body["extension_request_id"]
+
+
+def test_staff_can_approve_extension_same_seat(client, staff_token, student_token, confirmed_booking):
+    """Staff can extend the current seat through to the requested end time."""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    created = client.post(
+        f"/api/students/me/bookings/{confirmed_booking['booking_id']}/extension-request",
+        json={"requested_minutes": 60},
+        headers=student_headers,
+    ).get_json()["extension_request"]
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    pending = client.get("/api/staff/extension-requests", headers=staff_headers)
+    assert pending.status_code == 200
+    ids = [item["extension_request_id"] for item in pending.get_json()["extension_requests"]]
+    assert created["extension_request_id"] in ids
+
+    response = client.post(
+        f"/api/staff/extension-requests/{created['extension_request_id']}/approve",
+        json={},
+        headers=staff_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["booking"]["end_time"] == "12:00"
+
+
+def test_staff_can_reassign_seat_when_approving_extension(client, staff_token, student_token, confirmed_booking):
+    """Staff can approve an extension onto a different free seat."""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    created = client.post(
+        f"/api/students/me/bookings/{confirmed_booking['booking_id']}/extension-request",
+        json={"requested_minutes": 60},
+        headers=student_headers,
+    ).get_json()["extension_request"]
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        f"/api/staff/extension-requests/{created['extension_request_id']}/approve",
+        json={"seat_id": 2},
+        headers=staff_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    booking = response.get_json()["booking"]
+    assert booking["seat_id"] == 2
+    assert booking["end_time"] == "12:00"
+
+
+def test_staff_can_reject_extension(client, staff_token, student_token, confirmed_booking):
+    """Staff can reject a pending extension request."""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    created = client.post(
+        f"/api/students/me/bookings/{confirmed_booking['booking_id']}/extension-request",
+        json={"requested_minutes": 30},
+        headers=student_headers,
+    ).get_json()["extension_request"]
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        f"/api/staff/extension-requests/{created['extension_request_id']}/reject",
+        headers=staff_headers,
+    )
+    assert response.status_code == 200
+    assert response.get_json()["extension_request"]["status"] == "Rejected"
+

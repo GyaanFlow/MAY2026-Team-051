@@ -415,7 +415,8 @@ createApp({
         status: statusMap[data.status] || String(data.status || '').toLowerCase(),
         checkInCode: data.checkin_code,
         checkInTime: null,
-        checkOutTime: null
+        checkOutTime: null,
+        extensionStatus: data.pending_extension ? 'pending' : null
       };
     }
 
@@ -739,33 +740,38 @@ createApp({
     const extensionRequests = ref([]);
     const extendingBookingId = ref(null);
     const extendMinutes = ref(60);
+    const extendError = ref('');
 
     function openExtendForm(booking) {
       extendingBookingId.value = booking.id;
       extendMinutes.value = 60;
+      extendError.value = '';
     }
 
     function cancelExtend() {
       extendingBookingId.value = null;
+      extendError.value = '';
     }
 
-    function submitExtension(booking) {
-      extensionRequests.value.unshift({
-        id: `EXT-${booking.id}-${Date.now()}`,
-        bookingId: booking.id,
-        seatName: booking.seatName,
-        currentEnd: booking.endDateTime,
-        requestedMinutes: extendMinutes.value,
-        status: 'pending'
-      });
-      // TODO: POST /api/bookings/{id}/extend-request once the backend endpoint exists
-      console.log('Extension requested for', booking.id, extendMinutes.value, 'minutes');
-      extendingBookingId.value = null;
+    async function submitExtension(booking) {
+      extendError.value = '';
+      try {
+        await apiFetch(`/students/me/bookings/${booking.id}/extension-request`, {
+          method: 'POST',
+          body: JSON.stringify({
+            requested_minutes: Number(extendMinutes.value) || 60
+          })
+        });
+        booking.extensionStatus = 'pending';
+        extendingBookingId.value = null;
+        await loadMyBookings();
+      } catch (error) {
+        extendError.value = error.message || 'Unable to request an extension.';
+      }
     }
 
     function extensionStatus(booking) {
-      const req = extensionRequests.value.find((r) => r.bookingId === booking.id);
-      return req ? req.status : null;
+      return booking.extensionStatus || null;
     }
 
     // ---------------------------------------------------------------
@@ -1028,6 +1034,7 @@ createApp({
       // Extension
       extendingBookingId,
       extendMinutes,
+      extendError,
       openExtendForm,
       cancelExtend,
       submitExtension,
