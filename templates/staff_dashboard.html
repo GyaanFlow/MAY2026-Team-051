@@ -99,6 +99,7 @@
                 <span class="badge" :class="overviewBadgeClass(b.status)">{{ overviewStatusLabel(b.status) }}</span>
               </div>
             </div>
+            <p class="data-list-empty" v-else-if="overviewLoading">Loading today's bookings...</p>
             <p class="data-list-empty" v-else>No bookings on record for today.</p>
           </div>
 
@@ -196,7 +197,9 @@
                 </div>
               </div>
             </div>
-            <p class="data-list-empty" v-else>No bookings on record for this date in the demo data.</p>
+            <p class="form-error" v-if="overviewError">{{ overviewError }}</p>
+            <p class="data-list-empty" v-else-if="overviewLoading">Loading bookings...</p>
+            <p class="data-list-empty" v-else>No bookings on record for this date.</p>
           </div>
         </section>
 
@@ -220,7 +223,7 @@
                 >
               </label>
 
-              <p class="field-hint">Demo tip: try 482913, 205774, or 917364.</p>
+              <p class="field-hint">Use the check-in code shown on the student's My Bookings page.</p>
               <p class="form-error" v-if="checkInError">{{ checkInError }}</p>
 
               <button class="btn-primary btn-small" @click="verifyCheckInCode">Verify Code</button>

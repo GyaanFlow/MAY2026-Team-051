@@ -573,3 +573,39 @@ def test_student_can_change_booking_seat(client, student_token, confirmed_bookin
     assert body["seat_id"] == 2
     assert body["seat_number"] == "S02"
 
+
+def test_staff_daily_overview_lists_todays_bookings(client, staff_token, student_token):
+    """Staff can see real student bookings for a given date."""
+    booking_date = "2026-09-01"
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    created = client.post("/api/bookings", json={
+        "seat_id": 1, "date": booking_date, "start_time": "10:00", "end_time": "11:00"
+    }, headers=student_headers)
+    assert created.status_code == 201
+    booking_id = created.get_json()["booking"]["booking_id"]
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get(f"/api/staff/bookings/today?date={booking_date}", headers=staff_headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    ids = [item["booking_id"] for item in body["bookings"]]
+    assert booking_id in ids
+    match = next(item for item in body["bookings"] if item["booking_id"] == booking_id)
+    assert match["full_name"]
+    assert match["seat_number"]
+
+
+def test_staff_daily_overview_empty_other_date(client, staff_token, confirmed_booking):
+    """A date with no bookings returns an empty list."""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get("/api/staff/bookings/today?date=2026-12-25", headers=headers)
+    assert response.status_code == 200
+    assert response.get_json()["bookings"] == []
+
+
+def test_staff_daily_overview_student_forbidden(client, student_token):
+    """Students cannot access the staff daily overview."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/staff/bookings/today", headers=headers)
+    assert response.status_code == 403
+
