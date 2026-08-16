@@ -551,6 +551,8 @@ const app = createApp({
 
     const hoursError = ref('');
     const hoursSuccess = ref(false);
+    const holidayClosures = ref([]);
+    const newHoliday = reactive({ date: '', reason: '' });
 
     function applyToAllDays(sourceDay) {
       operatingHours.forEach((d) => {
@@ -559,46 +561,135 @@ const app = createApp({
       });
     }
 
-    function saveOperatingHours() {
+    function hoursPayload() {
       const openDays = operatingHours.filter((d) => d.isOpen);
-      const invalid = openDays.some((d) => d.openTime >= d.closeTime);
+      const firstOpenDay = openDays[0];
+      return {
+        open_time: firstOpenDay ? firstOpenDay.openTime : undefined,
+        close_time: firstOpenDay ? firstOpenDay.closeTime : undefined,
+        weekly_hours: operatingHours.map((d) => ({
+          day: d.day,
+          is_open: d.isOpen,
+          open_time: d.openTime,
+          close_time: d.closeTime
+        })),
+        holiday_closures: holidayClosures.value.map((h) => ({
+          date: h.date,
+          reason: h.reason
+        }))
+      };
+    }
+
+    function applySettings(data) {
+      const weekly = data.settings ? data.settings.weekly_hours : data.weekly_hours;
+      const closures = data.settings ? data.settings.holiday_closures : data.holiday_closures;
+      const openTime = data.settings ? data.settings.open_time : data.open_time;
+      const closeTime = data.settings ? data.settings.close_time : data.close_time;
+
+      if (Array.isArray(weekly) && weekly.length) {
+        operatingHours.forEach((day) => {
+          const saved = weekly.find((item) => item.day === day.day);
+          if (!saved) return;
+          day.isOpen = Boolean(saved.is_open);
+          day.openTime = saved.open_time || day.openTime;
+          day.closeTime = saved.close_time || day.closeTime;
+        });
+      } else if (openTime && closeTime) {
+        operatingHours.forEach((day) => {
+          day.openTime = openTime;
+          day.closeTime = closeTime;
+        });
+      }
+
+      if (Array.isArray(closures)) {
+        holidayClosures.value = closures.map((h) => ({
+          date: h.date,
+          reason: h.reason
+        }));
+      }
+    }
+
+    async function loadOperatingHours() {
+      try {
+        const data = await apiFetch('/admin/settings');
+        applySettings(data);
+      } catch (error) {
+        console.error('Failed to load operating hours:', error);
+        hoursError.value = error.message || 'Unable to load operating hours.';
+      }
+    }
+
+    async function persistOperatingHours() {
+      const data = await apiFetch('/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify(hoursPayload())
+      });
+      applySettings(data);
+    }
+
+    async function saveOperatingHours() {
+      const openDays = operatingHours.filter((d) => d.isOpen);
 
       if (openDays.length === 0) {
         hoursError.value = 'At least one day must be open.';
         hoursSuccess.value = false;
         return;
       }
-      if (invalid) {
+
+      if (openDays.some((d) => d.openTime >= d.closeTime)) {
         hoursError.value = 'Closing time must be after opening time for every open day.';
         hoursSuccess.value = false;
         return;
       }
 
-      hoursError.value = '';
-      // TODO: PUT /api/admin/settings/operating-hours once the backend endpoint exists.
-      console.log('Operating hours saved:', JSON.parse(JSON.stringify(operatingHours)));
-
-      hoursSuccess.value = true;
-      setTimeout(() => { hoursSuccess.value = false; }, 2500);
+      try {
+        hoursError.value = '';
+        await persistOperatingHours();
+        hoursSuccess.value = true;
+        setTimeout(() => {
+          hoursSuccess.value = false;
+        }, 2500);
+      } catch (error) {
+        console.error('Failed to save operating hours:', error);
+        hoursError.value = error.message || 'Unable to save operating hours.';
+        hoursSuccess.value = false;
+      }
     }
 
-    const holidayClosures = ref([
-      { date: '2026-08-15', reason: 'Independence Day' },
-      { date: '2026-10-02', reason: 'Gandhi Jayanti' }
-    ]);
-
-    const newHoliday = reactive({ date: '', reason: '' });
-
-    function addHolidayClosure() {
+    async function addHolidayClosure() {
       if (!newHoliday.date || !newHoliday.reason) return;
+      if (holidayClosures.value.some((h) => h.date === newHoliday.date)) {
+        hoursError.value = 'A closure already exists for that date.';
+        return;
+      }
+
       holidayClosures.value.push({ date: newHoliday.date, reason: newHoliday.reason });
       holidayClosures.value.sort((a, b) => a.date.localeCompare(b.date));
       newHoliday.date = '';
       newHoliday.reason = '';
+
+      try {
+        hoursError.value = '';
+        await persistOperatingHours();
+        hoursSuccess.value = true;
+        setTimeout(() => {
+          hoursSuccess.value = false;
+        }, 2500);
+      } catch (error) {
+        hoursError.value = error.message || 'Unable to save holiday closure.';
+        await loadOperatingHours();
+      }
     }
 
-    function removeHolidayClosure(index) {
+    async function removeHolidayClosure(index) {
       holidayClosures.value.splice(index, 1);
+      try {
+        hoursError.value = '';
+        await persistOperatingHours();
+      } catch (error) {
+        hoursError.value = error.message || 'Unable to remove holiday closure.';
+        await loadOperatingHours();
+      }
     }
 
     const openDaysCount = computed(() => operatingHours.filter((d) => d.isOpen).length);
@@ -876,6 +967,7 @@ const app = createApp({
     onMounted(() => {
       loadStaffAccounts();
       loadMemberships();
+      loadOperatingHours();
     });
 
     // ---------------------------------------------------------------

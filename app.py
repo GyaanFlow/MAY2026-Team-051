@@ -15,7 +15,7 @@ from resources.membership import (
     MembershipPlanResource,
     StaffMembershipPlanListResource,
 )
-# from resources.settings import LibrarySettingsResource
+from resources.settings import LibrarySettingsResource
 # from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
 from resources.profile import ProfileResource, ResetPasswordResource
 from resources.student_profile import StudentMeResource
@@ -33,15 +33,15 @@ from resources.admin_memberships import (
     DisapproveMembershipResource,
     MembershipDetailResource,
 )
-# from resources.bookings import (
-#     BookingListResource,
-#     BookingDetailResource,
-#     BookingCancelResource,
-#     BookingCheckoutResource,
-#     StudentBookingHistoryResource,
-#     StaffTodayBookingsResource,
-#     WalkInBookingResource,
-# )
+from resources.bookings import (
+    BookingListResource,
+    BookingDetailResource,
+    BookingCancelResource,
+    BookingCheckoutResource,
+    StudentBookingHistoryResource,
+    StaffTodayBookingsResource,
+    WalkInBookingResource,
+)
 # from resources.checkin import StaffCheckinResource
 # from resources.extension_requests import (
 #     StudentExtensionRequestResource,
@@ -93,7 +93,7 @@ def create_app(config_class=Config):
     api.add_resource(StaffMembershipPlanListResource, "/staff/membership-plans")
     api.add_resource(MembershipPlanResource, "/admin/membership-plans/<int:plan_id>")
 
-    # api.add_resource(LibrarySettingsResource, "/admin/settings")
+    api.add_resource(LibrarySettingsResource, "/admin/settings")
 
     # api.add_resource(SeatListResource, "/admin/seats")
     # api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
@@ -116,10 +116,10 @@ def create_app(config_class=Config):
     api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
 
     # api.add_resource(SeatAvailabilityResource, "/seats/availability")
-    # api.add_resource(BookingListResource, "/bookings")
-    # api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
-    # api.add_resource(BookingCancelResource, "/bookings/<int:booking_id>/cancel")
-    # api.add_resource(BookingCheckoutResource, "/bookings/<int:booking_id>/checkout")
+    api.add_resource(BookingListResource, "/bookings")
+    api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
+    api.add_resource(BookingCancelResource, "/bookings/<int:booking_id>/cancel")
+    api.add_resource(BookingCheckoutResource, "/bookings/<int:booking_id>/checkout")
 
     # api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
     # api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
@@ -231,6 +231,16 @@ def upgrade_sqlite_schema():
     }
     for column_name, statement in student_columns_to_add.items():
         if column_name not in student_columns:
+            db.session.execute(text(statement))
+            changed = True
+
+    settings_columns = {column["name"] for column in inspect(db.engine).get_columns("library_settings")}
+    settings_columns_to_add = {
+        "weekly_hours": "ALTER TABLE library_settings ADD COLUMN weekly_hours TEXT",
+        "holiday_closures": "ALTER TABLE library_settings ADD COLUMN holiday_closures TEXT",
+    }
+    for column_name, statement in settings_columns_to_add.items():
+        if column_name not in settings_columns:
             db.session.execute(text(statement))
             changed = True
 
