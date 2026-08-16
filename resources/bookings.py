@@ -342,29 +342,50 @@ class StudentBookingHistoryResource(Resource):
 class StaffTodayBookingsResource(Resource):
     @staff_or_admin_required
     def get(self):
-        today = date_cls.today()
+        date_str = request.args.get("date")
+        if date_str:
+            try:
+                booking_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                return {"message": "date must be YYYY-MM-DD"}, 400
+        else:
+            booking_date = date_cls.today()
 
         bookings = (
-            Booking.query.filter_by(booking_date=today, status="Confirmed")
+            Booking.query.filter(Booking.booking_date == booking_date)
             .order_by(Booking.start_time.asc())
             .all()
         )
 
         result = []
-        for b in bookings:
-            data = b.to_dict()
-            seat = db.session.get(Seat, b.seat_id)
-            user = db.session.get(User, b.user_id)
-            student = Student.query.filter_by(user_id=b.user_id).first()
-
-            data["seat_number"] = seat.seat_number if seat else None
+        for booking in bookings:
+            data = _booking_payload(booking)
+            user = db.session.get(User, booking.user_id)
+            student = Student.query.filter_by(user_id=booking.user_id).first()
             data["username"] = user.username if user else None
             data["full_name"] = student.full_name if student else None
+            data["roll_number"] = student.roll_number if student else None
             result.append(data)
 
+        active_seats = Seat.query.filter_by(is_active=True).count()
+        occupied_now = 0
+        if booking_date == date_cls.today() and active_seats:
+            now_t = datetime.now().time().replace(microsecond=0)
+            occupied_now = Booking.query.filter(
+                Booking.booking_date == booking_date,
+                Booking.status.in_(("Confirmed", "Checked-In")),
+                Booking.start_time <= now_t,
+                Booking.end_time > now_t,
+            ).count()
+
+        occupancy_pct = round((occupied_now / active_seats) * 100) if active_seats else 0
+        expected = sum(1 for booking in bookings if booking.status == "Confirmed")
+
         return {
-            "date": str(today),
-            "total_expected": len(result),
+            "date": str(booking_date),
+            "total_bookings": len(result),
+            "total_expected": expected,
+            "occupancy_pct": occupancy_pct,
             "bookings": result,
         }, 200
 

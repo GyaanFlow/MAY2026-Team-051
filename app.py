@@ -122,7 +122,7 @@ def create_app(config_class=Config):
     api.add_resource(BookingCheckoutResource, "/bookings/<int:booking_id>/checkout")
 
     api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
-    # api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
+    api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
     # api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
 
     # api.add_resource(StaffCheckinResource, "/staff/checkin")

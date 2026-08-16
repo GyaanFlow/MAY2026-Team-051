@@ -1,4 +1,4 @@
-const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount } = Vue;
+const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount, watch } = Vue;
 
 const icons = {
   overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="12" width="8" height="9" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg>',
@@ -188,30 +188,74 @@ createApp({
     // 3.5 Daily Booking Overview
     // ---------------------------------------------------------------
     const overviewDate = ref(today);
+    const overviewLoading = ref(false);
+    const overviewError = ref('');
+    const occupancyPct = ref(0);
+    const todaysBookings = ref([]);
 
-    function seedTodaysBookings() {
-      const s = LibraryData.TIME_SLOTS;
-      const raw = [
-        { id: 'BK-2001', studentName: 'Ananya Sharma', studentId: 'STU-2026-0142', seatName: 'Hall B · Seat 3', zone: 'Hall B', slot: s[1], status: 'checked-in', source: 'advance', checkInCode: '638210' },
-        { id: 'BK-2002', studentName: 'Vikram Singh', studentId: 'STU-2026-0150', seatName: 'Hall A · Seat 6', zone: 'Hall A', slot: s[2], status: 'upcoming', source: 'advance', checkInCode: '482913' },
-        { id: 'BK-2003', studentName: 'Neha Joshi', studentId: 'STU-2026-0151', seatName: 'Study Room 202', zone: 'Hall B', slot: s[3], status: 'upcoming', source: 'advance', checkInCode: '205774' },
-        { id: 'BK-2004', studentName: 'Arjun Rao', studentId: 'STU-2026-0134', seatName: 'Silent Zone · Seat 2', zone: 'Silent Zone', slot: s[0], status: 'completed', source: 'advance', checkInCode: '119830' },
-        { id: 'BK-2005', studentName: 'Priya Nair', studentId: 'STU-2026-0129', seatName: 'Hall C · Seat 1', zone: 'Hall C', slot: s[0], status: 'no-show', source: 'advance', checkInCode: '553481' },
-        { id: 'BK-2006', studentName: 'Karan Malhotra', studentId: 'STU-2026-0160', seatName: 'Hall A · Seat 2', zone: 'Hall A', slot: s[4], status: 'upcoming', source: 'advance', checkInCode: '917364' }
-      ];
-      // Link each dummy booking to its real seat id so no-show release
-      // and check-in can flip the correct seat's live status.
-      return raw.map((b) => {
-        const seat = seats.value.find((x) => x.name === b.seatName);
-        return { ...b, seatId: seat ? seat.id : null };
-      });
+    function slotFromTimes(start, end) {
+      const startHour = Number(String(start).slice(0, 2));
+      const endHour = Number(String(end).slice(0, 2));
+      return LibraryData.TIME_SLOTS.find((slot) => slot.start === startHour && slot.end === endHour)
+        || { id: `slot-${start}-${end}`, label: `${start} – ${end}`, start: startHour, end: endHour };
     }
 
-    const todaysBookings = ref(seedTodaysBookings());
+    function seatDisplay(seatNumber) {
+      const seatNum = parseInt(String(seatNumber || '').replace('S', ''), 10);
+      const zone = !seatNum ? 'Library' : seatNum <= 8 ? 'Hall A' : seatNum <= 16 ? 'Hall B' : 'Silent Zone';
+      return {
+        zone,
+        name: seatNum ? `${zone} · Seat ${seatNum}` : (seatNumber || 'Seat')
+      };
+    }
+
+    function mapStaffBooking(data) {
+      const display = seatDisplay(data.seat_number);
+      const statusMap = {
+        Confirmed: 'upcoming',
+        'Checked-In': 'checked-in',
+        Completed: 'completed',
+        Cancelled: 'cancelled',
+        'No-Show': 'no-show'
+      };
+      return {
+        id: data.booking_id,
+        studentName: data.full_name || data.username || 'Student',
+        studentId: data.roll_number || data.username || '—',
+        seatName: display.name,
+        zone: display.zone,
+        slot: slotFromTimes(data.start_time, data.end_time),
+        status: statusMap[data.status] || String(data.status || '').toLowerCase(),
+        source: 'advance',
+        checkInCode: data.checkin_code,
+        seatId: data.seat_id,
+        date: data.booking_date
+      };
+    }
+
+    async function loadDailyBookings() {
+      overviewLoading.value = true;
+      overviewError.value = '';
+      try {
+        const query = overviewDate.value ? `?date=${overviewDate.value}` : '';
+        const data = await apiFetch(`/staff/bookings/today${query}`);
+        todaysBookings.value = (data.bookings || []).map(mapStaffBooking);
+        occupancyPct.value = Number(data.occupancy_pct || 0);
+      } catch (error) {
+        todaysBookings.value = [];
+        occupancyPct.value = 0;
+        overviewError.value = error.message || 'Unable to load bookings.';
+      } finally {
+        overviewLoading.value = false;
+      }
+    }
+
+    watch(overviewDate, () => {
+      loadDailyBookings();
+    });
 
     const overviewBookings = computed(() => {
-      if (overviewDate.value !== today) return [];
-      return [...todaysBookings.value].sort((a, b) => a.slot.start - b.slot.start);
+      return [...todaysBookings.value].sort((a, b) => (a.slot.start || 0) - (b.slot.start || 0));
     });
 
     const overviewStats = computed(() => {
@@ -220,9 +264,7 @@ createApp({
       const expectedArrivals = list.filter((b) => b.status === 'upcoming').length;
       const checkedIn = list.filter((b) => b.status === 'checked-in').length;
       const unarrived = list.filter((b) => b.status === 'no-show').length;
-      const occupiedNow = seats.value.filter((s) => s.status === 'occupied' || s.status === 'reserved').length;
-      const occupancyPct = seats.value.length ? Math.round((occupiedNow / seats.value.length) * 100) : 0;
-      return { total, expectedArrivals, checkedIn, unarrived, occupancyPct };
+      return { total, expectedArrivals, checkedIn, unarrived, occupancyPct: occupancyPct.value };
     });
 
     function overviewBadgeClass(status) {
@@ -762,6 +804,7 @@ createApp({
     onMounted(() => {
       loadMembershipPlans();
       loadStudentsForVerification();
+      loadDailyBookings();
 
       liveTimer = setInterval(() => {
         const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
@@ -792,6 +835,8 @@ createApp({
 
       // Daily overview
       overviewDate,
+      overviewLoading,
+      overviewError,
       today,
       overviewBookings,
       overviewStats,
