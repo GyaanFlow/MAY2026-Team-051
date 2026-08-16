@@ -16,7 +16,7 @@ from resources.membership import (
     StaffMembershipPlanListResource,
 )
 from resources.settings import LibrarySettingsResource
-# from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
+from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource
 from resources.profile import ProfileResource, ResetPasswordResource
 from resources.student_profile import StudentMeResource
 from resources.staff_students import (
@@ -95,8 +95,8 @@ def create_app(config_class=Config):
 
     api.add_resource(LibrarySettingsResource, "/admin/settings")
 
-    # api.add_resource(SeatListResource, "/admin/seats")
-    # api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
+    api.add_resource(SeatListResource, "/admin/seats")
+    api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
 
     api.add_resource(ProfileResource, "/profile")
     api.add_resource(ResetPasswordResource, "/auth/reset-password")
@@ -238,6 +238,11 @@ def upgrade_sqlite_schema():
     settings_columns_to_add = {
         "weekly_hours": "ALTER TABLE library_settings ADD COLUMN weekly_hours TEXT",
         "holiday_closures": "ALTER TABLE library_settings ADD COLUMN holiday_closures TEXT",
+        "min_booking_minutes": "ALTER TABLE library_settings ADD COLUMN min_booking_minutes INTEGER",
+        "max_booking_hours": "ALTER TABLE library_settings ADD COLUMN max_booking_hours INTEGER",
+        "max_bookings_per_day": "ALTER TABLE library_settings ADD COLUMN max_bookings_per_day INTEGER",
+        "waitlist_enabled": "ALTER TABLE library_settings ADD COLUMN waitlist_enabled BOOLEAN DEFAULT 0",
+        "seat_zones": "ALTER TABLE library_settings ADD COLUMN seat_zones TEXT",
     }
     for column_name, statement in settings_columns_to_add.items():
         if column_name not in settings_columns:

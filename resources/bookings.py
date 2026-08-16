@@ -13,6 +13,76 @@ def generate_checkin_code():
     return secrets.token_hex(4).upper()
 
 
+def _slot_datetime(booking_date, slot_time):
+    return datetime.combine(booking_date, slot_time)
+
+
+def _hours_error(settings, booking_date, start_time, end_time):
+    booking_date_str = booking_date.isoformat()
+    closed = any(
+        item.get("date") == booking_date_str
+        for item in settings.holiday_closures_list()
+    )
+    if closed:
+        return "Library is closed on this date"
+
+    weekly_hours = settings.weekly_hours_list()
+    if weekly_hours:
+        day_name = WEEKDAYS[booking_date.weekday()]
+        day_hours = next(
+            (item for item in weekly_hours if item.get("day") == day_name),
+            None,
+        )
+        if not day_hours or not day_hours.get("is_open"):
+            return f"Library is closed on {day_name}"
+        open_time = datetime.strptime(day_hours["open_time"], "%H:%M").time()
+        close_time = datetime.strptime(day_hours["close_time"], "%H:%M").time()
+    else:
+        open_time = settings.open_time
+        close_time = settings.close_time
+
+    if open_time and close_time and (start_time < open_time or end_time > close_time):
+        return (
+            "Booking must be within library operating hours "
+            f"({open_time.strftime('%H:%M')} - {close_time.strftime('%H:%M')})"
+        )
+    return None
+
+
+def _limit_error(settings, booking_date, start_time, end_time, user_id, role, exclude_booking_id=None):
+    duration_minutes = (
+        _slot_datetime(booking_date, end_time) - _slot_datetime(booking_date, start_time)
+    ).total_seconds() / 60
+
+    if settings.min_booking_minutes and duration_minutes < settings.min_booking_minutes:
+        return f"Minimum booking duration is {settings.min_booking_minutes} minutes"
+    if settings.max_booking_hours and duration_minutes > settings.max_booking_hours * 60:
+        return f"Maximum booking duration is {settings.max_booking_hours} hour(s)"
+
+    today = date_cls.today()
+    if booking_date < today:
+        return "Cannot book a date in the past"
+    if (
+        settings.max_booking_days_ahead is not None
+        and booking_date > today + timedelta(days=settings.max_booking_days_ahead)
+    ):
+        return (
+            f"Bookings cannot be made more than {settings.max_booking_days_ahead} day(s) in advance"
+        )
+
+    if role == "Student" and settings.max_bookings_per_day:
+        query = Booking.query.filter(
+            Booking.user_id == int(user_id),
+            Booking.booking_date == booking_date,
+            Booking.status.in_(("Confirmed", "Checked-In")),
+        )
+        if exclude_booking_id is not None:
+            query = query.filter(Booking.booking_id != exclude_booking_id)
+        if query.count() >= settings.max_bookings_per_day:
+            return f"Maximum of {settings.max_bookings_per_day} booking(s) per day reached"
+    return None
+
+
 class BookingListResource(Resource):
     @jwt_required()
     def post(self):
@@ -36,46 +106,27 @@ class BookingListResource(Resource):
             booking_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             start_time = datetime.strptime(start_str, "%H:%M").time()
             end_time = datetime.strptime(end_str, "%H:%M").time()
-            settings = LibrarySettings.query.first()
-
-            if settings:
-                booking_date_str = booking_date.isoformat()
-                closed = any(
-                    item.get("date") == booking_date_str
-                    for item in settings.holiday_closures_list()
-                )
-                if closed:
-                    return {"message": "Library is closed on this date"}, 400
-
-                weekly_hours = settings.weekly_hours_list()
-                if weekly_hours:
-                    day_name = WEEKDAYS[booking_date.weekday()]
-                    day_hours = next(
-                        (item for item in weekly_hours if item.get("day") == day_name),
-                        None,
-                    )
-                    if not day_hours or not day_hours.get("is_open"):
-                        return {"message": f"Library is closed on {day_name}"}, 400
-                    open_time = datetime.strptime(day_hours["open_time"], "%H:%M").time()
-                    close_time = datetime.strptime(day_hours["close_time"], "%H:%M").time()
-                else:
-                    open_time = settings.open_time
-                    close_time = settings.close_time
-
-                if open_time and close_time and (
-                    start_time < open_time or end_time > close_time
-                ):
-                    return {
-                        "message": (
-                            "Booking must be within library operating hours "
-                            f"({open_time.strftime('%H:%M')} - {close_time.strftime('%H:%M')})"
-                        )
-                    }, 400
         except ValueError:
             return {"message": "date must be YYYY-MM-DD, times must be HH:MM"}, 400
 
         if start_time >= end_time:
             return {"message": "start_time must be before end_time"}, 400
+
+        settings = LibrarySettings.query.first()
+        if settings:
+            hours_error = _hours_error(settings, booking_date, start_time, end_time)
+            if hours_error:
+                return {"message": hours_error}, 400
+            limit_error = _limit_error(
+                settings,
+                booking_date,
+                start_time,
+                end_time,
+                get_jwt_identity(),
+                get_jwt().get("role"),
+            )
+            if limit_error:
+                return {"message": limit_error}, 400
 
         clash = Booking.query.filter(
             Booking.seat_id == seat_id,
@@ -87,7 +138,7 @@ class BookingListResource(Resource):
         if clash:
             return {"message": "Seat already booked for this time slot"}, 409
 
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
         checkin_code = generate_checkin_code()
 
         booking = Booking(
@@ -142,6 +193,23 @@ class BookingDetailResource(Resource):
         if new_start >= new_end:
             return {"message": "start_time must be before end_time"}, 400
 
+        settings = LibrarySettings.query.first()
+        if settings:
+            hours_error = _hours_error(settings, new_date, new_start, new_end)
+            if hours_error:
+                return {"message": hours_error}, 400
+            limit_error = _limit_error(
+                settings,
+                new_date,
+                new_start,
+                new_end,
+                user_id,
+                role,
+                exclude_booking_id=booking.booking_id,
+            )
+            if limit_error:
+                return {"message": limit_error}, 400
+
         clash = Booking.query.filter(
             Booking.seat_id == booking.seat_id,
             Booking.booking_date == new_date,
@@ -174,6 +242,22 @@ class BookingCancelResource(Resource):
 
         if booking.status == "Cancelled":
             return {"message": "Booking is already cancelled"}, 400
+
+        settings = LibrarySettings.query.first()
+        if (
+            role == "Student"
+            and settings
+            and settings.cancellation_period is not None
+        ):
+            start_dt = _slot_datetime(booking.booking_date, booking.start_time)
+            latest_cancel = start_dt - timedelta(hours=settings.cancellation_period)
+            if datetime.now() > latest_cancel:
+                return {
+                    "message": (
+                        f"Cancellations must be made at least {settings.cancellation_period} "
+                        "hour(s) before the slot"
+                    )
+                }, 400
 
         booking.status = "Cancelled"
         db.session.commit()

@@ -429,6 +429,57 @@ def test_update_library_settings_success(client, admin_token):
     assert settings["open_time"] == "08:00"
     assert settings["close_time"] == "22:00"
 
+def test_update_booking_limits_success(client, admin_token):
+    """Admin can persist seat count and booking rule limits."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.put("/api/admin/settings", json={
+        "total_seats": 18,
+        "min_booking_minutes": 30,
+        "max_booking_hours": 3,
+        "max_bookings_per_day": 2,
+        "max_booking_days_ahead": 10,
+        "cancellation_period": 2,
+        "waitlist_enabled": True,
+    }, headers=headers)
+    assert response.status_code == 200
+    settings = response.get_json()["settings"]
+    assert settings["total_seats"] == 18
+    assert settings["min_booking_minutes"] == 30
+    assert settings["max_booking_hours"] == 3
+    assert settings["max_bookings_per_day"] == 2
+    assert settings["max_booking_days_ahead"] == 10
+    assert settings["cancellation_period"] == 2
+    assert settings["waitlist_enabled"] is True
+
+    loaded = client.get("/api/admin/settings", headers=headers)
+    assert loaded.status_code == 200
+    assert loaded.get_json()["total_seats"] == 18
+
+
+def test_update_seat_zones_success(client, admin_token):
+    """Admin can persist named seat zones and reload them."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.put("/api/admin/settings", json={
+        "seat_zones": [
+            {"zone": "Reading Room", "seats": 12},
+            {"zone": "Silent Zone", "seats": 8},
+        ]
+    }, headers=headers)
+    assert response.status_code == 200
+    settings = response.get_json()["settings"]
+    assert settings["seat_zones"] == [
+        {"zone": "Reading Room", "seats": 12},
+        {"zone": "Silent Zone", "seats": 8},
+    ]
+
+    loaded = client.get("/api/admin/settings", headers=headers)
+    assert loaded.status_code == 200
+    assert loaded.get_json()["seat_zones"] == [
+        {"zone": "Reading Room", "seats": 12},
+        {"zone": "Silent Zone", "seats": 8},
+    ]
+
+
 def test_update_library_settings_invalid_hours(client, admin_token):
     """close_time before open_time returns 400"""
     headers = {"Authorization": f"Bearer {admin_token}"}
