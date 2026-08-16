@@ -593,63 +593,43 @@
                 <div class="field-grid">
                   <label class="field">
                     <span>Plan Name</span>
-                    <input type="text" v-model.trim="newPlan.name" placeholder="e.g. Premium">
+                    <input type="text" v-model.trim="newPlan.name" placeholder="e.g. Monthly">
                   </label>
                   <label class="field">
                     <span>Price (₹)</span>
-                    <input type="number" min="0" v-model.number="newPlan.price" placeholder="e.g. 1999">
-                  </label>
-                  <label class="field">
-                    <span>Billing Cycle</span>
-                    <select v-model="newPlan.billingCycle">
-                      <option value="One-time">One-time</option>
-                      <option value="Monthly">Monthly</option>
-                      <option value="Quarterly">Quarterly</option>
-                      <option value="Yearly">Yearly</option>
-                    </select>
-                  </label>
-                  <label class="field">
-                    <span>Seat Bookings per Day</span>
-                    <input type="number" min="1" v-model.number="newPlan.seatBookingsPerDay">
+                    <input type="number" min="0" step="1" v-model.number="newPlan.price" placeholder="e.g. 500">
                   </label>
                   <label class="field field-full">
-                    <span>Advance Booking Window (days)</span>
-                    <input type="number" min="1" v-model.number="newPlan.advanceBookingDays">
-                  </label>
-                  <label class="field field-full">
-                    <span>Features (comma-separated)</span>
-                    <input type="text" v-model.trim="newPlan.featuresText" placeholder="e.g. All zones, Priority booking, Locker">
+                    <span>Duration (days)</span>
+                    <input type="number" min="1" v-model.number="newPlan.durationDays" placeholder="e.g. 30">
                   </label>
                 </div>
 
                 <p class="form-error" v-if="planError">{{ planError }}</p>
-                <p class="form-success" v-if="planSuccess">Membership plan created successfully.</p>
-                <button type="submit" class="btn-primary btn-small">Create Plan</button>
+                <p class="form-success" v-if="planSuccess">{{ planSuccess }}</p>
+                <button type="submit" class="btn-primary btn-small" :disabled="plansSaving">{{ plansSaving ? 'Saving...' : 'Create Plan' }}</button>
               </form>
 
               <div class="panel-card">
                 <div class="panel-card-header">
                   <h2>Manage Plans</h2>
-                  <p class="panel-subtitle">Edit, deactivate, or remove existing plans.</p>
+                  <p class="panel-subtitle">Edit or retire existing plans. Retired plans stay listed but cannot be assigned to new students.</p>
                 </div>
 
-                <div class="plan-grid" v-if="membershipPlans.length">
+                <p class="data-list-empty" v-if="plansLoading">Loading plans...</p>
+                <div class="plan-grid" v-else-if="membershipPlans.length">
                   <div class="plan-card" v-for="plan in membershipPlans" :key="plan.id" :class="{ 'plan-card-inactive': !plan.active }">
 
                     <template v-if="editingPlanId !== plan.id">
                       <div class="plan-card-top">
                         <h3>{{ plan.name }}</h3>
-                        <span class="badge" :class="plan.active ? 'badge-success' : 'badge-muted'">{{ plan.active ? 'Active' : 'Inactive' }}</span>
+                        <span class="badge" :class="plan.active ? 'badge-success' : 'badge-muted'">{{ plan.active ? 'Active' : 'Retired' }}</span>
                       </div>
-                      <p class="plan-price">₹{{ plan.price }} <span class="plan-cycle">/ {{ plan.billingCycle }}</span></p>
-                      <p class="plan-meta">{{ plan.seatBookingsPerDay }} booking(s)/day · {{ plan.advanceBookingDays }}-day advance window</p>
-                      <ul class="plan-features">
-                        <li v-for="f in plan.features" :key="f">{{ f }}</li>
-                      </ul>
+                      <p class="plan-price">₹{{ Number(plan.price).toLocaleString('en-IN') }} <span class="plan-cycle">/ {{ formatPlanDuration(plan.durationDays) }}</span></p>
+                      <p class="plan-meta">Valid for {{ formatPlanDuration(plan.durationDays) }} from the membership start date.</p>
                       <div class="record-actions" style="margin-top:auto;">
                         <button class="btn-ghost" @click="startEditPlan(plan)"><span class="nav-icon" v-html="icons.edit" style="width:14px;height:14px;"></span> Edit</button>
-                        <button class="btn-outline" @click="togglePlanStatus(plan)">{{ plan.active ? 'Deactivate' : 'Activate' }}</button>
-                        <button class="btn-outline btn-outline-danger" @click="deletePlan(plan)">Delete</button>
+                        <button class="btn-outline" @click="togglePlanStatus(plan)">{{ plan.active ? 'Retire' : 'Activate' }}</button>
                       </div>
                     </template>
 
@@ -660,32 +640,15 @@
                       </label>
                       <label class="field">
                         <span>Price (₹)</span>
-                        <input type="number" min="0" v-model.number="planEditDraft.price">
+                        <input type="number" min="0" step="1" v-model.number="planEditDraft.price">
                       </label>
                       <label class="field">
-                        <span>Billing Cycle</span>
-                        <select v-model="planEditDraft.billingCycle">
-                          <option value="One-time">One-time</option>
-                          <option value="Monthly">Monthly</option>
-                          <option value="Quarterly">Quarterly</option>
-                          <option value="Yearly">Yearly</option>
-                        </select>
-                      </label>
-                      <label class="field">
-                        <span>Seat Bookings per Day</span>
-                        <input type="number" min="1" v-model.number="planEditDraft.seatBookingsPerDay">
-                      </label>
-                      <label class="field">
-                        <span>Advance Booking Window (days)</span>
-                        <input type="number" min="1" v-model.number="planEditDraft.advanceBookingDays">
-                      </label>
-                      <label class="field">
-                        <span>Features (comma-separated)</span>
-                        <input type="text" v-model.trim="planEditDraft.featuresText">
+                        <span>Duration (days)</span>
+                        <input type="number" min="1" v-model.number="planEditDraft.durationDays">
                       </label>
                       <div class="record-actions" style="margin-top:auto; justify-content:flex-end;">
                         <button class="btn-ghost" @click="cancelEditPlan">Cancel</button>
-                        <button class="btn-outline" @click="saveEditPlan(plan)">Save</button>
+                        <button class="btn-outline" @click="saveEditPlan(plan)" :disabled="plansSaving">{{ plansSaving ? 'Saving...' : 'Save' }}</button>
                       </div>
                     </template>
 

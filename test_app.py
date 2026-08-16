@@ -329,6 +329,23 @@ def test_retire_membership_plan_already_retired(client, admin_token):
     response = client.delete(f"/api/admin/membership-plans/{plan_id}", headers=headers)
     assert response.status_code == 400
 
+def test_reactivate_membership_plan_success(client, admin_token):
+    """Admin can reactivate a retired membership plan."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/api/admin/membership-plans", json={
+        "plan_name": "Weekend", "duration_days": 2, "price": 80
+    }, headers=headers).get_json()
+    plan_id = created["plan_id"]
+    client.delete(f"/api/admin/membership-plans/{plan_id}", headers=headers)
+
+    response = client.put(
+        f"/api/admin/membership-plans/{plan_id}",
+        json={"is_active": True},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.get_json()["is_active"] is True
+
 
 # --- ADMIN MEMBERSHIPS ---
 
