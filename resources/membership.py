@@ -74,6 +74,12 @@ class MembershipPlanResource(Resource):
                 return {"message": "price cannot be negative"}, 400
             plan.price = price
 
+        if "is_active" in data:
+            is_active = data.get("is_active")
+            if not isinstance(is_active, bool):
+                return {"message": "is_active must be true or false"}, 400
+            plan.is_active = is_active
+
         db.session.commit()
         return plan.to_dict(), 200
 

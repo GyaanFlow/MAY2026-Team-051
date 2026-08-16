@@ -903,118 +903,164 @@ const app = createApp({
 
   
 
-    const membershipPlans = ref([
-      {
-        id: 'PLAN-001',
-        name: 'Day Pass',
-        price: 149,
-        billingCycle: 'One-time',
-        seatBookingsPerDay: 1,
-        advanceBookingDays: 1,
-        features: ['Single-day access', 'Any open seat'],
-        active: true
-      },
-      {
-        id: 'PLAN-002',
-        name: 'Regular',
-        price: 1499,
-        billingCycle: 'Monthly',
-        seatBookingsPerDay: 1,
-        advanceBookingDays: 3,
-        features: ['Full month access', 'Standard zones', 'Locker on request'],
-        active: true
-      },
-      {
-        id: 'PLAN-003',
-        name: 'Premium',
-        price: 2499,
-        billingCycle: 'Monthly',
-        seatBookingsPerDay: 2,
-        advanceBookingDays: 14,
-        features: ['Full month access', 'All zones incl. discussion rooms', 'Dedicated locker', 'Priority booking'],
-        active: true
-      }
-    ]);
-
+    const membershipPlans = ref([]);
+    const plansLoading = ref(false);
+    const plansSaving = ref(false);
+    const planError = ref('');
+    const planSuccess = ref('');
     const emptyPlan = () => ({
       name: '',
       price: null,
-      billingCycle: 'Monthly',
-      seatBookingsPerDay: 1,
-      advanceBookingDays: 7,
-      featuresText: ''
+      durationDays: 30
+    });
+    const newPlan = reactive(emptyPlan());
+    const editingPlanId = ref(null);
+    const planEditDraft = reactive({
+      name: '',
+      price: null,
+      durationDays: 30
     });
 
-    const newPlan = reactive(emptyPlan());
-    const planError = ref('');
-    const planSuccess = ref(false);
+    function mapMembershipPlan(plan) {
+      return {
+        id: plan.plan_id,
+        name: plan.plan_name,
+        price: plan.price,
+        durationDays: plan.duration_days,
+        active: plan.is_active
+      };
+    }
 
-    function createPlan() {
-      if (!newPlan.name || !newPlan.price || newPlan.price <= 0) {
-        planError.value = 'Please provide a plan name and a valid price.';
-        planSuccess.value = false;
+    function formatPlanDuration(days) {
+      const value = Number(days);
+      if (!value) return '—';
+      return value === 1 ? '1 day' : `${value} days`;
+    }
+
+    function flashPlanSuccess(message) {
+      planSuccess.value = message;
+      setTimeout(() => {
+        planSuccess.value = '';
+      }, 2500);
+    }
+
+    function validatePlanFields(plan) {
+      if (!plan.name || !String(plan.name).trim()) {
+        return 'Please provide a plan name.';
+      }
+      if (!plan.durationDays || plan.durationDays <= 0) {
+        return 'Duration must be greater than zero.';
+      }
+      if (plan.price === null || plan.price === '' || Number(plan.price) < 0) {
+        return 'Please provide a valid price.';
+      }
+      return '';
+    }
+
+    async function loadMembershipPlans() {
+      plansLoading.value = true;
+      planError.value = '';
+
+      try {
+        const data = await apiFetch('/admin/membership-plans');
+        membershipPlans.value = data.map(mapMembershipPlan);
+      } catch (error) {
+        planError.value = error.message || 'Unable to load membership plans.';
+      } finally {
+        plansLoading.value = false;
+      }
+    }
+
+    async function createPlan() {
+      const error = validatePlanFields(newPlan);
+      if (error) {
+        planError.value = error;
+        planSuccess.value = '';
         return;
       }
 
       planError.value = '';
-      const id = 'PLAN-' + String(membershipPlans.value.length + 1).padStart(3, '0');
+      planSuccess.value = '';
+      plansSaving.value = true;
 
-      // TODO: POST /api/admin/membership-plans once the backend endpoint exists.
-      membershipPlans.value.push({
-        id,
-        name: newPlan.name,
-        price: Number(newPlan.price),
-        billingCycle: newPlan.billingCycle,
-        seatBookingsPerDay: Number(newPlan.seatBookingsPerDay) || 1,
-        advanceBookingDays: Number(newPlan.advanceBookingDays) || 1,
-        features: newPlan.featuresText.split(',').map((f) => f.trim()).filter(Boolean),
-        active: true
-      });
-
-      Object.assign(newPlan, emptyPlan());
-      planSuccess.value = true;
-      setTimeout(() => { planSuccess.value = false; }, 2500);
+      try {
+        const data = await apiFetch('/admin/membership-plans', {
+          method: 'POST',
+          body: JSON.stringify({
+            plan_name: newPlan.name.trim(),
+            duration_days: Number(newPlan.durationDays),
+            price: Number(newPlan.price)
+          })
+        });
+        membershipPlans.value.push(mapMembershipPlan(data));
+        Object.assign(newPlan, emptyPlan());
+        flashPlanSuccess('Membership plan created.');
+      } catch (err) {
+        planError.value = err.message || 'Unable to create membership plan.';
+      } finally {
+        plansSaving.value = false;
+      }
     }
-
-    const editingPlanId = ref(null);
-    const planEditDraft = reactive({ name: '', price: null, billingCycle: 'Monthly', seatBookingsPerDay: 1, advanceBookingDays: 7, featuresText: '' });
 
     function startEditPlan(plan) {
       editingPlanId.value = plan.id;
       planEditDraft.name = plan.name;
       planEditDraft.price = plan.price;
-      planEditDraft.billingCycle = plan.billingCycle;
-      planEditDraft.seatBookingsPerDay = plan.seatBookingsPerDay;
-      planEditDraft.advanceBookingDays = plan.advanceBookingDays;
-      planEditDraft.featuresText = plan.features.join(', ');
+      planEditDraft.durationDays = plan.durationDays;
     }
 
     function cancelEditPlan() {
       editingPlanId.value = null;
     }
 
-    function saveEditPlan(plan) {
-      // TODO: PUT /api/admin/membership-plans/{id} once the backend endpoint exists.
-      plan.name = planEditDraft.name;
-      plan.price = Number(planEditDraft.price);
-      plan.billingCycle = planEditDraft.billingCycle;
-      plan.seatBookingsPerDay = Number(planEditDraft.seatBookingsPerDay) || 1;
-      plan.advanceBookingDays = Number(planEditDraft.advanceBookingDays) || 1;
-      plan.features = planEditDraft.featuresText.split(',').map((f) => f.trim()).filter(Boolean);
-      editingPlanId.value = null;
+    async function saveEditPlan(plan) {
+      const error = validatePlanFields(planEditDraft);
+      if (error) {
+        planError.value = error;
+        return;
+      }
+
+      planError.value = '';
+      plansSaving.value = true;
+
+      try {
+        const data = await apiFetch(`/admin/membership-plans/${plan.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            plan_name: planEditDraft.name.trim(),
+            duration_days: Number(planEditDraft.durationDays),
+            price: Number(planEditDraft.price)
+          })
+        });
+        Object.assign(plan, mapMembershipPlan(data));
+        editingPlanId.value = null;
+        flashPlanSuccess('Membership plan updated.');
+      } catch (err) {
+        planError.value = err.message || 'Unable to update membership plan.';
+      } finally {
+        plansSaving.value = false;
+      }
     }
 
-    function togglePlanStatus(plan) {
-      // TODO: PATCH /api/admin/membership-plans/{id}/status once the backend endpoint exists.
-      plan.active = !plan.active;
+    async function togglePlanStatus(plan) {
+      planError.value = '';
+      plansSaving.value = true;
+      const nextActive = !plan.active;
+
+      try {
+        const data = await apiFetch(`/admin/membership-plans/${plan.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ is_active: nextActive })
+        });
+        plan.active = data.is_active;
+        flashPlanSuccess(nextActive ? 'Membership plan activated.' : 'Membership plan retired.');
+      } catch (error) {
+        planError.value = error.message || 'Unable to update plan status.';
+      } finally {
+        plansSaving.value = false;
+      }
     }
 
-    function deletePlan(plan) {
-      // TODO: DELETE /api/admin/membership-plans/{id} once the backend endpoint exists.
-      membershipPlans.value = membershipPlans.value.filter((p) => p.id !== plan.id);
-    }
-
-    
 
     const reportRange = ref('week');
     const reportRanges = ref([
@@ -1120,6 +1166,7 @@ const app = createApp({
       loadSeats();
       loadMemberships();
       loadOperatingHours();
+      loadMembershipPlans();
     });
 
     // ---------------------------------------------------------------
@@ -1288,9 +1335,12 @@ const app = createApp({
       saveBookingLimits,
 
       membershipPlans,
+      plansLoading,
+      plansSaving,
       newPlan,
       planError,
       planSuccess,
+      formatPlanDuration,
       createPlan,
       editingPlanId,
       planEditDraft,
@@ -1298,7 +1348,6 @@ const app = createApp({
       cancelEditPlan,
       saveEditPlan,
       togglePlanStatus,
-      deletePlan,
 
       reportRange,
       reportRanges,
