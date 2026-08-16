@@ -3,7 +3,7 @@ from datetime import date as date_cls
 from flask import request
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
-from models import WEEKDAYS, db, Seat, Booking, Student, User, Attendance, LibrarySettings
+from models import WEEKDAYS, db, Seat, Booking, Student, User, Attendance, LibrarySettings, ExtensionRequest
 from flask_jwt_extended import get_jwt
 from resources import settings
 from utils import staff_or_admin_required
@@ -18,6 +18,10 @@ def _booking_payload(booking):
     seat = db.session.get(Seat, booking.seat_id)
     data["seat_number"] = seat.seat_number if seat else None
     data["seat_type"] = seat.seat_type if seat else None
+    pending = ExtensionRequest.query.filter_by(
+        booking_id=booking.booking_id, status="Pending"
+    ).first()
+    data["pending_extension"] = pending.to_dict() if pending else None
     return data
 
 

@@ -484,24 +484,27 @@ createApp({
     // ---------------------------------------------------------------
     // 3.7 Extension Approval & Seat Allocation
     // ---------------------------------------------------------------
-    const extensionRequests = ref([
-      {
-        id: 'EXT-9001', studentName: 'Ananya Sharma', studentId: 'STU-2026-0142',
-        currentSeatId: 'seat-0-3', currentSeatName: 'Hall B · Seat 3',
-        requestedMinutes: 60, reason: 'Finishing a group assignment', status: 'pending', resolution: ''
-      },
-      {
-        id: 'EXT-9002', studentName: 'Arjun Rao', studentId: 'STU-2026-0134',
-        currentSeatId: 'seat-silent-2', currentSeatName: 'Silent Zone · Seat 2',
-        requestedMinutes: 30, reason: 'Exam prep running long', status: 'pending', resolution: ''
-      }
-    ]);
-
+    // const extensionRequests = ref([
+    //   {
+    //     id: 'EXT-9001', studentName: 'Ananya Sharma', studentId: 'STU-2026-0142',
+    //     currentSeatId: 'seat-0-3', currentSeatName: 'Hall B · Seat 3',
+    //     requestedMinutes: 60, reason: 'Finishing a group assignment', status: 'pending', resolution: ''
+    //   },
+    //   {
+    //     id: 'EXT-9002', studentName: 'Arjun Rao', studentId: 'STU-2026-0134',
+    //     currentSeatId: 'seat-silent-2', currentSeatName: 'Silent Zone · Seat 2',
+    //     requestedMinutes: 30, reason: 'Exam prep running long', status: 'pending', resolution: ''
+    //   }
+    // ]);
+    const extensionRequests = ref([]);
+const extensionsLoading = ref(false);
+const extensionError = ref('');
+const extensionSuccess = ref('');
     const reassigningId = ref(null);
     const reassignSeatId = ref(null);
 
     const availableForReassign = computed(() => {
-      return seats.value.filter((s) => s.status === 'available');
+      return walkInSeats.value.filter((s) => s.status === 'available');
     });
 
     function pendingExtensions() {
@@ -511,16 +514,36 @@ createApp({
     const pendingList = computed(pendingExtensions);
     const resolvedList = computed(() => extensionRequests.value.filter((r) => r.status !== 'pending'));
 
-    function approveExtendCurrent(req) {
-      // TODO: PATCH /api/staff/extensions/{id}/extend once the backend endpoint exists
-      req.status = 'approved';
-      req.resolution = `Extended current seat by ${req.requestedMinutes} min`;
-      console.log('Extension approved (same seat):', req.id);
+    // function approveExtendCurrent(req) {
+    //   // TODO: PATCH /api/staff/extensions/{id}/extend once the backend endpoint exists
+    //   req.status = 'approved';
+    //   req.resolution = `Extended current seat by ${req.requestedMinutes} min`;
+    //   console.log('Extension approved (same seat):', req.id);
+    // }
+
+    async function approveExtendCurrent(req) {
+      extensionError.value = '';
+      extensionSuccess.value = '';
+
+      try {
+        const data = await apiFetch(`/staff/extension-requests/${req.id}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({})
+        });
+        req.status = 'approved';
+        req.resolution = `Extended current seat until ${data.booking.end_time}`;
+        extensionSuccess.value = 'Extension approved successfully.';
+        await loadExtensionRequests();
+      } catch (error) {
+        extensionError.value = error.message || 'Unable to approve extension.';
+      }
     }
 
-    function startReassign(req) {
+    async function startReassign(req) {
       reassigningId.value = req.id;
       reassignSeatId.value = null;
+      extensionError.value = '';
+      await loadWalkInSeats();
     }
 
     function cancelReassign() {
@@ -528,28 +551,46 @@ createApp({
       reassignSeatId.value = null;
     }
 
-    function confirmReassign(req) {
-      if (!reassignSeatId.value) return;
-      const newSeat = seatById(reassignSeatId.value);
-      const oldSeat = seatById(req.currentSeatId);
+    async function confirmReassign(req) {
+      if (!reassignSeatId.value) {
+        extensionError.value = 'Please select an available seat.';
+        return;
+      }
 
-      if (oldSeat) oldSeat.status = 'available';
-      newSeat.status = 'occupied';
+      extensionError.value = '';
+      extensionSuccess.value = '';
 
-      // TODO: PATCH /api/staff/extensions/{id}/reassign once the backend endpoint exists
-      console.log('Extension approved (new seat):', req.id, '→', newSeat.id);
-
-      req.status = 'approved';
-      req.resolution = `Reassigned to ${newSeat.name}`;
-      reassigningId.value = null;
-      reassignSeatId.value = null;
+      try {
+        const data = await apiFetch(`/staff/extension-requests/${req.id}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({
+            seat_id: Number(reassignSeatId.value)
+          })
+        });
+        req.status = 'approved';
+        req.resolution = `Reassigned to seat ${data.booking.seat_id} until ${data.booking.end_time}`;
+        extensionSuccess.value = 'Extension approved and new seat assigned.';
+        reassigningId.value = null;
+        reassignSeatId.value = null;
+        await Promise.all([loadExtensionRequests(), loadWalkInSeats()]);
+      } catch (error) {
+        extensionError.value = error.message || 'Unable to reassign seat.';
+      }
     }
 
-    function rejectExtension(req) {
-      // TODO: PATCH /api/staff/extensions/{id}/reject once the backend endpoint exists
-      req.status = 'rejected';
-      req.resolution = 'Request declined';
-      console.log('Extension rejected:', req.id);
+    async function rejectExtension(req) {
+      extensionError.value = '';
+      extensionSuccess.value = '';
+
+      try {
+        await apiFetch(`/staff/extension-requests/${req.id}/reject`, {
+          method: 'POST'
+        });
+        extensionSuccess.value = 'Extension request rejected.';
+        await loadExtensionRequests();
+      } catch (error) {
+        extensionError.value = error.message || 'Unable to reject extension.';
+      }
     }
 
     // ---------------------------------------------------------------
@@ -602,6 +643,55 @@ createApp({
         membershipsToVerify.value = [];
       }
     }
+
+    async function loadExtensionRequests() {
+      extensionsLoading.value = true;
+      extensionError.value = '';
+
+      try {
+        const data = await apiFetch('/staff/extension-requests?status=all');
+        extensionRequests.value = (data.extension_requests || []).map((req) => {
+          const currentEnd = req.current_end_time;
+          const requestedEnd = req.requested_end_time;
+          const status = String(req.status || '').toLowerCase();
+          return {
+            id: req.extension_request_id,
+            bookingId: req.booking_id,
+            studentName: req.full_name || req.username || 'Unknown Student',
+            studentId: req.username || '',
+            currentSeatId: req.seat_id,
+            currentSeatName: req.seat_number || 'Unknown Seat',
+            currentEndTime: currentEnd,
+            requestedEndTime: requestedEnd,
+            requestedMinutes: calculateExtensionMinutes(currentEnd, requestedEnd),
+            status,
+            resolution: status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : ''
+          };
+        });
+      } catch (error) {
+        extensionError.value = error.message || 'Unable to load extension requests.';
+      } finally {
+        extensionsLoading.value = false;
+      }
+    }
+
+    function calculateExtensionMinutes(currentEnd, requestedEnd) {
+  if (!currentEnd || !requestedEnd) return 0;
+
+  const [currentHour, currentMinute] =
+    currentEnd.split(':').map(Number);
+
+  const [requestedHour, requestedMinute] =
+    requestedEnd.split(':').map(Number);
+
+  const currentTotal =
+    currentHour * 60 + currentMinute;
+
+  const requestedTotal =
+    requestedHour * 60 + requestedMinute;
+
+  return requestedTotal - currentTotal;
+}
 
     async function verifyMembership(student) {
       verifyError.value = '';
@@ -840,6 +930,7 @@ createApp({
       loadMembershipPlans();
       loadStudentsForVerification();
       loadDailyBookings();
+      loadExtensionRequests();
       loadWalkInSeats();
 
       liveTimer = setInterval(() => {
@@ -910,6 +1001,9 @@ createApp({
       reassigningId,
       reassignSeatId,
       availableForReassign,
+      extensionError,
+      extensionSuccess,
+      extensionsLoading,
       approveExtendCurrent,
       startReassign,
       cancelReassign,

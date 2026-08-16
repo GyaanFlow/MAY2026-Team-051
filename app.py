@@ -43,12 +43,12 @@ from resources.bookings import (
     WalkInBookingResource,
 )
 # from resources.checkin import StaffCheckinResource
-# from resources.extension_requests import (
-#     StudentExtensionRequestResource,
-#     StaffExtensionRequestListResource,
-#     StaffExtensionRequestApproveResource,
-#     StaffExtensionRequestRejectResource,
-# )
+from resources.extension_requests import (
+    StudentExtensionRequestResource,
+    StaffExtensionRequestListResource,
+    StaffExtensionRequestApproveResource,
+    StaffExtensionRequestRejectResource,
+)
 # from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
 # from resources.payments import (
 #     StaffPaymentListResource,
@@ -130,19 +130,19 @@ def create_app(config_class=Config):
 )
 
     # api.add_resource(StaffCheckinResource, "/staff/checkin")
-    # api.add_resource(
-    #     StudentExtensionRequestResource,
-    #     "/students/me/bookings/<int:booking_id>/extension-request",
-    # )
-    # api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
-    # api.add_resource(
-    #     StaffExtensionRequestApproveResource,
-    #     "/staff/extension-requests/<int:extension_request_id>/approve",
-    # )
-    # api.add_resource(
-    #     StaffExtensionRequestRejectResource,
-    #     "/staff/extension-requests/<int:extension_request_id>/reject",
-    # )
+    api.add_resource(
+        StudentExtensionRequestResource,
+        "/students/me/bookings/<int:booking_id>/extension-request",
+    )
+    api.add_resource(StaffExtensionRequestListResource, "/staff/extension-requests")
+    api.add_resource(
+        StaffExtensionRequestApproveResource,
+        "/staff/extension-requests/<int:extension_request_id>/approve",
+    )
+    api.add_resource(
+        StaffExtensionRequestRejectResource,
+        "/staff/extension-requests/<int:extension_request_id>/reject",
+    )
 
     # api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
     # api.add_resource(

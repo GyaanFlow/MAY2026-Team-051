@@ -368,6 +368,9 @@
               <h2>Pending Requests</h2>
               <p class="panel-subtitle">Extend the student's current seat, or move them to a different available one.</p>
             </div>
+            <p class="form-error" v-if="extensionError">{{ extensionError }}</p>
+            <p class="form-success" v-if="extensionSuccess">{{ extensionSuccess }}</p>
+            <p class="data-list-empty" v-if="extensionsLoading">Loading extension requests...</p>
 
             <div class="record-list" v-if="pendingList.length">
               <div class="record-row booking-row" v-for="req in pendingList" :key="req.id">
@@ -377,7 +380,7 @@
                   <div class="record-info">
                     <span class="record-name">{{ req.studentName }}</span>
                     <span class="record-sub">{{ req.currentSeatName }} · {{ req.studentId }}</span>
-                    <span class="record-sub">Requesting +{{ req.requestedMinutes }} min — "{{ req.reason }}"</span>
+                    <span class="record-sub">Requesting +{{ req.requestedMinutes }} min (until {{ req.requestedEndTime }})</span>
                   </div>
                   <span class="badge badge-warning">Pending</span>
                   <div class="record-actions">
