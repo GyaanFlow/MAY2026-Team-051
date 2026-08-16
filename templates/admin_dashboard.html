@@ -308,7 +308,9 @@
                   <h2>Pending Approvals</h2>
                   <p class="panel-subtitle">New membership requests awaiting review.</p>
                 </div>
-                <div class="record-list" v-if="pendingMemberships.length">
+                <p class="form-error" v-if="membershipError">{{ membershipError }}</p>
+                <p class="data-list-empty" v-if="membershipLoading">Loading memberships…</p>
+                <div class="record-list" v-else-if="pendingMemberships.length">
                   <div class="record-row" v-for="m in pendingMemberships" :key="m.studentId">
                     <div class="record-avatar">{{ initialsOf(m.fullName) }}</div>
                     <div class="record-info">

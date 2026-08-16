@@ -60,6 +60,9 @@ class Student(db.Model):
     student_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=False)
     full_name = db.Column(db.String(150), nullable=False)
+    roll_number = db.Column(db.String(100), unique=True, nullable=True)
+    dob = db.Column(db.Date, nullable=True)
+    gender = db.Column(db.String(50), nullable=True)
     address = db.Column(db.Text, nullable=True)
     membership_status = db.Column(db.String(20), default="Pending", nullable=False)
     plan_id = db.Column(db.Integer, db.ForeignKey("membership_plans.plan_id"), nullable=True)
@@ -70,6 +73,9 @@ class Student(db.Model):
             "student_id": self.student_id,
             "user_id": self.user_id,
             "full_name": self.full_name,
+            "roll_number": self.roll_number,
+            "dob": str(self.dob) if self.dob else None,
+            "gender": self.gender,
             "address": self.address,
             "membership_status": self.membership_status,
             "plan_id": self.plan_id,
