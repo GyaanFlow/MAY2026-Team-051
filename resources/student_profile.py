@@ -4,6 +4,7 @@ from flask_restful import Resource
 from flask_jwt_extended import get_jwt_identity
 from models import db, User, Student, MembershipPlan
 from utils import student_required
+from datetime import date
 
 
 class StudentMeResource(Resource):
@@ -60,6 +61,23 @@ class StudentMeResource(Resource):
 
         if "address" in data:
             student.address = data.get("address")
+
+        if "dob" in data:
+            dob_value = data.get("dob")
+
+            if dob_value:
+                try:
+                    student.dob = date.fromisoformat(dob_value)
+                except (ValueError, TypeError):
+                    return {
+                "message": "Invalid date of birth. Use YYYY-MM-DD format."
+            }, 400
+                
+            else:
+                student.dob = None
+
+        if "gender" in data:
+            student.gender = data.get("gender")
 
         db.session.commit()
         return {"message": "Profile updated", "student": student.to_dict()}, 200

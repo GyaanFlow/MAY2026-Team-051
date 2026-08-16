@@ -136,16 +136,37 @@ createApp({
       }, 2500);
     }
 
-    function savePersonal() {
-      console.log('Personal info saved:', {
-        fullName: profile.fullName,
+    // function savePersonal() {
+    //   console.log('Personal info saved:', {
+    //     fullName: profile.fullName,
+    //     dob: profile.dob,
+    //     gender: profile.gender,
+    //     phone: profile.phone,
+    //     address: profile.address
+    //   });
+    //   flashSaved('personal');
+    // }
+    async function savePersonal() {
+  try {
+    await apiFetch('/students/me', {
+      method: 'PUT',
+      body: JSON.stringify({
+        full_name: profile.fullName,
         dob: profile.dob,
         gender: profile.gender,
         phone: profile.phone,
         address: profile.address
-      });
-      flashSaved('personal');
-    }
+      })
+    });
+
+    flashSaved('personal');
+
+  } catch (error) {
+    console.error('Failed to update profile:', error);
+    securityError.value =
+      error.message || 'Unable to update personal details.';
+  }
+}
 
     function saveLibrary() {
       console.log('Library info saved:', {
