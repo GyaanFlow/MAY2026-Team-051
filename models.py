@@ -1,6 +1,29 @@
+import json
 from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
+
+WEEKDAYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+
+
+def _parse_json_list(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 class User(db.Model):
@@ -113,8 +136,16 @@ class LibrarySettings(db.Model):
     cancellation_period = db.Column(db.Integer, nullable=True)
     max_booking_days_ahead = db.Column(db.Integer, nullable=True)
     extension_limit_minutes = db.Column(db.Integer, nullable=True)
+    weekly_hours = db.Column(db.Text, nullable=True)
+    holiday_closures = db.Column(db.Text, nullable=True)
     updated_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
     updated_at = db.Column(db.DateTime, nullable=True)
+
+    def weekly_hours_list(self):
+        return _parse_json_list(self.weekly_hours)
+
+    def holiday_closures_list(self):
+        return _parse_json_list(self.holiday_closures)
 
     def to_dict(self):
         return {
@@ -126,6 +157,8 @@ class LibrarySettings(db.Model):
             "cancellation_period": self.cancellation_period,
             "max_booking_days_ahead": self.max_booking_days_ahead,
             "extension_limit_minutes": self.extension_limit_minutes,
+            "weekly_hours": self.weekly_hours_list(),
+            "holiday_closures": self.holiday_closures_list(),
             "updated_by": self.updated_by,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

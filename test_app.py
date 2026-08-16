@@ -418,4 +418,23 @@ def test_staff_verify_student_active(client, admin_token):
     assert body["status"] == "Active"
     assert body["valid"] is True
 
+def test_update_library_settings_success(client, admin_token):
+    """Admin can update library operating hours"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.put("/api/admin/settings", json={
+        "open_time": "08:00", "close_time": "22:00"
+    }, headers=headers)
+    assert response.status_code == 200
+    settings = response.get_json()["settings"]
+    assert settings["open_time"] == "08:00"
+    assert settings["close_time"] == "22:00"
+
+def test_update_library_settings_invalid_hours(client, admin_token):
+    """close_time before open_time returns 400"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.put("/api/admin/settings", json={
+        "open_time": "22:00", "close_time": "08:00"
+    }, headers=headers)
+    assert response.status_code == 400
+
 
