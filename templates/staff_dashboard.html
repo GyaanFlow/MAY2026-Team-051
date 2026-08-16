@@ -279,37 +279,38 @@
                 <p class="panel-subtitle">Capture the student, then assign a free seat.</p>
               </div>
 
-              <div class="field-grid">
-                <label class="field field-full">
-                  <span>Student Name</span>
-                  <input type="text" v-model.trim="walkInForm.fullName" placeholder="Full name">
-                </label>
-                <label class="field field-full">
-                  <span>Student ID <span class="identity-meta muted">(optional)</span></span>
-                  <input type="text" v-model.trim="walkInForm.studentId" placeholder="e.g. STU-2026-0199, leave blank if none">
-                </label>
-                <label class="field">
-                  <span>Zone</span>
-                  <select v-model="walkInForm.zone">
-                    <option value="all">Any zone</option>
-                    <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Type</span>
-                  <select v-model="walkInForm.type">
-                    <option value="all">Seat or room</option>
-                    <option value="seat">Individual seat</option>
-                    <option value="room">Study room</option>
-                  </select>
-                </label>
-              </div>
+                <div class="field-grid">
+                  <label class="field field-full">
+                    <span>Student</span>
+                    <input type="text" v-model.trim="walkInForm.studentId" placeholder="Student ID, username, or roll number">
+                  </label>
+                  <label class="field">
+                    <span>Duration (minutes)</span>
+                    <input type="number" min="15" step="15" v-model.number="walkInForm.durationMinutes">
+                  </label>
+                  <label class="field">
+                    <span>Zone</span>
+                    <select v-model="walkInForm.zone">
+                      <option value="all">Any zone</option>
+                      <option v-for="z in ZONES" :key="z" :value="z">{{ z }}</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Type</span>
+                    <select v-model="walkInForm.type">
+                      <option value="all">Seat or room</option>
+                      <option value="seat">Individual seat</option>
+                      <option value="room">Study room</option>
+                    </select>
+                  </label>
+                </div>
             </div>
 
             <div class="panel-card">
               <div class="panel-card-header">
                 <h2>Assign a Seat</h2>
-                <p class="panel-subtitle">{{ availableForWalkIn.length }} available right now.</p>
+                <p class="panel-subtitle" v-if="walkInLoading">Loading available seats...</p>
+                <p class="panel-subtitle" v-else>{{ availableForWalkIn.length }} available right now.</p>
               </div>
 
               <div class="seat-grid" v-if="availableForWalkIn.length">
@@ -339,7 +340,7 @@
                   Assigning <strong>{{ availableForWalkIn.find(s => s.id === walkInForm.seatId)?.name }}</strong>
                 </p>
                 <span v-else></span>
-                <button class="btn-primary btn-small" @click="assignWalkIn">Admit &amp; Assign Seat</button>
+                <button class="btn-primary btn-small" :disabled="walkInSaving" @click="assignWalkIn">{{ walkInSaving ? 'Admitting...' : 'Admit & Assign Seat' }}</button>
               </div>
             </div>
           </div>
@@ -351,8 +352,9 @@
                 <p class="panel-subtitle">{{ walkInSuccess.id }}</p>
               </div>
               <p class="identity-meta">
-                {{ walkInSuccess.studentName }} → {{ walkInSuccess.seatName }}
+                {{ walkInSuccess.studentName }} → {{ walkInSuccess.seatName }} · {{ walkInSuccess.slot.label }}
               </p>
+              <p class="field-hint" v-if="walkInSuccess.checkInCode">Check-in code: {{ walkInSuccess.checkInCode }}</p>
               <button class="btn-outline" @click="dismissWalkInSuccess">Got it</button>
             </div>
           </div>

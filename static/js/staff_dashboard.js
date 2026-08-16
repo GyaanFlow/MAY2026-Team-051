@@ -334,18 +334,50 @@ createApp({
     // 3.6 Walk-In Admission
     // ---------------------------------------------------------------
     const walkInForm = reactive({
-      fullName: '',
       studentId: '',
       zone: 'all',
       type: 'all',
-      seatId: null
+      seatId: null,
+      durationMinutes: 60
     });
 
     const walkInError = ref('');
     const walkInSuccess = ref(null);
+    const walkInSeats = ref([]);
+    const walkInLoading = ref(false);
+    const walkInSaving = ref(false);
+
+    function formatStaffSeat(seat) {
+      const seatNum = parseInt(String(seat.seat_number || '').replace('S', ''), 10);
+      const zone = !seatNum ? 'Library' : seatNum <= 8 ? 'Hall A' : seatNum <= 16 ? 'Hall B' : 'Silent Zone';
+      const isRoom = String(seat.seat_type || '').toLowerCase() === 'room';
+      return {
+        id: seat.seat_id,
+        name: seatNum ? `${zone} · Seat ${seatNum}` : (seat.seat_number || 'Seat'),
+        zone,
+        type: isRoom ? 'room' : 'seat',
+        capacity: isRoom ? 4 : 1,
+        hasPower: seat.seat_type === 'Premium' || isRoom,
+        status: seat.is_available ? 'available' : 'occupied',
+        seatNumber: seat.seat_number
+      };
+    }
+
+    async function loadWalkInSeats() {
+      walkInLoading.value = true;
+      try {
+        const data = await apiFetch('/staff/seats');
+        walkInSeats.value = (data || []).map(formatStaffSeat);
+      } catch (error) {
+        walkInError.value = error.message || 'Unable to load available seats.';
+        walkInSeats.value = [];
+      } finally {
+        walkInLoading.value = false;
+      }
+    }
 
     const availableForWalkIn = computed(() => {
-      return seats.value.filter((s) => {
+      return walkInSeats.value.filter((s) => {
         if (s.status !== 'available') return false;
         if (walkInForm.zone !== 'all' && s.zone !== walkInForm.zone) return false;
         if (walkInForm.type !== 'all' && s.type !== walkInForm.type) return false;
@@ -353,44 +385,47 @@ createApp({
       });
     });
 
-    let walkInCounter = 3010;
-
-    function assignWalkIn() {
-      if (!walkInForm.fullName) {
-        walkInError.value = "Please enter the student's name.";
+    async function assignWalkIn() {
+      if (!walkInForm.studentId || !String(walkInForm.studentId).trim()) {
+        walkInError.value = 'Please enter the student ID, username, or roll number.';
+        walkInSuccess.value = null;
         return;
       }
+
       if (!walkInForm.seatId) {
-        walkInError.value = 'Please select an available seat or room to assign.';
+        walkInError.value = 'Please select an available seat.';
+        walkInSuccess.value = null;
         return;
       }
-      const seat = seatById(walkInForm.seatId);
-      seat.status = 'occupied';
 
-      const currentSlot = LibraryData.TIME_SLOTS.find((s) => s.start <= new Date().getHours() && new Date().getHours() < s.end) || LibraryData.TIME_SLOTS[0];
-
-      walkInCounter += 1;
-      const record = {
-        id: `WI-${walkInCounter}`,
-        studentName: walkInForm.fullName,
-        studentId: walkInForm.studentId || 'Walk-in (no ID on file)',
-        seatName: seat.name,
-        zone: seat.zone,
-        slot: currentSlot,
-        status: 'walk-in',
-        source: 'walk-in'
-      };
-
-      // TODO: POST /api/staff/walk-ins once the backend endpoint exists
-      console.log('Walk-in admitted:', record);
-
-      todaysBookings.value.push(record);
-      walkInSuccess.value = record;
       walkInError.value = '';
+      walkInSuccess.value = null;
+      walkInSaving.value = true;
 
-      walkInForm.fullName = '';
-      walkInForm.studentId = '';
-      walkInForm.seatId = null;
+      try {
+        const data = await apiFetch('/staff/bookings/walk-in', {
+          method: 'POST',
+          body: JSON.stringify({
+            student_id: String(walkInForm.studentId).trim(),
+            seat_id: Number(walkInForm.seatId),
+            duration_minutes: Number(walkInForm.durationMinutes) || 60
+          })
+        });
+
+        const record = mapStaffBooking(data.booking);
+        record.source = 'walk-in';
+        walkInSuccess.value = record;
+
+        walkInForm.studentId = '';
+        walkInForm.seatId = null;
+
+        overviewDate.value = record.date || overviewDate.value;
+        await Promise.all([loadWalkInSeats(), loadDailyBookings()]);
+      } catch (error) {
+        walkInError.value = error.message || 'Unable to admit walk-in student.';
+      } finally {
+        walkInSaving.value = false;
+      }
     }
 
     function dismissWalkInSuccess() {
@@ -805,6 +840,7 @@ createApp({
       loadMembershipPlans();
       loadStudentsForVerification();
       loadDailyBookings();
+      loadWalkInSeats();
 
       liveTimer = setInterval(() => {
         const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
@@ -853,6 +889,8 @@ createApp({
       walkInForm,
       walkInError,
       walkInSuccess,
+      walkInLoading,
+      walkInSaving,
       availableForWalkIn,
       assignWalkIn,
       dismissWalkInSuccess,

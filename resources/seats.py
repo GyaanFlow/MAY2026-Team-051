@@ -3,7 +3,7 @@ from flask import request
 from flask_restful import Resource
 from flask_jwt_extended import jwt_required
 from models import db, Seat, Booking
-from utils import admin_required
+from utils import admin_required, staff_or_admin_required
 
 
 class SeatListResource(Resource):
@@ -33,6 +33,40 @@ class SeatListResource(Resource):
         db.session.add(seat)
         db.session.commit()
         return seat.to_dict(), 201
+
+class StaffSeatListResource(Resource):
+    @staff_or_admin_required
+    def get(self):
+        seats = Seat.query.filter_by(is_active=True).all()
+
+        today = datetime.now().date()
+        now = datetime.now().time()
+
+        active_bookings = Booking.query.filter(
+            Booking.booking_date == today,
+            Booking.status.in_(("Confirmed", "Checked-In")),
+            Booking.start_time <= now,
+            Booking.end_time > now
+        ).all()
+
+        occupied_seat_ids = {
+            booking.seat_id
+            for booking in active_bookings
+        }
+
+        result = []
+
+        for seat in seats:
+            result.append({
+                "seat_id": seat.seat_id,
+                "seat_number": seat.seat_number,
+                "seat_type": seat.seat_type,
+                "is_active": seat.is_active,
+                "is_available": seat.seat_id not in occupied_seat_ids
+            })
+
+        return result, 200
+
 
 
 class SeatResource(Resource):
