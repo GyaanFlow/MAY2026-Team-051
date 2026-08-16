@@ -297,24 +297,30 @@ createApp({
       return { total, available, occupied, reserved };
     });
 
-    function refreshAvailability() {
+    async function refreshAvailability() {
       lastUpdated.value = new Date();
-    }
-
-    // Lightly randomize a couple of seats every few seconds to simulate
-    // a real-time feed. TODO: replace with a websocket / polling call.
-    function simulateLiveUpdate() {
-      const cycle = ['available', 'occupied', 'reserved'];
-      const flipCount = 1 + Math.floor(Math.random() * 2);
-      for (let i = 0; i < flipCount; i++) {
-        const pool = seats.value.filter((s) => s.status !== 'maintenance');
-        const target = pool[Math.floor(Math.random() * pool.length)];
-        if (target) {
-          const next = cycle[Math.floor(Math.random() * cycle.length)];
-          target.status = next;
-        }
+      try {
+        const currentHour = now.value.getHours();
+        // find current slot
+        const slot = LibraryData.TIME_SLOTS.find((s) => s.start <= currentHour && currentHour < s.end) || LibraryData.TIME_SLOTS[0];
+        const start_time = slot.label.split(' – ')[0];
+        const end_time = slot.label.split(' – ')[1];
+        const dateStr = LibraryData.todayStr();
+        const data = await apiFetch(`/seats/availability?date=${dateStr}&start_time=${start_time}&end_time=${end_time}`);
+        
+        const availableNumbers = new Set(data.available_seats.map(s => s.seat_number));
+        
+        seats.value.forEach((fs, idx) => {
+          const seatNum = `S${String(idx + 1).padStart(2, '0')}`;
+          if (idx < 20) {
+            fs.status = availableNumbers.has(seatNum) ? 'available' : 'occupied';
+          } else {
+            fs.status = 'occupied';
+          }
+        });
+      } catch (error) {
+        console.error('Failed to refresh availability:', error);
       }
-      lastUpdated.value = new Date();
     }
 
     function goBookSeat(seat) {
@@ -353,6 +359,81 @@ createApp({
       return Boolean(slotBookings[key] && slotBookings[key].includes(seatId));
     }
 
+    function slotClock(hour) {
+      return `${String(hour).padStart(2, '0')}:00`;
+    }
+
+    function formatApiSeat(seat) {
+      const seatNum = parseInt(String(seat.seat_number || '').replace('S', ''), 10);
+      const zone = !seatNum ? 'Library' : seatNum <= 8 ? 'Hall A' : seatNum <= 16 ? 'Hall B' : 'Silent Zone';
+      const isRoom = String(seat.seat_type || '').toLowerCase() === 'room';
+      return {
+        id: seat.seat_id,
+        name: seatNum ? `${zone} · Seat ${seatNum}` : (seat.seat_number || 'Seat'),
+        zone,
+        type: isRoom ? 'room' : 'seat',
+        capacity: isRoom ? 4 : 1,
+        hasPower: seat.seat_type === 'Premium' || isRoom,
+        status: 'available',
+        seatNumber: seat.seat_number,
+        seatType: seat.seat_type
+      };
+    }
+
+    function slotFromTimes(start, end) {
+      const startHour = Number(String(start).slice(0, 2));
+      const endHour = Number(String(end).slice(0, 2));
+      return LibraryData.TIME_SLOTS.find((slot) => slot.start === startHour && slot.end === endHour)
+        || { id: `slot-${start}-${end}`, label: `${start} – ${end}`, start: startHour, end: endHour };
+    }
+
+    function mapBooking(data) {
+      const display = formatApiSeat({
+        seat_id: data.seat_id,
+        seat_number: data.seat_number,
+        seat_type: data.seat_type
+      });
+      const slot = slotFromTimes(data.start_time, data.end_time);
+      const statusMap = {
+        Confirmed: 'upcoming',
+        'Checked-In': 'checked-in',
+        Completed: 'completed',
+        Cancelled: 'cancelled',
+        'No-Show': 'no-show'
+      };
+      return {
+        id: data.booking_id,
+        seatId: data.seat_id,
+        seatName: display.name,
+        zone: display.zone,
+        type: display.type,
+        date: data.booking_date,
+        slotId: slot.id,
+        slotLabel: slot.label,
+        startDateTime: new Date(`${data.booking_date}T${data.start_time}`),
+        endDateTime: new Date(`${data.booking_date}T${data.end_time}`),
+        status: statusMap[data.status] || String(data.status || '').toLowerCase(),
+        checkInCode: data.checkin_code,
+        checkInTime: null,
+        checkOutTime: null
+      };
+    }
+
+    function splitStoredBookings(records) {
+      const mapped = (records || []).map(mapBooking);
+      myBookings.value = mapped.filter((booking) => booking.status === 'upcoming' || booking.status === 'checked-in');
+      history.value = mapped.filter((booking) => booking.status !== 'upcoming' && booking.status !== 'checked-in');
+    }
+
+    async function loadMyBookings() {
+      try {
+        const data = await apiFetch('/students/me/bookings');
+        splitStoredBookings(data.bookings);
+      } catch (error) {
+        console.error('Failed to load bookings:', error);
+      }
+    }
+
     const bookingForm = reactive({
       date: today,
       slotId: 'slot-4',
@@ -368,15 +449,38 @@ createApp({
       });
     });
 
+    const availableSeatsForSlot = ref([]);
+    const loadingAvailability = ref(false);
+
+    async function fetchBookableSeats() {
+      if (!bookingForm.date || !bookingForm.slotId) return;
+      loadingAvailability.value = true;
+      try {
+        const slot = LibraryData.TIME_SLOTS.find(s => s.id === bookingForm.slotId);
+        if (!slot) return;
+        const start_time = slotClock(slot.start);
+        const end_time = slotClock(slot.end);
+        const data = await apiFetch(`/seats/availability?date=${bookingForm.date}&start_time=${start_time}&end_time=${end_time}`);
+        availableSeatsForSlot.value = data.available_seats || [];
+      } catch (error) {
+        console.error('Failed to fetch available seats:', error);
+      } finally {
+        loadingAvailability.value = false;
+      }
+    }
+
     const bookableSeats = computed(() => {
-      return seats.value.filter((s) => {
+      return availableSeatsForSlot.value.map(formatApiSeat).filter((s) => {
         if (bookingForm.zone !== 'all' && s.zone !== bookingForm.zone) return false;
         if (bookingForm.type !== 'all' && s.type !== bookingForm.type) return false;
-        if (s.status === 'maintenance') return false;
-        if (isSeatBookedFor(s.id, bookingForm.date, bookingForm.slotId)) return false;
         return true;
       });
     });
+
+    // Fetch availability whenever the slot changes
+    watch([() => bookingForm.date, () => bookingForm.slotId], () => {
+      fetchBookableSeats();
+    }, { immediate: true });
 
     // Reset the selected seat whenever the filters change and it's no longer valid
     watch([() => bookingForm.date, () => bookingForm.slotId, () => bookingForm.zone, () => bookingForm.type], () => {
@@ -385,54 +489,49 @@ createApp({
       }
     });
 
-    const selectedBookingSeat = computed(() => seats.value.find((s) => s.id === bookingForm.seatId) || null);
+    const selectedBookingSeat = computed(() => bookableSeats.value.find((s) => s.id === bookingForm.seatId) || null);
 
     const bookingError = ref('');
-    const bookingSuccess = ref(null); // holds the confirmed booking once submitted
-    let bookingRefCounter = 1042;
+    const bookingSuccess = ref(null);
+    const bookingSaving = ref(false);
 
     const myBookings = ref([]);
     const history = ref([]);
 
-    function confirmBooking() {
+    async function confirmBooking() {
       if (!bookingForm.seatId) {
         bookingError.value = 'Please select an available seat or room.';
         return;
       }
-      const seat = selectedBookingSeat.value;
       const slot = LibraryData.slotById(bookingForm.slotId);
-      const startDateTime = LibraryData.slotDateTime(bookingForm.date, bookingForm.slotId, 'start');
-      const endDateTime = LibraryData.slotDateTime(bookingForm.date, bookingForm.slotId, 'end');
+      if (!slot) {
+        bookingError.value = 'Please choose a valid time slot.';
+        return;
+      }
 
-      bookingRefCounter += 1;
-      const booking = {
-        id: `BK-${bookingRefCounter}`,
-        seatId: seat.id,
-        seatName: seat.name,
-        zone: seat.zone,
-        type: seat.type,
-        date: bookingForm.date,
-        slotId: bookingForm.slotId,
-        slotLabel: slot.label,
-        startDateTime,
-        endDateTime,
-        status: 'upcoming',
-        checkInCode: generateCheckInCode(),
-        checkInTime: null,
-        checkOutTime: null
-      };
-
-      // TODO: POST /api/bookings once the backend endpoint exists
-      console.log('Booking created:', booking);
-
-      const key = slotKey(bookingForm.date, bookingForm.slotId);
-      if (!slotBookings[key]) slotBookings[key] = [];
-      slotBookings[key].push(seat.id);
-
-      myBookings.value.unshift(booking);
       bookingError.value = '';
-      bookingSuccess.value = booking;
-      bookingForm.seatId = null;
+      bookingSaving.value = true;
+
+      try {
+        const data = await apiFetch('/bookings', {
+          method: 'POST',
+          body: JSON.stringify({
+            seat_id: bookingForm.seatId,
+            date: bookingForm.date,
+            start_time: slotClock(slot.start),
+            end_time: slotClock(slot.end)
+          })
+        });
+        const booking = mapBooking(data.booking);
+        myBookings.value.unshift(booking);
+        bookingSuccess.value = booking;
+        bookingForm.seatId = null;
+        await fetchBookableSeats();
+      } catch (error) {
+        bookingError.value = error.message || 'Unable to create booking.';
+      } finally {
+        bookingSaving.value = false;
+      }
     }
 
     function dismissBookingSuccess() {
@@ -460,19 +559,42 @@ createApp({
     const editingBookingId = ref(null);
     const editForm = reactive({ date: today, slotId: 'slot-4', seatId: null });
     const editError = ref('');
+    const editAvailableSeats = ref([]);
 
-    const editBookableSeats = computed(() => {
-      if (!editingBookingId.value) return [];
-      return seats.value.filter((s) => {
-        if (s.status === 'maintenance') return false;
-        const bookedElsewhere = isSeatBookedFor(s.id, editForm.date, editForm.slotId);
-        // allow keeping the seat currently held for this booking
-        const current = myBookings.value.find((b) => b.id === editingBookingId.value);
-        if (bookedElsewhere && !(current && current.seatId === s.id && current.date === editForm.date && current.slotId === editForm.slotId)) {
-          return false;
+    const editBookableSeats = computed(() => editAvailableSeats.value);
+
+    async function fetchEditSeats() {
+      if (!editingBookingId.value || !editForm.date || !editForm.slotId) {
+        editAvailableSeats.value = [];
+        return;
+      }
+      const slot = LibraryData.slotById(editForm.slotId);
+      if (!slot) return;
+      try {
+        const data = await apiFetch(
+          `/seats/availability?date=${editForm.date}&start_time=${slotClock(slot.start)}&end_time=${slotClock(slot.end)}`
+        );
+        const seats = (data.available_seats || []).map(formatApiSeat);
+        const current = myBookings.value.find((booking) => booking.id === editingBookingId.value);
+        if (current && !seats.some((seat) => seat.id === current.seatId)) {
+          seats.unshift({
+            id: current.seatId,
+            name: current.seatName,
+            zone: current.zone,
+            type: current.type,
+            capacity: current.type === 'room' ? 4 : 1,
+            hasPower: false,
+            status: 'available'
+          });
         }
-        return true;
-      });
+        editAvailableSeats.value = seats;
+      } catch (error) {
+        editError.value = error.message || 'Unable to load available seats.';
+      }
+    }
+
+    watch([editingBookingId, () => editForm.date, () => editForm.slotId], () => {
+      fetchEditSeats();
     });
 
     function startModify(booking) {
@@ -531,52 +653,49 @@ createApp({
   }
 }
 
-    function saveModify(booking) {
+    async function saveModify(booking) {
       if (!editForm.seatId) {
         editError.value = 'Please choose a seat or room.';
         return;
       }
-      // free the old slot
-      const oldKey = slotKey(booking.date, booking.slotId);
-      if (slotBookings[oldKey]) {
-        slotBookings[oldKey] = slotBookings[oldKey].filter((id) => id !== booking.seatId);
+      const slot = LibraryData.slotById(editForm.slotId);
+      if (!slot) {
+        editError.value = 'Please choose a valid time slot.';
+        return;
       }
 
-      const seat = seats.value.find((s) => s.id === editForm.seatId);
-      const slot = LibraryData.slotById(editForm.slotId);
-
-      booking.seatId = seat.id;
-      booking.seatName = seat.name;
-      booking.zone = seat.zone;
-      booking.type = seat.type;
-      booking.date = editForm.date;
-      booking.slotId = editForm.slotId;
-      booking.slotLabel = slot.label;
-      booking.startDateTime = LibraryData.slotDateTime(editForm.date, editForm.slotId, 'start');
-      booking.endDateTime = LibraryData.slotDateTime(editForm.date, editForm.slotId, 'end');
-
-      const newKey = slotKey(editForm.date, editForm.slotId);
-      if (!slotBookings[newKey]) slotBookings[newKey] = [];
-      slotBookings[newKey].push(seat.id);
-
-      // TODO: PATCH /api/bookings/{id} once the backend endpoint exists
-      console.log('Booking modified:', { ...booking });
-
-      editingBookingId.value = null;
+      try {
+        const data = await apiFetch(`/bookings/${booking.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            seat_id: editForm.seatId,
+            date: editForm.date,
+            start_time: slotClock(slot.start),
+            end_time: slotClock(slot.end)
+          })
+        });
+        const updated = mapBooking(data.booking);
+        const index = myBookings.value.findIndex((item) => item.id === booking.id);
+        if (index !== -1) {
+          myBookings.value[index] = updated;
+        }
+        editingBookingId.value = null;
+        editError.value = '';
+        await fetchBookableSeats();
+      } catch (error) {
+        editError.value = error.message || 'Unable to update booking.';
+      }
     }
 
-    function cancelBooking(booking) {
-      const key = slotKey(booking.date, booking.slotId);
-      if (slotBookings[key]) {
-        slotBookings[key] = slotBookings[key].filter((id) => id !== booking.seatId);
+    async function cancelBooking(booking) {
+      try {
+        await apiFetch(`/bookings/${booking.id}/cancel`, { method: 'POST' });
+        booking.status = 'cancelled';
+        myBookings.value = myBookings.value.filter((item) => item.id !== booking.id);
+        history.value.unshift(booking);
+      } catch (error) {
+        editError.value = error.message || 'Unable to cancel booking.';
       }
-      booking.status = 'cancelled';
-
-      // TODO: DELETE /api/bookings/{id} once the backend endpoint exists
-      console.log('Booking cancelled:', booking.id);
-
-      myBookings.value = myBookings.value.filter((b) => b.id !== booking.id);
-      history.value.unshift(booking);
     }
 
     const upcomingBookings = computed(() => myBookings.value.filter((b) => b.status === 'upcoming' || b.status === 'checked-in'));
@@ -654,37 +773,6 @@ createApp({
     // ---------------------------------------------------------------
     const historyFilter = ref('all');
 
-    function seedHistory() {
-      const d1 = LibraryData.addDays(today, -1);
-      const d2 = LibraryData.addDays(today, -3);
-      const d3 = LibraryData.addDays(today, -5);
-      const d4 = LibraryData.addDays(today, -6);
-
-      history.value = [
-        {
-          id: 'BK-1031', seatName: 'Hall B · Seat 4', zone: 'Hall B', type: 'seat',
-          date: d1, slotLabel: '10:00 – 12:00', status: 'completed',
-          checkInTime: '10:02 AM', checkOutTime: '11:58 AM'
-        },
-        {
-          id: 'BK-1024', seatName: 'Study Room 202', zone: 'Hall B', type: 'room',
-          date: d2, slotLabel: '14:00 – 16:00', status: 'completed',
-          checkInTime: '2:05 PM', checkOutTime: '4:00 PM'
-        },
-        {
-          id: 'BK-1017', seatName: 'Silent Zone · Seat 3', zone: 'Silent Zone', type: 'seat',
-          date: d3, slotLabel: '08:00 – 10:00', status: 'no-show',
-          checkInTime: null, checkOutTime: null
-        },
-        {
-          id: 'BK-1009', seatName: 'Hall A · Seat 6', zone: 'Hall A', type: 'seat',
-          date: d4, slotLabel: '16:00 – 18:00', status: 'completed',
-          checkInTime: '4:00 PM', checkOutTime: '5:55 PM'
-        }
-      ];
-    }
-    seedHistory();
-
     const filteredHistory = computed(() => {
       const combined = [...history.value].sort((a, b) => (a.date < b.date ? 1 : -1));
       if (historyFilter.value === 'all') return combined;
@@ -749,62 +837,6 @@ createApp({
       return 'badge-muted';
     }
 
-    // Seed one "in progress" booking so the extension-request flow is demoable,
-    // plus a further-out upcoming booking so modify/cancel is demoable.
-    function seedActiveBooking() {
-      const slot = LibraryData.TIME_SLOTS.find((s) => s.start <= now.value.getHours() && now.value.getHours() < s.end) || LibraryData.TIME_SLOTS[3];
-      const seat = seats.value.find((s) => s.id === 'seat-0-3');
-      if (seat) {
-        const startDateTime = LibraryData.slotDateTime(today, slot.id, 'start');
-        const endDateTime = LibraryData.slotDateTime(today, slot.id, 'end');
-        const key = slotKey(today, slot.id);
-        if (!slotBookings[key]) slotBookings[key] = [];
-        if (!slotBookings[key].includes(seat.id)) slotBookings[key].push(seat.id);
-
-        myBookings.value.push({
-          id: 'BK-1050',
-          seatId: seat.id,
-          seatName: seat.name,
-          zone: seat.zone,
-          type: seat.type,
-          date: today,
-          slotId: slot.id,
-          slotLabel: slot.label,
-          startDateTime,
-          endDateTime,
-          status: 'checked-in',
-          checkInCode: generateCheckInCode(),
-          checkInTime: '—',
-          checkOutTime: null
-        });
-      }
-
-      const laterSlot = LibraryData.TIME_SLOTS[LibraryData.TIME_SLOTS.length - 1];
-      const laterSeat = seats.value.find((s) => s.id === 'seat-1-5');
-      if (laterSeat) {
-        const laterKey = slotKey(today, laterSlot.id);
-        if (!slotBookings[laterKey]) slotBookings[laterKey] = [];
-        if (!slotBookings[laterKey].includes(laterSeat.id)) slotBookings[laterKey].push(laterSeat.id);
-
-        myBookings.value.push({
-          id: 'BK-1051',
-          seatId: laterSeat.id,
-          seatName: laterSeat.name,
-          zone: laterSeat.zone,
-          type: laterSeat.type,
-          date: today,
-          slotId: laterSlot.id,
-          slotLabel: laterSlot.label,
-          startDateTime: LibraryData.slotDateTime(today, laterSlot.id, 'start'),
-          endDateTime: LibraryData.slotDateTime(today, laterSlot.id, 'end'),
-          status: 'upcoming',
-          checkInCode: generateCheckInCode(),
-          checkInTime: null,
-          checkOutTime: null
-        });
-      }
-    }
-    seedActiveBooking();
 
     // ---------------------------------------------------------------
     // Story 6.1 — Complaint Submission (Student)
@@ -913,14 +945,16 @@ createApp({
     //   liveTimer = setInterval(simulateLiveUpdate, 6000);
     // });
     onMounted(() => {
-  loadStudentProfile();
+      loadStudentProfile();
+      refreshAvailability();
+      loadMyBookings();
 
-  clockTimer = setInterval(() => {
-    now.value = new Date();
-  }, 1000 * 30);
+      clockTimer = setInterval(() => {
+        now.value = new Date();
+      }, 1000 * 30);
 
-  liveTimer = setInterval(simulateLiveUpdate, 6000);
-});
+      liveTimer = setInterval(refreshAvailability, 30000);
+    });
 
     onBeforeUnmount(() => {
       if (clockTimer) clearInterval(clockTimer);
@@ -969,6 +1003,7 @@ createApp({
       selectedBookingSeat,
       bookingError,
       bookingSuccess,
+      bookingSaving,
       confirmBooking,
       dismissBookingSuccess,
 

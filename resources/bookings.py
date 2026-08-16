@@ -13,6 +13,14 @@ def generate_checkin_code():
     return secrets.token_hex(4).upper()
 
 
+def _booking_payload(booking):
+    data = booking.to_dict()
+    seat = db.session.get(Seat, booking.seat_id)
+    data["seat_number"] = seat.seat_number if seat else None
+    data["seat_type"] = seat.seat_type if seat else None
+    return data
+
+
 def _slot_datetime(booking_date, slot_time):
     return datetime.combine(booking_date, slot_time)
 
@@ -153,7 +161,7 @@ class BookingListResource(Resource):
         db.session.add(booking)
         db.session.commit()
 
-        return {"message": "Booking created", "booking": booking.to_dict()}, 201
+        return {"message": "Booking created", "booking": _booking_payload(booking)}, 201
 
 
 
@@ -179,6 +187,7 @@ class BookingDetailResource(Resource):
         new_date = booking.booking_date
         new_start = booking.start_time
         new_end = booking.end_time
+        new_seat_id = booking.seat_id
 
         try:
             if "date" in data:
@@ -187,11 +196,17 @@ class BookingDetailResource(Resource):
                 new_start = datetime.strptime(data["start_time"], "%H:%M").time()
             if "end_time" in data:
                 new_end = datetime.strptime(data["end_time"], "%H:%M").time()
-        except ValueError:
+            if "seat_id" in data:
+                new_seat_id = int(data["seat_id"])
+        except (ValueError, TypeError):
             return {"message": "Invalid date/time format"}, 400
 
         if new_start >= new_end:
             return {"message": "start_time must be before end_time"}, 400
+
+        seat = db.session.get(Seat, new_seat_id)
+        if not seat or not seat.is_active:
+            return {"message": "Seat not found or inactive"}, 404
 
         settings = LibrarySettings.query.first()
         if settings:
@@ -211,7 +226,7 @@ class BookingDetailResource(Resource):
                 return {"message": limit_error}, 400
 
         clash = Booking.query.filter(
-            Booking.seat_id == booking.seat_id,
+            Booking.seat_id == new_seat_id,
             Booking.booking_date == new_date,
             Booking.status == "Confirmed",
             Booking.booking_id != booking.booking_id,
@@ -221,12 +236,13 @@ class BookingDetailResource(Resource):
         if clash:
             return {"message": "Seat already booked for this new time slot"}, 409
 
+        booking.seat_id = new_seat_id
         booking.booking_date = new_date
         booking.start_time = new_start
         booking.end_time = new_end
         db.session.commit()
 
-        return {"message": "Booking updated", "booking": booking.to_dict()}, 200    
+        return {"message": "Booking updated", "booking": _booking_payload(booking)}, 200 
 
 class BookingCancelResource(Resource):
     @jwt_required()
@@ -311,7 +327,7 @@ class BookingCheckoutResource(Resource):
 class StudentBookingHistoryResource(Resource):
     @jwt_required()
     def get(self):
-        user_id = get_jwt_identity()
+        user_id = int(get_jwt_identity())
 
         bookings = (
             Booking.query.filter_by(user_id=user_id)
@@ -319,13 +335,7 @@ class StudentBookingHistoryResource(Resource):
             .all()
         )
 
-        result = []
-        for b in bookings:
-            data = b.to_dict()
-            seat = db.session.get(Seat, b.seat_id)
-            data["seat_number"] = seat.seat_number if seat else None
-            result.append(data)
-
+        result = [_booking_payload(booking) for booking in bookings]
         return {"total_bookings": len(result), "bookings": result}, 200
 
 

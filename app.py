@@ -115,13 +115,13 @@ def create_app(config_class=Config):
     api.add_resource(DisapproveMembershipResource, "/admin/memberships/<int:membership_id>/disapprove")
     api.add_resource(MembershipDetailResource, "/admin/memberships/<int:membership_id>")
 
-    # api.add_resource(SeatAvailabilityResource, "/seats/availability")
+    api.add_resource(SeatAvailabilityResource, "/seats/availability")
     api.add_resource(BookingListResource, "/bookings")
     api.add_resource(BookingDetailResource, "/bookings/<int:booking_id>")
     api.add_resource(BookingCancelResource, "/bookings/<int:booking_id>/cancel")
     api.add_resource(BookingCheckoutResource, "/bookings/<int:booking_id>/checkout")
 
-    # api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
+    api.add_resource(StudentBookingHistoryResource, "/students/me/bookings")
     # api.add_resource(StaffTodayBookingsResource, "/staff/bookings/today")
     # api.add_resource(WalkInBookingResource, "/staff/bookings/walk-in")
 
