@@ -506,3 +506,70 @@ def test_update_library_settings_invalid_hours(client, admin_token):
     assert response.status_code == 400
 
 
+@pytest.fixture
+def confirmed_booking(client, student_token):
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/bookings", json={
+        "seat_id": 1, "date": "2026-09-01", "start_time": "10:00", "end_time": "11:00"
+    }, headers=headers)
+    return response.get_json()["booking"]
+
+
+def test_seat_availability_success(client, student_token):
+    """Authenticated user can search for available seats in a time slot"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get(
+        "/api/seats/availability?date=2026-12-01&start_time=10:00&end_time=11:00",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total_available"] > 0
+    assert len(body["available_seats"]) == body["total_available"]
+
+
+def test_seat_availability_missing_params(client, student_token):
+    """Missing query parameters returns 400"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/seats/availability", headers=headers)
+    assert response.status_code == 400
+
+
+def test_seat_availability_excludes_booked_seat(client, student_token, confirmed_booking):
+    """A booked seat is excluded from availability for the same slot"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get(
+        "/api/seats/availability?date=2026-09-01&start_time=10:00&end_time=11:00",
+        headers=headers,
+    )
+    assert response.status_code == 200
+    seat_ids = [s["seat_id"] for s in response.get_json()["available_seats"]]
+    assert confirmed_booking["seat_id"] not in seat_ids
+
+
+def test_student_can_list_own_bookings(client, student_token, confirmed_booking):
+    """Student bookings persist and are returned after reload."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/students/me/bookings", headers=headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["total_bookings"] == 1
+    booking = body["bookings"][0]
+    assert booking["booking_id"] == confirmed_booking["booking_id"]
+    assert booking["seat_id"] == confirmed_booking["seat_id"]
+    assert booking["seat_number"]
+
+
+def test_student_can_change_booking_seat(client, student_token, confirmed_booking):
+    """Student can move a confirmed booking to another seat."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.put(
+        f"/api/bookings/{confirmed_booking['booking_id']}",
+        json={"seat_id": 2, "date": "2026-09-01", "start_time": "10:00", "end_time": "11:00"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    body = response.get_json()["booking"]
+    assert body["seat_id"] == 2
+    assert body["seat_number"] == "S02"
+

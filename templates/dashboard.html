@@ -297,7 +297,7 @@
                   Booking <strong>{{ selectedBookingSeat.name }}</strong> for
                   <strong>{{ bookingForm.date }}</strong>, {{ TIME_SLOTS.find(s => s.id === bookingForm.slotId).label }}
                 </p>
-                <button class="btn-primary btn-small" @click="confirmBooking">Confirm Booking</button>
+                <button class="btn-primary btn-small" :disabled="bookingSaving" @click="confirmBooking">{{ bookingSaving ? 'Booking...' : 'Confirm Booking' }}</button>
               </div>
             </div>
           </div>
