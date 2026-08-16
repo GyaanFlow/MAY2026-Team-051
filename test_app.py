@@ -609,3 +609,79 @@ def test_staff_daily_overview_student_forbidden(client, student_token):
     response = client.get("/api/staff/bookings/today", headers=headers)
     assert response.status_code == 403
 
+
+def test_staff_seats_lists_availability(client, staff_token):
+    """Staff can list active seats and whether they are free now."""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.get("/api/staff/seats", headers=headers)
+    assert response.status_code == 200
+    seats = response.get_json()
+    assert len(seats) > 0
+    assert "seat_id" in seats[0]
+    assert "is_available" in seats[0]
+
+
+def test_walk_in_admission_success(client, staff_token, student_token):
+    """Staff can admit an active student to a free seat for today."""
+    student = client.get(
+        "/api/students/me",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    seats = client.get("/api/staff/seats", headers=staff_headers).get_json()
+    seat_id = seats[0]["seat_id"]
+
+    response = client.post("/api/staff/bookings/walk-in", json={
+        "student_id": student["student_id"],
+        "seat_id": seat_id,
+        "duration_minutes": 30,
+    }, headers=staff_headers)
+    assert response.status_code == 201, response.get_json()
+    booking = response.get_json()["booking"]
+    assert booking["seat_id"] == seat_id
+    assert booking["full_name"]
+    assert booking["checkin_code"]
+
+    overview = client.get("/api/staff/bookings/today", headers=staff_headers).get_json()
+    ids = [item["booking_id"] for item in overview["bookings"]]
+    assert booking["booking_id"] in ids
+
+
+def test_walk_in_admission_by_username(client, staff_token, student_token):
+    """Walk-in student lookup accepts the student's username."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/bookings/walk-in", json={
+        "student_id": "extstudent",
+        "seat_id": 2,
+        "duration_minutes": 30,
+    }, headers=staff_headers)
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["booking"]["username"] == "extstudent"
+
+
+def test_walk_in_admission_unknown_student(client, staff_token):
+    """Unknown student identifiers return 404."""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/bookings/walk-in", json={
+        "student_id": "nobody",
+        "seat_id": 1,
+    }, headers=headers)
+    assert response.status_code == 404
+
+
+def test_walk_in_admission_pending_membership(client, staff_token, admin_token):
+    """Pending students cannot be admitted as walk-ins."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    created = client.post("/api/staff/students/register", json={
+        "username": "pendingwalk",
+        "password": "password123",
+        "email": "pendingwalk@library.com",
+        "full_name": "Pending Walk",
+    }, headers=staff_headers).get_json()
+
+    response = client.post("/api/staff/bookings/walk-in", json={
+        "student_id": created["student_id"],
+        "seat_id": 1,
+    }, headers=staff_headers)
+    assert response.status_code == 400
+

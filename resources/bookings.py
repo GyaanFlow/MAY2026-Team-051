@@ -21,6 +21,28 @@ def _booking_payload(booking):
     return data
 
 
+def _resolve_walkin_student(identifier):
+    if identifier is None or str(identifier).strip() == "":
+        return None
+
+    raw = str(identifier).strip()
+    try:
+        student = db.session.get(Student, int(raw))
+        if student:
+            return student
+    except (TypeError, ValueError):
+        pass
+
+    student = Student.query.filter_by(roll_number=raw).first()
+    if student:
+        return student
+
+    user = User.query.filter_by(username=raw).first()
+    if user:
+        return Student.query.filter_by(user_id=user.user_id).first()
+    return None
+
+
 def _slot_datetime(booking_date, slot_time):
     return datetime.combine(booking_date, slot_time)
 
@@ -398,10 +420,11 @@ class WalkInBookingResource(Resource):
         if data is None:
             return {"message": "Request body must be JSON"}, 400
 
-        student_id = data.get("student_id")
+        identifier = data.get("student_id") or data.get("username") or data.get("roll_number")
+        seat_id = data.get("seat_id")
         duration_minutes = data.get("duration_minutes", 60)
 
-        if not student_id:
+        if not identifier:
             return {"message": "student_id is required"}, 400
 
         try:
@@ -411,7 +434,7 @@ class WalkInBookingResource(Resource):
         except (TypeError, ValueError):
             return {"message": "duration_minutes must be a positive number"}, 400
 
-        student = db.session.get(Student, student_id)
+        student = _resolve_walkin_student(identifier)
         if not student:
             return {"message": "Student not found"}, 404
 
@@ -422,7 +445,12 @@ class WalkInBookingResource(Resource):
         booking_date = now.date()
         start_time = now.time().replace(microsecond=0)
         end_dt = now + timedelta(minutes=duration_minutes)
+        if end_dt.date() != booking_date:
+            return {"message": "Walk-in duration would go past midnight"}, 400
         end_time = end_dt.time().replace(microsecond=0)
+
+        if start_time >= end_time:
+            return {"message": "Walk-in duration is too short for the remaining time today"}, 400
 
         all_seats = Seat.query.filter_by(is_active=True).all()
         if not all_seats:
@@ -432,15 +460,27 @@ class WalkInBookingResource(Resource):
             b.seat_id
             for b in Booking.query.filter(
                 Booking.booking_date == booking_date,
-                Booking.status == "Confirmed",
+                Booking.status.in_(("Confirmed", "Checked-In")),
                 Booking.start_time < end_time,
                 Booking.end_time > start_time,
             ).all()
         }
 
-        free_seat = next((s for s in all_seats if s.seat_id not in booked_seat_ids), None)
-        if not free_seat:
-            return {"message": "No free seats available right now"}, 409
+        if seat_id is not None:
+            try:
+                seat_id = int(seat_id)
+            except (TypeError, ValueError):
+                return {"message": "seat_id must be a valid number"}, 400
+
+            free_seat = db.session.get(Seat, seat_id)
+            if not free_seat or not free_seat.is_active:
+                return {"message": "Selected seat is not available"}, 409
+            if free_seat.seat_id in booked_seat_ids:
+                return {"message": "Selected seat is already occupied"}, 409
+        else:
+            free_seat = next((s for s in all_seats if s.seat_id not in booked_seat_ids), None)
+            if not free_seat:
+                return {"message": "No free seats available right now"}, 409
 
         checkin_code = generate_checkin_code()
 
@@ -456,8 +496,10 @@ class WalkInBookingResource(Resource):
         db.session.add(booking)
         db.session.commit()
 
-        result = booking.to_dict()
-        result["seat_number"] = free_seat.seat_number
+        result = _booking_payload(booking)
+        user = db.session.get(User, student.user_id)
         result["full_name"] = student.full_name
+        result["roll_number"] = student.roll_number
+        result["username"] = user.username if user else None
 
         return {"message": "Walk-in booking created", "booking": result}, 201
