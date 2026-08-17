@@ -50,11 +50,11 @@ from resources.extension_requests import (
     StaffExtensionRequestRejectResource,
 )
 # from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
-# from resources.payments import (
-#     StaffPaymentListResource,
-#     StudentPaymentHistoryResource,
-#     StaffStudentPaymentHistoryResource,
-# )
+from resources.payments import (
+    StaffPaymentListResource,
+    StudentPaymentHistoryResource,
+    StaffStudentPaymentHistoryResource,
+)
 # from resources.complaints import (
 #     StudentComplaintCreateResource,
 #     StaffComplaintListResource,
@@ -150,12 +150,12 @@ def create_app(config_class=Config):
     #     "/staff/bookings/<int:booking_id>/no-show",
     # )
 
-    # api.add_resource(StaffPaymentListResource, "/staff/payments")
-    # api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")
-    # api.add_resource(
-    #     StaffStudentPaymentHistoryResource,
-    #     "/staff/students/<int:student_id>/payments",
-    # )
+    api.add_resource(StaffPaymentListResource, "/staff/payments")
+    api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")
+    api.add_resource(
+        StaffStudentPaymentHistoryResource,
+        "/staff/students/<int:student_id>/payments",
+    )
 
     # api.add_resource(StudentComplaintCreateResource, "/students/me/complaints")
     # api.add_resource(StaffComplaintListResource, "/staff/complaints")
@@ -251,6 +251,13 @@ def upgrade_sqlite_schema():
     for column_name, statement in settings_columns_to_add.items():
         if column_name not in settings_columns:
             db.session.execute(text(statement))
+            changed = True
+
+    inspector = inspect(db.engine)
+    if inspector.has_table("payments"):
+        payment_columns = {column["name"] for column in inspector.get_columns("payments")}
+        if "purpose" not in payment_columns:
+            db.session.execute(text("ALTER TABLE payments ADD COLUMN purpose VARCHAR(200)"))
             changed = True
 
     if changed:

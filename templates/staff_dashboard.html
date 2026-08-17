@@ -446,12 +446,8 @@
 
               <div class="field-grid">
                 <label class="field field-full">
-                  <span>Student Name</span>
-                  <input type="text" v-model.trim="paymentForm.studentName" placeholder="Full name">
-                </label>
-                <label class="field field-full">
-                  <span>Student ID <span class="identity-meta muted">(optional)</span></span>
-                  <input type="text" v-model.trim="paymentForm.studentId" placeholder="e.g. STU-2026-0142">
+                  <span>Student</span>
+                  <input type="text" v-model.trim="paymentForm.studentId" placeholder="Student ID, username, or roll number">
                 </label>
                 <label class="field">
                   <span>Amount (₹)</span>
@@ -464,19 +460,21 @@
                   </select>
                 </label>
                 <label class="field field-full">
-                  <span>Purpose</span>
+                  <span>Purpose <span class="identity-meta muted">(optional)</span></span>
                   <input type="text" v-model.trim="paymentForm.purpose" placeholder="e.g. Premium Membership — Monthly">
                 </label>
               </div>
 
               <p class="form-error" v-if="paymentError">{{ paymentError }}</p>
               <p class="form-success" v-if="paymentSuccess">Payment of ₹{{ paymentSuccess.amount }} recorded for {{ paymentSuccess.studentName }}.</p>
-              <button class="btn-primary btn-small" @click="recordPayment">Record Payment</button>
+              <button class="btn-primary btn-small" :disabled="paymentSaving" @click="recordPayment">
+                {{ paymentSaving ? 'Saving…' : 'Record Payment' }}
+              </button>
             </div>
 
             <div class="panel-card">
               <div class="panel-card-header">
-                <h2>Recorded This Session</h2>
+                <h2>Recorded Payments</h2>
                 <p class="panel-subtitle">{{ recordedPayments.length }} payment(s) logged.</p>
               </div>
 
@@ -485,13 +483,13 @@
                   <div class="record-avatar">{{ initialsOf(p.studentName) }}</div>
                   <div class="record-info">
                     <span class="record-name">{{ p.studentName }}</span>
-                    <span class="record-sub">{{ p.purpose }} · {{ p.studentId }}</span>
+                    <span class="record-sub">{{ p.purpose }} · {{ p.studentId }} · {{ p.date }}</span>
                   </div>
                   <span class="badge" :class="paymentModeBadgeClass(p.mode)">{{ p.mode }}</span>
                   <span class="record-amount">₹{{ p.amount }}</span>
                 </div>
               </div>
-              <p class="data-list-empty" v-else>No payments recorded yet this session.</p>
+              <p class="data-list-empty" v-else>No payments recorded yet.</p>
             </div>
 
           </div>
