@@ -865,7 +865,6 @@ const extensionSuccess = ref('');
     const PAYMENT_MODES = ['Cash', 'UPI', 'Card'];
 
     const paymentForm = reactive({
-      studentName: '',
       studentId: '',
       amount: null,
       mode: 'Cash',
@@ -874,44 +873,73 @@ const extensionSuccess = ref('');
 
     const paymentError = ref('');
     const paymentSuccess = ref(null);
+    const paymentSaving = ref(false);
     const recordedPayments = ref([]);
-    let paymentCounter = 7010;
 
-    function recordPayment() {
-      if (!paymentForm.studentName || !paymentForm.amount || paymentForm.amount <= 0) {
-        paymentError.value = "Please enter the student's name and a valid amount.";
+    function mapPayment(payment) {
+      return {
+        id: payment.payment_id,
+        studentName: payment.full_name || 'Student',
+        studentId: payment.roll_number || payment.username || payment.student_id,
+        amount: Number(payment.amount) || 0,
+        mode: payment.payment_mode,
+        purpose: payment.purpose || 'Library payment',
+        date: (payment.payment_date || '').slice(0, 10)
+      };
+    }
+
+    async function loadRecordedPayments() {
+      try {
+        const data = await apiFetch('/staff/payments');
+        recordedPayments.value = (data.payments || []).map(mapPayment);
+      } catch (error) {
+        console.error('Failed to load payments:', error);
+      }
+    }
+
+    async function recordPayment() {
+      if (!paymentForm.studentId) {
+        paymentError.value = 'Enter the student ID, username, or roll number.';
+        paymentSuccess.value = null;
+        return;
+      }
+      if (!paymentForm.amount || paymentForm.amount <= 0) {
+        paymentError.value = 'Enter a valid payment amount.';
         paymentSuccess.value = null;
         return;
       }
 
-      paymentCounter += 1;
-      const record = {
-        id: `PAY-${paymentCounter}`,
-        studentName: paymentForm.studentName,
-        studentId: paymentForm.studentId || '—',
-        amount: paymentForm.amount,
-        mode: paymentForm.mode,
-        purpose: paymentForm.purpose || 'Library payment',
-        date: today,
-        recordedBy: staff.fullName
-      };
-
-      // TODO: POST /api/staff/payments once the backend endpoint exists
-      console.log('Payment recorded:', record);
-
-      recordedPayments.value.unshift(record);
+      paymentSaving.value = true;
       paymentError.value = '';
-      paymentSuccess.value = record;
-
-      paymentForm.studentName = '';
-      paymentForm.studentId = '';
-      paymentForm.amount = null;
-      paymentForm.mode = 'Cash';
-      paymentForm.purpose = '';
-
-      setTimeout(() => {
-        if (paymentSuccess.value === record) paymentSuccess.value = null;
-      }, 2500);
+      try {
+        const data = await apiFetch('/staff/payments', {
+          method: 'POST',
+          body: JSON.stringify({
+            student_id: String(paymentForm.studentId).trim(),
+            amount: paymentForm.amount,
+            payment_mode: paymentForm.mode,
+            purpose: paymentForm.purpose || null
+          })
+        });
+        const record = mapPayment(data.payment);
+        recordedPayments.value = [
+          record,
+          ...recordedPayments.value.filter((item) => item.id !== record.id)
+        ];
+        paymentSuccess.value = record;
+        paymentForm.studentId = '';
+        paymentForm.amount = null;
+        paymentForm.mode = 'Cash';
+        paymentForm.purpose = '';
+        setTimeout(() => {
+          if (paymentSuccess.value === record) paymentSuccess.value = null;
+        }, 2500);
+      } catch (error) {
+        paymentError.value = error.message || 'Could not record this payment.';
+        paymentSuccess.value = null;
+      } finally {
+        paymentSaving.value = false;
+      }
     }
 
     function paymentModeBadgeClass(mode) {
@@ -932,6 +960,7 @@ const extensionSuccess = ref('');
       loadDailyBookings();
       loadExtensionRequests();
       loadWalkInSeats();
+      loadRecordedPayments();
 
       liveTimer = setInterval(() => {
         const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
@@ -1016,6 +1045,7 @@ const extensionSuccess = ref('');
       paymentError,
       paymentSuccess,
       recordedPayments,
+      paymentSaving,
       recordPayment,
       paymentModeBadgeClass,
 

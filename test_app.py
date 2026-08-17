@@ -766,3 +766,97 @@ def test_staff_can_reject_extension(client, staff_token, student_token, confirme
     assert response.status_code == 200
     assert response.get_json()["extension_request"]["status"] == "Rejected"
 
+
+# --- 5.1 OFFLINE PAYMENT RECORDING ---
+
+def test_staff_can_record_offline_payment(client, staff_token, student_token):
+    """Staff can log a cash/UPI/card payment against an active student."""
+    student = client.get(
+        "/api/students/me",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+    response = client.post("/api/staff/payments", json={
+        "student_id": student["student_id"],
+        "amount": 500,
+        "payment_mode": "Cash",
+        "purpose": "Monthly membership",
+    }, headers=staff_headers)
+    assert response.status_code == 201, response.get_json()
+    payment = response.get_json()["payment"]
+    assert payment["amount"] == 500
+    assert payment["payment_mode"] == "Cash"
+    assert payment["purpose"] == "Monthly membership"
+    assert payment["username"] == "extstudent"
+    assert payment["full_name"]
+
+    listed = client.get("/api/staff/payments", headers=staff_headers).get_json()
+    ids = [item["payment_id"] for item in listed["payments"]]
+    assert payment["payment_id"] in ids
+
+
+def test_staff_can_record_payment_by_username(client, staff_token, student_token):
+    """Payment student lookup accepts the student's username."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": "extstudent",
+        "amount": 200,
+        "payment_mode": "UPI",
+    }, headers=staff_headers)
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["payment"]["username"] == "extstudent"
+    assert response.get_json()["payment"]["payment_mode"] == "UPI"
+
+
+def test_record_payment_invalid_mode(client, staff_token, student_token):
+    """Unsupported payment modes are rejected."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": "extstudent",
+        "amount": 100,
+        "payment_mode": "Cheque",
+    }, headers=staff_headers)
+    assert response.status_code == 400
+
+
+def test_record_payment_unknown_student(client, staff_token):
+    """Unknown student identifiers return 404."""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": "nobody",
+        "amount": 100,
+        "payment_mode": "Card",
+    }, headers=headers)
+    assert response.status_code == 404
+
+
+def test_student_can_view_own_payment_history(client, staff_token, student_token):
+    """Students see payments staff recorded against their account."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post("/api/staff/payments", json={
+        "student_id": "extstudent",
+        "amount": 300,
+        "payment_mode": "Card",
+        "purpose": "Day pass",
+    }, headers=staff_headers)
+
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/students/me/payments", headers=student_headers)
+    assert response.status_code == 200, response.get_json()
+    body = response.get_json()
+    assert body["total_payments"] >= 1
+    assert body["payments"][0]["amount"] == 300
+    assert body["payments"][0]["purpose"] == "Day pass"
+
+
+def test_student_cannot_record_staff_payment(client, student_token):
+    """Students cannot use the staff payment recording endpoint."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/staff/payments", json={
+        "student_id": "extstudent",
+        "amount": 50,
+        "payment_mode": "Cash",
+    }, headers=headers)
+    assert response.status_code == 403
+

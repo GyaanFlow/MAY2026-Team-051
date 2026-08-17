@@ -811,21 +811,26 @@ createApp({
     // ---------------------------------------------------------------
     // 5.2 Payment History
     // ---------------------------------------------------------------
-    // TODO: GET /api/students/{id}/payments once the backend endpoint exists
-    const payments = ref([
-      {
-        id: 'PAY-6003', date: LibraryData.addDays(today, -2), amount: 300,
-        mode: 'Card', purpose: 'Day Pass — Guest Slot'
-      },
-      {
-        id: 'PAY-6002', date: LibraryData.addDays(today, -14), amount: 150,
-        mode: 'Cash', purpose: 'Extended Study Room Fee'
-      },
-      {
-        id: 'PAY-6001', date: LibraryData.addDays(today, -30), amount: 1200,
-        mode: 'UPI', purpose: 'Premium Membership — Monthly'
+    const payments = ref([]);
+
+    function mapPayment(payment) {
+      return {
+        id: payment.payment_id,
+        date: (payment.payment_date || '').slice(0, 10),
+        amount: Number(payment.amount) || 0,
+        mode: payment.payment_mode,
+        purpose: payment.purpose || 'Library payment'
+      };
+    }
+
+    async function loadPayments() {
+      try {
+        const data = await apiFetch('/students/me/payments');
+        payments.value = (data.payments || []).map(mapPayment);
+      } catch (error) {
+        console.error('Failed to load payments:', error);
       }
-    ]);
+    }
 
     const paymentsSummary = computed(() => {
       const totalPaid = payments.value.reduce((sum, p) => sum + p.amount, 0);
@@ -954,6 +959,7 @@ createApp({
       loadStudentProfile();
       refreshAvailability();
       loadMyBookings();
+      loadPayments();
 
       clockTimer = setInterval(() => {
         now.value = new Date();
