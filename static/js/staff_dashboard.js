@@ -784,12 +784,47 @@ const extensionSuccess = ref('');
     // ---------------------------------------------------------------
     // Story 6.2 — Complaint Management (Library Staff)
     // ---------------------------------------------------------------
-    const complaints = ref(LibraryData.seedComplaints());
+    const complaints = ref([]);
     const complaintFilter = ref('open');
     const resolvingComplaintId = ref(null);
     const resolutionDraft = ref('');
-
+    const complaintError = ref('');
     const COMPLAINT_STATUS_LABELS = LibraryData.COMPLAINT_STATUS_LABELS;
+    const COMPLAINT_STATUS_MAP = {
+      Open: 'open',
+      InProgress: 'in-progress',
+      Resolved: 'resolved'
+    };
+
+    function mapComplaint(complaint) {
+      return {
+        id: complaint.complaint_id,
+        studentName: complaint.full_name || 'Student',
+        studentId: complaint.roll_number || complaint.username || complaint.student_id,
+        category: complaint.category || 'Other',
+        subject: complaint.title,
+        description: complaint.description,
+        status: COMPLAINT_STATUS_MAP[complaint.status] || 'open',
+        date: (complaint.created_at || '').slice(0, 10),
+        resolutionNote: complaint.resolution_note || '',
+        resolvedBy: complaint.resolved_by_name || ''
+      };
+    }
+
+    function upsertComplaint(record) {
+      const rest = complaints.value.filter((item) => item.id !== record.id);
+      complaints.value = [record, ...rest];
+    }
+
+    async function loadComplaints() {
+      try {
+        const data = await apiFetch('/staff/complaints');
+        complaints.value = (data.complaints || []).map(mapComplaint);
+        complaintError.value = '';
+      } catch (error) {
+        complaintError.value = error.message || 'Unable to load complaints.';
+      }
+    }
 
     const complaintFilterCounts = computed(() => ({
       open: complaints.value.filter((c) => c.status === 'open').length,
@@ -808,9 +843,17 @@ const extensionSuccess = ref('');
       return LibraryData.complaintStatusBadgeClass(status);
     }
 
-    function startReview(complaint) {
-      // TODO: PATCH /api/staff/complaints/{id}/start once the backend endpoint exists
-      complaint.status = 'in-progress';
+    async function startReview(complaint) {
+      complaintError.value = '';
+      try {
+        const data = await apiFetch(`/staff/complaints/${complaint.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'InProgress' })
+        });
+        upsertComplaint(mapComplaint(data.complaint));
+      } catch (error) {
+        complaintError.value = error.message || 'Unable to start reviewing this complaint.';
+      }
     }
 
     function startResolve(complaint) {
@@ -823,24 +866,51 @@ const extensionSuccess = ref('');
       resolutionDraft.value = '';
     }
 
-    function confirmResolve(complaint) {
+    async function confirmResolve(complaint) {
       if (!resolutionDraft.value.trim()) return;
-
-      // TODO: PATCH /api/staff/complaints/{id}/resolve once the backend endpoint exists
-      complaint.status = 'resolved';
-      complaint.resolutionNote = resolutionDraft.value.trim();
-      complaint.resolvedBy = staff.fullName;
-
-      resolvingComplaintId.value = null;
-      resolutionDraft.value = '';
+      complaintError.value = '';
+      try {
+        const data = await apiFetch(`/staff/complaints/${complaint.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: 'Resolved',
+            resolution_note: resolutionDraft.value.trim()
+          })
+        });
+        upsertComplaint(mapComplaint(data.complaint));
+        resolvingComplaintId.value = null;
+        resolutionDraft.value = '';
+      } catch (error) {
+        complaintError.value = error.message || 'Unable to resolve this complaint.';
+      }
     }
 
     // ---------------------------------------------------------------
     // Story 6.3 — Announcements (read-only view for staff)
     // ---------------------------------------------------------------
-    const announcements = ref(
-      LibraryData.seedAnnouncements().filter((a) => a.active && (a.audience === 'all' || a.audience === 'staff'))
-    );
+    const announcements = ref([]);
+
+    function mapAnnouncement(announcement) {
+      return {
+        id: announcement.announcement_id,
+        title: announcement.title,
+        message: announcement.content,
+        audience: announcement.audience || 'all',
+        priority: announcement.priority || 'Normal',
+        createdBy: announcement.created_by_name || 'Library admin',
+        createdAt: (announcement.created_at || '').slice(0, 10),
+        active: Boolean(announcement.is_active)
+      };
+    }
+
+    async function loadAnnouncements() {
+      try {
+        const data = await apiFetch('/announcements');
+        announcements.value = (data.announcements || []).map(mapAnnouncement);
+      } catch (error) {
+        console.error('Failed to load announcements:', error);
+      }
+    }
 
     const sortedAnnouncements = computed(() =>
       [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -961,6 +1031,8 @@ const extensionSuccess = ref('');
       loadExtensionRequests();
       loadWalkInSeats();
       loadRecordedPayments();
+      loadComplaints();
+      loadAnnouncements();
 
       liveTimer = setInterval(() => {
         const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
@@ -1070,6 +1142,7 @@ const extensionSuccess = ref('');
       filteredComplaints,
       COMPLAINT_STATUS_LABELS,
       complaintStatusBadgeClass,
+      complaintError,
       startReview,
       resolvingComplaintId,
       resolutionDraft,

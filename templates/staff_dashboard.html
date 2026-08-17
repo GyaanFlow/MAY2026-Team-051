@@ -683,6 +683,8 @@
               </div>
             </div>
 
+            <p class="form-error" v-if="complaintError">{{ complaintError }}</p>
+
             <div class="record-list" v-if="filteredComplaints.length">
               <div class="record-row booking-row" v-for="c in filteredComplaints" :key="c.id">
 

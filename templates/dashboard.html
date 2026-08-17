@@ -742,7 +742,9 @@
 
               <p class="form-error" v-if="complaintError">{{ complaintError }}</p>
               <p class="form-success" v-if="complaintSuccess">Your complaint has been submitted to the library staff.</p>
-              <button class="btn-primary btn-small" @click="submitComplaint">Submit Complaint</button>
+              <button class="btn-primary btn-small" :disabled="complaintSaving" @click="submitComplaint">
+                {{ complaintSaving ? 'Submitting…' : 'Submit Complaint' }}
+              </button>
             </div>
 
             <div class="panel-card">
