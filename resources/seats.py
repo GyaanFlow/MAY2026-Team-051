@@ -120,7 +120,7 @@ class SeatAvailabilityResource(Resource):
 
         overlapping = Booking.query.filter(
             Booking.booking_date == booking_date,
-            Booking.status == "Confirmed",
+            Booking.status.in_(("Confirmed", "Checked-In")),
             Booking.start_time < end_time,
             Booking.end_time > start_time,
         ).all()

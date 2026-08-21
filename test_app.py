@@ -1,8 +1,8 @@
 import pytest
 import json
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from app import create_app, db
-from models import User
+from models import User, LibrarySettings
 from werkzeug.security import generate_password_hash
 
 class TestConfig:
@@ -1098,4 +1098,180 @@ def test_staff_cannot_create_announcement(client, staff_token):
         "content": "Staff should not publish this.",
     }, headers=headers)
     assert response.status_code == 403
+
+
+# --- 4.2 / 4.3 / 4.4 CHECK-IN, NO-SHOW, CHECK-OUT ---
+
+def _prepare_today_library(client, grace_minutes=0):
+    with client.application.app_context():
+        settings = LibrarySettings.query.first()
+        settings.open_time = time(0, 0)
+        settings.close_time = time(23, 59)
+        settings.no_show_grace_minutes = grace_minutes
+        settings.min_booking_minutes = None
+        settings.max_booking_hours = None
+        db.session.commit()
+
+
+def _book_today(client, student_token, seat_id=1, start_offset_minutes=-20, duration=60):
+    now = datetime.now().replace(second=0, microsecond=0)
+    start = now + timedelta(minutes=start_offset_minutes)
+    end = start + timedelta(minutes=duration)
+    today = date.today()
+    if start.date() != today:
+        start = datetime.combine(today, time(0, 0))
+        end = start + timedelta(minutes=max(duration, 1))
+    if end.date() != today:
+        end = datetime.combine(today, time(23, 59))
+    if end <= start:
+        end = start + timedelta(minutes=1)
+        if end.date() != today:
+            end = datetime.combine(today, time(23, 59))
+    response = client.post("/api/bookings", json={
+        "seat_id": seat_id,
+        "date": today.isoformat(),
+        "start_time": start.strftime("%H:%M"),
+        "end_time": end.strftime("%H:%M"),
+    }, headers={"Authorization": f"Bearer {student_token}"})
+    assert response.status_code == 201, response.get_json()
+    return response.get_json()["booking"]
+
+
+def test_staff_can_lookup_and_check_in_with_code(client, admin_token, staff_token, student_token):
+    """Staff can verify a today's check-in code and mark the booking Checked-In."""
+    _prepare_today_library(client)
+    booking = _book_today(client, student_token, start_offset_minutes=10)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+    lookup = client.get(
+        f"/api/staff/checkin?checkin_code={booking['checkin_code'].lower()}",
+        headers=staff_headers,
+    )
+    assert lookup.status_code == 200, lookup.get_json()
+    assert lookup.get_json()["booking"]["booking_id"] == booking["booking_id"]
+
+    response = client.post("/api/staff/checkin", json={
+        "checkin_code": booking["checkin_code"].lower(),
+    }, headers=staff_headers)
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()["attendance"]
+    assert body["booking"]["status"] == "Checked-In"
+    assert body["checkin_time"]
+
+    loaded = client.get(
+        "/api/students/me/bookings",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    match = next(item for item in loaded["bookings"] if item["booking_id"] == booking["booking_id"])
+    assert match["status"] == "Checked-In"
+    assert match["checkin_time"]
+
+    availability = client.get(
+        f"/api/seats/availability?date={date.today().isoformat()}&start_time={booking['start_time']}&end_time={booking['end_time']}",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    seat_ids = [seat["seat_id"] for seat in availability["available_seats"]]
+    assert booking["seat_id"] not in seat_ids
+
+
+def test_checkin_rejects_invalid_or_future_booking(client, staff_token, student_token, confirmed_booking):
+    """Unknown codes 404; future-dated confirmed bookings cannot be checked in."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    missing = client.post("/api/staff/checkin", json={
+        "checkin_code": "NOPE1234",
+    }, headers=staff_headers)
+    assert missing.status_code == 404
+
+    future = client.post("/api/staff/checkin", json={
+        "checkin_code": confirmed_booking["checkin_code"],
+    }, headers=staff_headers)
+    assert future.status_code == 400
+
+
+def test_student_cannot_use_staff_checkin(client, student_token):
+    """Students cannot verify check-in codes."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/staff/checkin", json={"checkin_code": "ABC"}, headers=headers)
+    assert response.status_code == 403
+
+
+def test_staff_can_mark_no_show_after_grace(client, staff_token, student_token):
+    """After the grace window, staff can mark a confirmed booking unarrived and free the seat."""
+    _prepare_today_library(client, grace_minutes=0)
+    booking = _book_today(client, student_token, start_offset_minutes=-30)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+    candidates = client.get("/api/staff/bookings/no-show-candidates", headers=staff_headers)
+    assert candidates.status_code == 200, candidates.get_json()
+    ids = [item["booking_id"] for item in candidates.get_json()["candidates"]]
+    assert booking["booking_id"] in ids
+
+    response = client.post(
+        f"/api/staff/bookings/{booking['booking_id']}/no-show",
+        headers=staff_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["booking"]["status"] == "No-Show"
+
+    today = date.today().isoformat()
+    availability = client.get(
+        f"/api/seats/availability?date={today}&start_time={booking['start_time']}&end_time={booking['end_time']}",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    seat_ids = [seat["seat_id"] for seat in availability["available_seats"]]
+    assert booking["seat_id"] in seat_ids
+
+
+def test_no_show_rejected_during_grace_period(client, staff_token, student_token):
+    """Bookings still inside the waiting window cannot be marked unarrived."""
+    _prepare_today_library(client, grace_minutes=15)
+    booking = _book_today(client, student_token, start_offset_minutes=5)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        f"/api/staff/bookings/{booking['booking_id']}/no-show",
+        headers=staff_headers,
+    )
+    assert response.status_code == 400
+
+
+def test_student_can_check_out_after_checkin(client, staff_token, student_token):
+    """Checked-in students can check out; attendance is closed and the booking completes."""
+    _prepare_today_library(client)
+    booking = _book_today(client, student_token, start_offset_minutes=10)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post("/api/staff/checkin", json={
+        "checkin_code": booking["checkin_code"],
+    }, headers=staff_headers)
+
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(
+        f"/api/bookings/{booking['booking_id']}/checkout",
+        headers=student_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    attendance = response.get_json()["attendance"]
+    assert attendance["checkout_time"]
+    assert attendance["booking"]["status"] == "Completed"
+
+    loaded = client.get("/api/students/me/bookings", headers=student_headers).get_json()
+    match = next(item for item in loaded["bookings"] if item["booking_id"] == booking["booking_id"])
+    assert match["status"] == "Completed"
+    assert match["checkout_time"]
+
+    availability = client.get(
+        f"/api/seats/availability?date={date.today().isoformat()}&start_time={booking['start_time']}&end_time={booking['end_time']}",
+        headers=student_headers,
+    ).get_json()
+    seat_ids = [seat["seat_id"] for seat in availability["available_seats"]]
+    assert booking["seat_id"] in seat_ids
+
+
+def test_checkout_requires_checked_in_booking(client, student_token, confirmed_booking):
+    """A booking that was never checked in cannot be checked out."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(
+        f"/api/bookings/{confirmed_booking['booking_id']}/checkout",
+        headers=headers,
+    )
+    assert response.status_code == 400
 

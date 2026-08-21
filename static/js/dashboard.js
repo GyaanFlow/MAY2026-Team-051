@@ -414,10 +414,20 @@ createApp({
         endDateTime: new Date(`${data.booking_date}T${data.end_time}`),
         status: statusMap[data.status] || String(data.status || '').toLowerCase(),
         checkInCode: data.checkin_code,
-        checkInTime: null,
-        checkOutTime: null,
+        checkInTime: clockFromDateTime(data.checkin_time),
+        checkOutTime: clockFromDateTime(data.checkout_time),
         extensionStatus: data.pending_extension ? 'pending' : null
       };
+    }
+
+    function clockFromDateTime(value) {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+      const text = String(value);
+      return text.length >= 16 ? text.slice(11, 16) : text;
     }
 
     function splitStoredBookings(records) {
@@ -719,19 +729,24 @@ createApp({
     // ---------------------------------------------------------------
     // 4.4 Study Session Check-Out
     // ---------------------------------------------------------------
-    function checkOutBooking(booking) {
-      const seat = seats.value.find((s) => s.id === booking.seatId);
-      if (seat) seat.status = 'available';
+    const checkOutSavingId = ref(null);
+    const checkOutErrorId = ref(null);
+    const checkOutError = ref('');
 
-      booking.status = 'completed';
-      booking.checkOutTime = now.value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      if (!booking.checkInTime) booking.checkInTime = 'Earlier today';
-
-      // TODO: PATCH /api/bookings/{id}/check-out once the backend endpoint exists
-      console.log('Checked out:', booking.id);
-
-      myBookings.value = myBookings.value.filter((b) => b.id !== booking.id);
-      history.value.unshift(booking);
+    async function checkOutBooking(booking) {
+      checkOutError.value = '';
+      checkOutErrorId.value = booking.id;
+      checkOutSavingId.value = booking.id;
+      try {
+        await apiFetch(`/bookings/${booking.id}/checkout`, { method: 'POST' });
+        checkOutError.value = '';
+        checkOutErrorId.value = null;
+        await loadMyBookings();
+      } catch (error) {
+        checkOutError.value = error.message || 'Unable to check out of this session.';
+      } finally {
+        checkOutSavingId.value = null;
+      }
     }
 
     // ---------------------------------------------------------------
@@ -1083,6 +1098,9 @@ createApp({
       copiedCodeId,
       copyCheckInCode,
       checkOutBooking,
+      checkOutSavingId,
+      checkOutErrorId,
+      checkOutError,
 
       // Extension
       extendingBookingId,

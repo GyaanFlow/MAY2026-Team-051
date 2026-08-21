@@ -229,7 +229,9 @@ createApp({
         source: 'advance',
         checkInCode: data.checkin_code,
         seatId: data.seat_id,
-        date: data.booking_date
+        date: data.booking_date,
+        startTime: data.start_time,
+        endTime: data.end_time
       };
     }
 
@@ -282,24 +284,61 @@ createApp({
       return status.replace('-', ' ');
     }
 
-    function markArrived(booking) {
-      // TODO: PATCH /api/staff/bookings/{id}/check-in once the backend endpoint exists
-      booking.status = 'checked-in';
-      if (booking.seatId) {
-        const seat = seatById(booking.seatId);
-        if (seat) seat.status = 'occupied';
+    const checkInSavingId = ref(null);
+    const unarrivedSavingId = ref(null);
+    const unarrivedGraceMinutes = ref(15);
+
+    async function loadNoShowSettings() {
+      try {
+        const data = await apiFetch('/staff/bookings/no-show-candidates');
+        if (data.grace_minutes != null) unarrivedGraceMinutes.value = Number(data.grace_minutes);
+      } catch (error) {
+        console.error('Failed to load no-show settings:', error);
       }
     }
 
-    // 4.3 Unarrived Management — staff must wait out a grace period
-    // after the slot start time before a booking can be marked unarrived.
-    const UNARRIVED_GRACE_MINUTES = 15;
+    function applyStaffBooking(record) {
+      const mapped = mapStaffBooking(record);
+      todaysBookings.value = [
+        mapped,
+        ...todaysBookings.value.filter((item) => item.id !== mapped.id)
+      ];
+      return mapped;
+    }
+
+    async function confirmCheckInByCode(code) {
+      const data = await apiFetch('/staff/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ checkin_code: String(code).trim().toUpperCase() })
+      });
+      const updated = applyStaffBooking(data.attendance.booking);
+      await Promise.all([loadDailyBookings(), loadWalkInSeats()]);
+      return updated;
+    }
+
+    async function markArrived(booking) {
+      if (!booking.checkInCode || overviewDate.value !== today) return;
+      overviewError.value = '';
+      checkInSavingId.value = booking.id;
+      try {
+        await confirmCheckInByCode(booking.checkInCode);
+      } catch (error) {
+        overviewError.value = error.message || 'Unable to check this student in.';
+      } finally {
+        checkInSavingId.value = null;
+      }
+    }
+
+    function bookingStartDate(booking) {
+      const start = booking.startTime || `${String(booking.slot.start || 0).padStart(2, '0')}:00`;
+      return new Date(`${booking.date}T${start}:00`);
+    }
 
     function unarrivedEligibleAt(booking) {
       if (overviewDate.value !== today) return null;
-      const d = new Date(today + 'T00:00:00');
-      d.setHours(booking.slot.start, UNARRIVED_GRACE_MINUTES, 0, 0);
-      return d;
+      const eligible = bookingStartDate(booking);
+      eligible.setMinutes(eligible.getMinutes() + Number(unarrivedGraceMinutes.value || 0));
+      return eligible;
     }
 
     function canMarkUnarrived(booking) {
@@ -317,16 +356,18 @@ createApp({
       return `Available in ${mins}m`;
     }
 
-    function markUnarrived(booking) {
+    async function markUnarrived(booking) {
       if (!canMarkUnarrived(booking)) return;
-
-      // TODO: PATCH /api/staff/bookings/{id}/unarrived once the backend endpoint exists
-      booking.status = 'no-show';
-
-      // Release the reserved seat so it becomes available to other students.
-      if (booking.seatId) {
-        const seat = seatById(booking.seatId);
-        if (seat) seat.status = 'available';
+      overviewError.value = '';
+      unarrivedSavingId.value = booking.id;
+      try {
+        const data = await apiFetch(`/staff/bookings/${booking.id}/no-show`, { method: 'POST' });
+        applyStaffBooking(data.booking);
+        await Promise.all([loadDailyBookings(), loadWalkInSeats()]);
+      } catch (error) {
+        overviewError.value = error.message || 'Unable to mark this booking unarrived.';
+      } finally {
+        unarrivedSavingId.value = null;
       }
     }
 
@@ -439,10 +480,13 @@ createApp({
     const checkInError = ref('');
     const checkInMatch = ref(null);
     const checkInSuccess = ref(null);
+    const checkInVerifying = ref(false);
+    const checkInConfirming = ref(false);
 
-    function verifyCheckInCode() {
+    async function verifyCheckInCode() {
       checkInError.value = '';
       checkInMatch.value = null;
+      checkInSuccess.value = null;
 
       const code = checkInCodeInput.value.trim();
       if (!code) {
@@ -450,31 +494,31 @@ createApp({
         return;
       }
 
-      // TODO: GET /api/staff/bookings/lookup?code=... once the backend endpoint exists
-      const booking = todaysBookings.value.find((b) => b.checkInCode === code);
-      if (!booking) {
-        checkInError.value = 'No booking found for this code today.';
-        return;
+      checkInVerifying.value = true;
+      try {
+        const data = await apiFetch(`/staff/checkin?checkin_code=${encodeURIComponent(code.toUpperCase())}`);
+        checkInMatch.value = mapStaffBooking(data.booking);
+      } catch (error) {
+        checkInError.value = error.message || 'No booking found for this code today.';
+      } finally {
+        checkInVerifying.value = false;
       }
-      if (booking.status !== 'upcoming') {
-        checkInError.value = `This booking is already marked "${booking.status.replace('-', ' ')}".`;
-        return;
-      }
-
-      checkInMatch.value = booking;
     }
 
-    function confirmCheckIn(booking) {
-      // TODO: PATCH /api/staff/bookings/{id}/check-in once the backend endpoint exists
-      booking.status = 'checked-in';
-      if (booking.seatId) {
-        const seat = seatById(booking.seatId);
-        if (seat) seat.status = 'occupied';
+    async function confirmCheckIn(booking) {
+      if (!booking || !booking.checkInCode) return;
+      checkInError.value = '';
+      checkInConfirming.value = true;
+      try {
+        const updated = await confirmCheckInByCode(booking.checkInCode);
+        checkInSuccess.value = updated;
+        checkInMatch.value = null;
+        checkInCodeInput.value = '';
+      } catch (error) {
+        checkInError.value = error.message || 'Unable to complete check-in.';
+      } finally {
+        checkInConfirming.value = false;
       }
-
-      checkInSuccess.value = booking;
-      checkInMatch.value = null;
-      checkInCodeInput.value = '';
     }
 
     function dismissCheckInSuccess() {
@@ -1033,6 +1077,7 @@ const extensionSuccess = ref('');
       loadRecordedPayments();
       loadComplaints();
       loadAnnouncements();
+      loadNoShowSettings();
 
       liveTimer = setInterval(() => {
         const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
@@ -1074,6 +1119,8 @@ const extensionSuccess = ref('');
       markUnarrived,
       canMarkUnarrived,
       unarrivedWaitLabel,
+      checkInSavingId,
+      unarrivedSavingId,
 
       // Walk-in
       seats,
@@ -1092,6 +1139,8 @@ const extensionSuccess = ref('');
       checkInError,
       checkInMatch,
       checkInSuccess,
+      checkInVerifying,
+      checkInConfirming,
       verifyCheckInCode,
       confirmCheckIn,
       dismissCheckInSuccess,

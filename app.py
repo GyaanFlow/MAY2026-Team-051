@@ -42,14 +42,14 @@ from resources.bookings import (
     StaffTodayBookingsResource,
     WalkInBookingResource,
 )
-# from resources.checkin import StaffCheckinResource
+from resources.checkin import StaffCheckinResource
 from resources.extension_requests import (
     StudentExtensionRequestResource,
     StaffExtensionRequestListResource,
     StaffExtensionRequestApproveResource,
     StaffExtensionRequestRejectResource,
 )
-# from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
+from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
 from resources.payments import (
     StaffPaymentListResource,
     StudentPaymentHistoryResource,
@@ -129,7 +129,7 @@ def create_app(config_class=Config):
     "/staff/seats"
 )
 
-    # api.add_resource(StaffCheckinResource, "/staff/checkin")
+    api.add_resource(StaffCheckinResource, "/staff/checkin")
     api.add_resource(
         StudentExtensionRequestResource,
         "/students/me/bookings/<int:booking_id>/extension-request",
@@ -144,11 +144,11 @@ def create_app(config_class=Config):
         "/staff/extension-requests/<int:extension_request_id>/reject",
     )
 
-    # api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
-    # api.add_resource(
-    #     MarkNoShowResource,
-    #     "/staff/bookings/<int:booking_id>/no-show",
-    # )
+    api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
+    api.add_resource(
+        MarkNoShowResource,
+        "/staff/bookings/<int:booking_id>/no-show",
+    )
 
     api.add_resource(StaffPaymentListResource, "/staff/payments")
     api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")

@@ -22,6 +22,17 @@ def _booking_payload(booking):
         booking_id=booking.booking_id, status="Pending"
     ).first()
     data["pending_extension"] = pending.to_dict() if pending else None
+    attendance = (
+        Attendance.query.filter_by(booking_id=booking.booking_id)
+        .order_by(Attendance.checkin_time.desc())
+        .first()
+    )
+    data["checkin_time"] = (
+        str(attendance.checkin_time) if attendance and attendance.checkin_time else None
+    )
+    data["checkout_time"] = (
+        str(attendance.checkout_time) if attendance and attendance.checkout_time else None
+    )
     return data
 
 
