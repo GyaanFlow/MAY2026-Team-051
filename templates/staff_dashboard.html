@@ -766,7 +766,6 @@
               <h3 class="identity-name">{{ staff.fullName || 'Unnamed Staff' }}</h3>
               <p class="identity-meta">{{ staff.designation || 'Library Staff' }}</p>
               <p class="identity-meta muted">Staff ID: {{ staff.staffId || '—' }}</p>
-              <p class="identity-meta muted">Joined {{ staff.dateJoined || '—' }}</p>
             </div>
 
             <!-- Forms -->
@@ -817,6 +816,7 @@
                   </label>
                 </div>
 
+                <p class="form-error" v-if="personalError">{{ personalError }}</p>
                 <p class="form-success" v-if="savedSection === 'personal'">Personal details saved.</p>
                 <button type="submit" class="btn-primary btn-small">Save Changes</button>
               </form>
@@ -859,7 +859,6 @@
           </div>
         </section>
 
-        <!-- PLACEHOLDER TABS -->
         <section class="tab-panel tab-placeholder" v-else>
           <div class="placeholder-box">
             <span class="placeholder-icon" v-html="icons.soon"></span>

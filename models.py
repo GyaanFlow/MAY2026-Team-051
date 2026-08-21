@@ -39,6 +39,8 @@ class User(db.Model):
     full_name = db.Column(db.String(150), nullable=True)
     position = db.Column(db.String(100), nullable=True)
     address = db.Column(db.Text, nullable=True)
+    dob = db.Column(db.Date, nullable=True)
+    gender = db.Column(db.String(50), nullable=True)
     role = db.Column(db.String(20), nullable=False)
     status = db.Column(db.Boolean, default=True, nullable=False)
 
@@ -53,6 +55,8 @@ class User(db.Model):
             "full_name": self.full_name,
             "position": self.position,
             "address": self.address,
+            "dob": str(self.dob) if self.dob else None,
+            "gender": self.gender,
             "role": self.role,
             "status": self.status,
         }
@@ -275,7 +279,7 @@ class Complaint(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=False)
     category = db.Column(db.String(100), nullable=True)
-    status = db.Column(db.String(20), default="Open", nullable=False)  # Open / InProgress / Resolved
+    status = db.Column(db.String(20), default="Open", nullable=False) 
     resolution_note = db.Column(db.Text, nullable=True)
     resolved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)

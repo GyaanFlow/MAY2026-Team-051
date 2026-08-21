@@ -5,11 +5,21 @@ from models import db, Student, MembershipPlan
 from utils import admin_required
 
 
+def _student_with_plan(student):
+    data = student.to_dict()
+    if student.plan_id:
+        plan = db.session.get(MembershipPlan, student.plan_id)
+        data["membership_plan"] = plan.to_dict() if plan else None
+    else:
+        data["membership_plan"] = None
+    return data
+
+
 class PendingMembershipsResource(Resource):
     @admin_required
     def get(self):
         students = Student.query.filter_by(membership_status="Pending").all()
-        return [s.to_dict() for s in students], 200
+        return [_student_with_plan(s) for s in students], 200
 
 
 class MembershipListResource(Resource):
@@ -22,7 +32,7 @@ class MembershipListResource(Resource):
             query = query.filter_by(membership_status=status_filter)
 
         students = query.all()
-        return [s.to_dict() for s in students], 200
+        return [_student_with_plan(s) for s in students], 200
 
 
 class ApproveMembershipResource(Resource):
@@ -46,7 +56,7 @@ class ApproveMembershipResource(Resource):
             student.membership_expiry = date.today() + timedelta(days=plan.duration_days)
 
         db.session.commit()
-        return {"message": "Membership approved", "student": student.to_dict()}, 200
+        return {"message": "Membership approved", "student": _student_with_plan(student)}, 200
 
 
 class RejectMembershipResource(Resource):
@@ -62,7 +72,7 @@ class RejectMembershipResource(Resource):
         student.membership_status = "Rejected"
         student.membership_expiry = None
         db.session.commit()
-        return {"message": "Membership rejected", "student": student.to_dict()}, 200
+        return {"message": "Membership rejected", "student": _student_with_plan(student)}, 200
 
 
 class DisapproveMembershipResource(Resource):
@@ -78,7 +88,7 @@ class DisapproveMembershipResource(Resource):
         student.membership_status = "Disapproved"
         student.membership_expiry = None
         db.session.commit()
-        return {"message": "Membership disapproved", "student": student.to_dict()}, 200
+        return {"message": "Membership disapproved", "student": _student_with_plan(student)}, 200
 
 
 class MembershipDetailResource(Resource):
@@ -116,4 +126,4 @@ class MembershipDetailResource(Resource):
                 return {"message": "membership_expiry must be in YYYY-MM-DD format"}, 400
 
         db.session.commit()
-        return {"message": "Membership updated", "student": student.to_dict()}, 200
+        return {"message": "Membership updated", "student": _student_with_plan(student)}, 200

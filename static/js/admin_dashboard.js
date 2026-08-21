@@ -1,4 +1,4 @@
-const { createApp, reactive, ref, computed, onMounted } = Vue;
+const { createApp, reactive, ref, computed, onMounted, onBeforeUnmount, watch } = Vue;
 
 const icons = {
   overview: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="12" width="8" height="9" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg>',
@@ -82,7 +82,7 @@ const BarChart = {
 
 const DonutChart = {
   props: {
-    data: { type: Array, required: true } // [{ label, value, color }]
+    data: { type: Array, required: true } 
   },
   computed: {
     total() {
@@ -158,19 +158,20 @@ const app = createApp({
     });
 
     const admin = reactive({
-      fullName: 'Priya Nair',
+      fullName: '',
       avatarUrl: '',
-      email: 'priya.nair@studylibrary.com',
-      phone: '9876500011',
-      dob: '1990-11-05',
-      gender: 'female',
-      address: '9 Lakeview Residency, Pune, MH',
+      email: '',
+      phone: '',
+      dob: '',
+      gender: '',
+      address: '',
 
-      adminId: 'ADMIN-0001',
+      adminId: '',
       designation: 'Library Administrator',
-      dateJoined: '2024-06-01',
+      dateJoined: '',
 
-      username: 'priya.nair'
+      username: '',
+      userId: null
     });
 
     const security = reactive({
@@ -180,11 +181,41 @@ const app = createApp({
     });
 
     const securityError = ref('');
+    const personalError = ref('');
     const savedSection = ref('');
 
     const avatarStyle = computed(() => {
       return admin.avatarUrl ? { backgroundImage: `url(${admin.avatarUrl})` } : {};
     });
+
+    function avatarStorageKey(userId) {
+      return userId ? `avatar_user_${userId}` : '';
+    }
+
+    function applyProfile(data) {
+      admin.userId = data.user_id || null;
+      admin.fullName = data.full_name || '';
+      admin.email = data.email || '';
+      admin.phone = data.phone || '';
+      admin.dob = data.dob || '';
+      admin.gender = data.gender || '';
+      admin.address = data.address || '';
+      admin.designation = data.position || 'Library Administrator';
+      admin.username = data.username || '';
+      admin.adminId = data.user_id ? `ADMIN-${String(data.user_id).padStart(4, '0')}` : '';
+      const key = avatarStorageKey(admin.userId);
+      admin.avatarUrl = key ? (localStorage.getItem(key) || '') : '';
+    }
+
+    async function loadProfile() {
+      personalError.value = '';
+      try {
+        const data = await apiFetch('/profile');
+        applyProfile(data);
+      } catch (error) {
+        personalError.value = error.message || 'Unable to load profile.';
+      }
+    }
 
     function flashSaved(section) {
       savedSection.value = section;
@@ -193,20 +224,49 @@ const app = createApp({
       }, 2500);
     }
 
-    function savePersonal() {
-      // TODO: PATCH /api/admin/profile once the backend endpoint exists
-      console.log('Admin personal info saved:', {
-        fullName: admin.fullName,
-        email: admin.email,
-        phone: admin.phone,
-        dob: admin.dob,
-        gender: admin.gender,
-        address: admin.address
-      });
-      flashSaved('personal');
+    async function savePersonal() {
+      personalError.value = '';
+      if (!admin.fullName || !admin.fullName.trim()) {
+        personalError.value = 'Full name is required.';
+        return;
+      }
+      if (!admin.email || !admin.email.trim()) {
+        personalError.value = 'Email is required.';
+        return;
+      }
+
+      try {
+        const data = await apiFetch('/profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            full_name: admin.fullName.trim(),
+            email: admin.email.trim(),
+            phone: admin.phone || null,
+            dob: admin.dob || null,
+            gender: admin.gender || null,
+            address: admin.address || null,
+            position: admin.designation || null
+          })
+        });
+        if (data.user) {
+          applyProfile(data.user);
+        }
+        const stored = localStorage.getItem('user');
+        if (stored) {
+          try {
+            const user = JSON.parse(stored);
+            user.full_name = admin.fullName;
+            user.email = admin.email;
+            localStorage.setItem('user', JSON.stringify(user));
+          } catch (_) { /* ignore */ }
+        }
+        flashSaved('personal');
+      } catch (error) {
+        personalError.value = error.message || 'Unable to save personal details.';
+      }
     }
 
-    function changePassword() {
+    async function changePassword() {
       if (!security.currentPassword || !security.newPassword || !security.confirmPassword) {
         securityError.value = 'Please fill in all password fields.';
         return;
@@ -220,14 +280,22 @@ const app = createApp({
         return;
       }
 
-      // TODO: PATCH /api/admin/password once the backend endpoint exists
-      securityError.value = '';
-      console.log('Admin password change submitted');
-
-      security.currentPassword = '';
-      security.newPassword = '';
-      security.confirmPassword = '';
-      flashSaved('security');
+      try {
+        securityError.value = '';
+        await apiFetch('/auth/reset-password', {
+          method: 'POST',
+          body: JSON.stringify({
+            old_password: security.currentPassword,
+            new_password: security.newPassword
+          })
+        });
+        security.currentPassword = '';
+        security.newPassword = '';
+        security.confirmPassword = '';
+        flashSaved('security');
+      } catch (error) {
+        securityError.value = error.message || 'Unable to update password.';
+      }
     }
 
     function handleAvatarChange(event) {
@@ -236,12 +304,16 @@ const app = createApp({
       const reader = new FileReader();
       reader.onload = (e) => {
         admin.avatarUrl = e.target.result;
+        const key = avatarStorageKey(admin.userId);
+        if (key) localStorage.setItem(key, admin.avatarUrl);
       };
       reader.readAsDataURL(file);
     }
 
     function removeAvatar() {
       admin.avatarUrl = '';
+      const key = avatarStorageKey(admin.userId);
+      if (key) localStorage.removeItem(key);
     }
 
     const initials = computed(() => {
@@ -424,8 +496,7 @@ const app = createApp({
     }
 
     async function toggleStaffStatus(staffMember) {
-      // Story 1.1 currently supports deactivation only. There is intentionally
-      // no Activate/Re-activate call because the backend does not expose one.
+
       if (!staffMember.status) return;
 
       const confirmed = window.confirm(
@@ -1069,79 +1140,124 @@ const app = createApp({
       { id: 'quarter', label: 'This Quarter' }
     ]);
 
-    const reportDatasets = {
-      week: {
-        totalRevenue: 48250,
-        avgOccupancyPct: 68,
-        totalBookings: 342,
-        newMemberships: 18,
-        occupancyByHour: [
-          { label: '8am', value: 22 }, { label: '10am', value: 41 }, { label: '12pm', value: 58 },
-          { label: '2pm', value: 74 }, { label: '4pm', value: 91 }, { label: '6pm', value: 85 },
-          { label: '8pm', value: 63 }, { label: '10pm', value: 30 }
-        ],
-        revenueTrend: [
-          { label: 'Mon', value: 6200 }, { label: 'Tue', value: 6800 }, { label: 'Wed', value: 7100 },
-          { label: 'Thu', value: 6600 }, { label: 'Fri', value: 7400 }, { label: 'Sat', value: 8200 },
-          { label: 'Sun', value: 5950 }
-        ]
-      },
-      month: {
-        totalRevenue: 205600,
-        avgOccupancyPct: 72,
-        totalBookings: 1486,
-        newMemberships: 64,
-        occupancyByHour: [
-          { label: '8am', value: 26 }, { label: '10am', value: 45 }, { label: '12pm', value: 61 },
-          { label: '2pm', value: 78 }, { label: '4pm', value: 95 }, { label: '6pm', value: 88 },
-          { label: '8pm', value: 66 }, { label: '10pm', value: 34 }
-        ],
-        revenueTrend: [
-          { label: 'Wk 1', value: 48250 }, { label: 'Wk 2', value: 51200 },
-          { label: 'Wk 3', value: 49800 }, { label: 'Wk 4', value: 56350 }
-        ]
-      },
-      quarter: {
-        totalRevenue: 612400,
-        avgOccupancyPct: 70,
-        totalBookings: 4210,
-        newMemberships: 178,
-        occupancyByHour: [
-          { label: '8am', value: 24 }, { label: '10am', value: 43 }, { label: '12pm', value: 59 },
-          { label: '2pm', value: 76 }, { label: '4pm', value: 93 }, { label: '6pm', value: 86 },
-          { label: '8pm', value: 64 }, { label: '10pm', value: 32 }
-        ],
-        revenueTrend: [
-          { label: 'Month 1', value: 205600 }, { label: 'Month 2', value: 198300 }, { label: 'Month 3', value: 208500 }
-        ]
-      }
-    };
+    const emptyHourSeries = () => (
+      [8, 10, 12, 14, 16, 18, 20, 22].map((hour) => ({
+        label: hour === 12 ? '12pm' : hour < 12 ? `${hour}am` : `${hour - 12}pm`,
+        value: 0
+      }))
+    );
 
-    const currentReport = computed(() => reportDatasets[reportRange.value]);
+    const occupancyLive = ref({
+      current_occupancy_pct: 0,
+      avg_occupancy_pct: 0,
+      occupied_now: 0,
+      active_seats: 0,
+      occupancy_by_hour: emptyHourSeries(),
+      total_bookings: 0
+    });
+
+    const overviewOccupancy = ref({
+      current_occupancy_pct: 0,
+      occupancy_by_hour: emptyHourSeries()
+    });
+
+    const revenueLive = ref({
+      total_revenue: 0,
+      revenue_trend: [],
+      new_memberships: 0,
+      payment_count: 0
+    });
+
+    const currentReport = computed(() => ({
+      avgOccupancyPct: occupancyLive.value.avg_occupancy_pct,
+      occupancyByHour: occupancyLive.value.occupancy_by_hour,
+      totalBookings: occupancyLive.value.total_bookings,
+      totalRevenue: revenueLive.value.total_revenue,
+      revenueTrend: revenueLive.value.revenue_trend.length
+        ? revenueLive.value.revenue_trend
+        : [{ label: '—', value: 0 }],
+      newMemberships: revenueLive.value.new_memberships,
+      paymentCount: revenueLive.value.payment_count
+    }));
 
     const peakHour = computed(() => {
-      const data = currentReport.value.occupancyByHour;
+      const data = currentReport.value.occupancyByHour || emptyHourSeries();
       return data.reduce((max, d) => (d.value > max.value ? d : max), data[0]);
     });
 
+    async function loadOccupancyReport() {
+      try {
+        const [todayData, rangeData] = await Promise.all([
+          apiFetch('/admin/reports/occupancy?range=today'),
+          apiFetch(`/admin/reports/occupancy?range=${reportRange.value}`)
+        ]);
+        overviewOccupancy.value = {
+          current_occupancy_pct: Number(todayData.current_occupancy_pct || 0),
+          occupancy_by_hour: todayData.occupancy_by_hour || emptyHourSeries()
+        };
+        occupancyLive.value = {
+          current_occupancy_pct: Number(rangeData.current_occupancy_pct || 0),
+          avg_occupancy_pct: Number(rangeData.avg_occupancy_pct || 0),
+          occupied_now: Number(rangeData.occupied_now || 0),
+          active_seats: Number(rangeData.active_seats || 0),
+          occupancy_by_hour: rangeData.occupancy_by_hour || emptyHourSeries(),
+          total_bookings: Number(rangeData.total_bookings || 0)
+        };
+      } catch (error) {
+        console.error('Failed to load occupancy report:', error);
+      }
+    }
+
+    async function loadRevenueReport() {
+      try {
+        const data = await apiFetch(`/admin/reports/revenue?range=${reportRange.value}`);
+        revenueLive.value = {
+          total_revenue: Number(data.total_revenue || 0),
+          revenue_trend: Array.isArray(data.revenue_trend) ? data.revenue_trend : [],
+          new_memberships: Number(data.new_memberships || 0),
+          payment_count: Number(data.payment_count || 0)
+        };
+      } catch (error) {
+        console.error('Failed to load revenue report:', error);
+      }
+    }
+
+    async function loadAnalyticsReports() {
+      await Promise.all([loadOccupancyReport(), loadRevenueReport()]);
+    }
+
+    watch(reportRange, () => {
+      loadAnalyticsReports();
+    });
+
+    let occupancyTimer = null;
+
     const membershipDistribution = computed(() => {
-      const palette = { Premium: '#4f46e5', Regular: '#0891b2', 'Day Pass': '#d97706' };
+      const namedPalette = {
+        Premium: '#4f46e5',
+        Regular: '#0891b2',
+        'Day Pass': '#d97706',
+        Unassigned: '#94a3b8'
+      };
+      const fallbackPalette = [
+        '#2563eb', '#059669', '#db2777', '#ea580c',
+        '#7c3aed', '#0d9488', '#ca8a04', '#e11d48',
+        '#0284c7', '#65a30d'
+      ];
       const counts = {};
       memberships.value.forEach((m) => {
         counts[m.membershipType] = (counts[m.membershipType] || 0) + 1;
       });
-      return Object.keys(counts).map((type) => ({
+      return Object.keys(counts).map((type, index) => ({
         label: type,
         value: counts[type],
-        color: palette[type] || '#6b7280'
+        color: namedPalette[type] || fallbackPalette[index % fallbackPalette.length]
       }));
     });
 
     const activeMembershipsCount = computed(() => approvedMemberships.value.length);
 
-    // Extra report stats pulled from other parts of the admin dashboard
-    // (and the shared dummy dataset) so Reports & Analytics gives a
-    // fuller picture, not just occupancy and revenue.
+
     const totalStaffCount = computed(() => staffAccounts.value.length);
     const activePlansCount = computed(() => membershipPlans.value.filter((p) => p.active).length);
     const complaintsSnapshot = ref([]);
@@ -1159,7 +1275,6 @@ const app = createApp({
     }
 
     function exportReport() {
-      // TODO: GET /api/admin/reports/export?range={reportRange} once the backend endpoint exists.
       console.log('Exporting report for range:', reportRange.value);
     }
 
@@ -1170,6 +1285,7 @@ const app = createApp({
     }
 
     onMounted(() => {
+      loadProfile();
       loadStaffAccounts();
       loadBookingLimits();
       loadSeats();
@@ -1178,11 +1294,14 @@ const app = createApp({
       loadMembershipPlans();
       loadComplaintsSnapshot();
       loadAnnouncements();
+      loadAnalyticsReports();
+      occupancyTimer = setInterval(loadAnalyticsReports, 30000);
     });
 
-    // ---------------------------------------------------------------
-    // Story 6.3 — Announcements & Notifications (Admin)
-    // ---------------------------------------------------------------
+    onBeforeUnmount(() => {
+      if (occupancyTimer) clearInterval(occupancyTimer);
+    });
+
     const announcements = ref([]);
     const ANNOUNCEMENT_AUDIENCES = LibraryData.ANNOUNCEMENT_AUDIENCES;
     const ANNOUNCEMENT_PRIORITIES = LibraryData.ANNOUNCEMENT_PRIORITIES;
@@ -1339,12 +1458,6 @@ const app = createApp({
       }
     }
 
-    // ---------------------------------------------------------------
-    // Overview — a quick, read-only snapshot pulled from the other tabs.
-    // Shows: staff/membership/occupancy/revenue stats, a preview of
-    // pending membership approvals, the occupancy chart, and the
-    // latest announcements.
-    // ---------------------------------------------------------------
     const overviewPendingMemberships = computed(() => pendingMemberships.value.slice(0, 4));
     const overviewAnnouncements = computed(() => sortedAnnouncements.value.slice(0, 3));
     const publishedAnnouncementsCount = computed(() => announcements.value.filter((a) => a.active).length);
@@ -1427,6 +1540,9 @@ const app = createApp({
       reportRanges,
       currentReport,
       peakHour,
+      overviewOccupancy,
+      occupancyLive,
+      revenueLive,
       membershipDistribution,
       activeMembershipsCount,
       totalStaffCount,
@@ -1434,7 +1550,6 @@ const app = createApp({
       openComplaintsCount,
       exportReport,
 
-      // 6.3 Announcements
       announcements,
       sortedAnnouncements,
       ANNOUNCEMENT_AUDIENCES,
@@ -1454,14 +1569,13 @@ const app = createApp({
       toggleAnnouncementStatus,
       deleteAnnouncement,
 
-      // Overview
       overviewPendingMemberships,
       overviewAnnouncements,
       publishedAnnouncementsCount,
 
-      // Settings
       security,
       securityError,
+      personalError,
       savedSection,
       avatarStyle,
       savePersonal,
