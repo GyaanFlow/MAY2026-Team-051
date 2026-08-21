@@ -177,8 +177,6 @@ def create_app(config_class=Config):
     api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
     api.add_resource(MembershipStatsReportResource, "/admin/reports/membership-stats")
 
-    # Frontend routes. The frontend templates/static assets are served by
-    # this same Flask application, so browser calls to /api/* remain same-origin.
     @app.route("/")
     def login_page():
         return render_template("login.html")
@@ -215,8 +213,7 @@ def upgrade_sqlite_schema():
         )
         db.session.commit()
 
-    # Story 1.1: staff profile fields. These are nullable so existing
-    # users/databases remain backward-compatible.
+
     user_columns = {column["name"] for column in inspect(db.engine).get_columns("users")}
     staff_columns = {
         "full_name": "ALTER TABLE users ADD COLUMN full_name VARCHAR(150)",

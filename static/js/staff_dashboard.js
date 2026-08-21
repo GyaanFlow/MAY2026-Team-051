@@ -62,21 +62,21 @@ createApp({
     });
     const currentTabSubtitle = computed(() => tabSubtitles[activeTab.value] || '');
 
-    // Dummy staff data — replace with data fetched from the backend
     const staff = reactive({
-      fullName: 'Rohan Mehta',
+      fullName: '',
       avatarUrl: '',
-      email: 'rohan.mehta@studylibrary.com',
-      phone: '9822011234',
-      dob: '1996-03-22',
-      gender: 'male',
-      address: '14 Residency Road, Pune, MH',
+      email: '',
+      phone: '',
+      dob: '',
+      gender: '',
+      address: '',
 
-      staffId: 'STAFF-0007',
-      designation: 'Front Desk Staff',
-      dateJoined: '2025-02-10',
+      staffId: '',
+      designation: 'Library Staff',
+      dateJoined: '',
 
-      username: 'rohan.mehta'
+      username: '',
+      userId: null
     });
 
     const security = reactive({
@@ -86,11 +86,41 @@ createApp({
     });
 
     const securityError = ref('');
+    const personalError = ref('');
     const savedSection = ref('');
 
     const avatarStyle = computed(() => {
       return staff.avatarUrl ? { backgroundImage: `url(${staff.avatarUrl})` } : {};
     });
+
+    function avatarStorageKey(userId) {
+      return userId ? `avatar_user_${userId}` : '';
+    }
+
+    function applyProfile(data) {
+      staff.userId = data.user_id || null;
+      staff.fullName = data.full_name || '';
+      staff.email = data.email || '';
+      staff.phone = data.phone || '';
+      staff.dob = data.dob || '';
+      staff.gender = data.gender || '';
+      staff.address = data.address || '';
+      staff.designation = data.position || 'Library Staff';
+      staff.username = data.username || '';
+      staff.staffId = data.user_id ? `STAFF-${String(data.user_id).padStart(4, '0')}` : '';
+      const key = avatarStorageKey(staff.userId);
+      staff.avatarUrl = key ? (localStorage.getItem(key) || '') : '';
+    }
+
+    async function loadProfile() {
+      personalError.value = '';
+      try {
+        const data = await apiFetch('/profile');
+        applyProfile(data);
+      } catch (error) {
+        personalError.value = error.message || 'Unable to load profile.';
+      }
+    }
 
     function flashSaved(section) {
       savedSection.value = section;
@@ -99,20 +129,49 @@ createApp({
       }, 2500);
     }
 
-    function savePersonal() {
-      // TODO: PATCH /api/staff/profile once the backend endpoint exists
-      console.log('Staff personal info saved:', {
-        fullName: staff.fullName,
-        email: staff.email,
-        phone: staff.phone,
-        dob: staff.dob,
-        gender: staff.gender,
-        address: staff.address
-      });
-      flashSaved('personal');
+    async function savePersonal() {
+      personalError.value = '';
+      if (!staff.fullName || !staff.fullName.trim()) {
+        personalError.value = 'Full name is required.';
+        return;
+      }
+      if (!staff.email || !staff.email.trim()) {
+        personalError.value = 'Email is required.';
+        return;
+      }
+
+      try {
+        const data = await apiFetch('/profile', {
+          method: 'PUT',
+          body: JSON.stringify({
+            full_name: staff.fullName.trim(),
+            email: staff.email.trim(),
+            phone: staff.phone || null,
+            dob: staff.dob || null,
+            gender: staff.gender || null,
+            address: staff.address || null,
+            position: staff.designation || null
+          })
+        });
+        if (data.user) {
+          applyProfile(data.user);
+        }
+        const stored = localStorage.getItem('user');
+        if (stored) {
+          try {
+            const user = JSON.parse(stored);
+            user.full_name = staff.fullName;
+            user.email = staff.email;
+            localStorage.setItem('user', JSON.stringify(user));
+          } catch (_) { /* ignore */ }
+        }
+        flashSaved('personal');
+      } catch (error) {
+        personalError.value = error.message || 'Unable to save personal details.';
+      }
     }
 
-    function changePassword() {
+    async function changePassword() {
       if (!security.currentPassword || !security.newPassword || !security.confirmPassword) {
         securityError.value = 'Please fill in all password fields.';
         return;
@@ -126,14 +185,22 @@ createApp({
         return;
       }
 
-      // TODO: PATCH /api/staff/password once the backend endpoint exists
-      securityError.value = '';
-      console.log('Staff password change submitted');
-
-      security.currentPassword = '';
-      security.newPassword = '';
-      security.confirmPassword = '';
-      flashSaved('security');
+      try {
+        securityError.value = '';
+        await apiFetch('/auth/reset-password', {
+          method: 'POST',
+          body: JSON.stringify({
+            old_password: security.currentPassword,
+            new_password: security.newPassword
+          })
+        });
+        security.currentPassword = '';
+        security.newPassword = '';
+        security.confirmPassword = '';
+        flashSaved('security');
+      } catch (error) {
+        securityError.value = error.message || 'Unable to update password.';
+      }
     }
 
     function handleAvatarChange(event) {
@@ -142,12 +209,16 @@ createApp({
       const reader = new FileReader();
       reader.onload = (e) => {
         staff.avatarUrl = e.target.result;
+        const key = avatarStorageKey(staff.userId);
+        if (key) localStorage.setItem(key, staff.avatarUrl);
       };
       reader.readAsDataURL(file);
     }
 
     function removeAvatar() {
       staff.avatarUrl = '';
+      const key = avatarStorageKey(staff.userId);
+      if (key) localStorage.removeItem(key);
     }
 
     const initials = computed(() => {
@@ -170,13 +241,24 @@ createApp({
         .join('');
     }
 
-    // ---------------------------------------------------------------
-    // Shared seat data for this dashboard (walk-ins + occupancy stats)
-    // ---------------------------------------------------------------
+   
     const seats = ref(LibraryData.generateSeats());
     const today = LibraryData.todayStr();
+    const seatZonesConfig = ref([]);
+    const ZONES = computed(() => {
+      const names = seatZonesConfig.value.map((z) => z.zone).filter(Boolean);
+      return names.length ? names : LibraryData.ZONES;
+    });
 
-    // Live clock — powers the no-show waiting-period countdown
+    async function loadSeatZones() {
+      try {
+        const data = await apiFetch('/library/seat-zones');
+        seatZonesConfig.value = Array.isArray(data.seat_zones) ? data.seat_zones : [];
+      } catch (error) {
+        console.error('Failed to load seat zones:', error);
+      }
+    }
+
     const now = ref(new Date());
     let clockTimer = null;
 
@@ -184,9 +266,7 @@ createApp({
       return seats.value.find((s) => s.id === id);
     }
 
-    // ---------------------------------------------------------------
-    // 3.5 Daily Booking Overview
-    // ---------------------------------------------------------------
+   
     const overviewDate = ref(today);
     const overviewLoading = ref(false);
     const overviewError = ref('');
@@ -202,7 +282,7 @@ createApp({
 
     function seatDisplay(seatNumber) {
       const seatNum = parseInt(String(seatNumber || '').replace('S', ''), 10);
-      const zone = !seatNum ? 'Library' : seatNum <= 8 ? 'Hall A' : seatNum <= 16 ? 'Hall B' : 'Silent Zone';
+      const zone = LibraryData.resolveSeatZone(seatNumber, seatZonesConfig.value);
       return {
         zone,
         name: seatNum ? `${zone} · Seat ${seatNum}` : (seatNumber || 'Seat')
@@ -277,8 +357,6 @@ createApp({
       return 'badge';
     }
 
-    // Display label for a booking status — keeps the internal 'no-show'
-    // status value (used across the app) but shows friendlier wording.
     function overviewStatusLabel(status) {
       if (status === 'no-show') return 'Unarrived';
       return status.replace('-', ' ');
@@ -371,9 +449,6 @@ createApp({
       }
     }
 
-    // ---------------------------------------------------------------
-    // 3.6 Walk-In Admission
-    // ---------------------------------------------------------------
     const walkInForm = reactive({
       studentId: '',
       zone: 'all',
@@ -390,11 +465,11 @@ createApp({
 
     function formatStaffSeat(seat) {
       const seatNum = parseInt(String(seat.seat_number || '').replace('S', ''), 10);
-      const zone = !seatNum ? 'Library' : seatNum <= 8 ? 'Hall A' : seatNum <= 16 ? 'Hall B' : 'Silent Zone';
+      const zone = LibraryData.resolveSeatZone(seat.seat_number, seatZonesConfig.value);
       const isRoom = String(seat.seat_type || '').toLowerCase() === 'room';
       return {
         id: seat.seat_id,
-        name: seatNum ? `${zone} · Seat ${seatNum}` : (seat.seat_number || 'Seat'),
+        name: seatNum ? `${zone} · Seat ${seatNum}` : LibraryData.seatLabel(seat.seat_number, seatZonesConfig.value),
         zone,
         type: isRoom ? 'room' : 'seat',
         capacity: isRoom ? 4 : 1,
@@ -473,9 +548,6 @@ createApp({
       walkInSuccess.value = null;
     }
 
-    // ---------------------------------------------------------------
-    // 4.2 Check-In Verification
-    // ---------------------------------------------------------------
     const checkInCodeInput = ref('');
     const checkInError = ref('');
     const checkInMatch = ref(null);
@@ -525,21 +597,6 @@ createApp({
       checkInSuccess.value = null;
     }
 
-    // ---------------------------------------------------------------
-    // 3.7 Extension Approval & Seat Allocation
-    // ---------------------------------------------------------------
-    // const extensionRequests = ref([
-    //   {
-    //     id: 'EXT-9001', studentName: 'Ananya Sharma', studentId: 'STU-2026-0142',
-    //     currentSeatId: 'seat-0-3', currentSeatName: 'Hall B · Seat 3',
-    //     requestedMinutes: 60, reason: 'Finishing a group assignment', status: 'pending', resolution: ''
-    //   },
-    //   {
-    //     id: 'EXT-9002', studentName: 'Arjun Rao', studentId: 'STU-2026-0134',
-    //     currentSeatId: 'seat-silent-2', currentSeatName: 'Silent Zone · Seat 2',
-    //     requestedMinutes: 30, reason: 'Exam prep running long', status: 'pending', resolution: ''
-    //   }
-    // ]);
     const extensionRequests = ref([]);
 const extensionsLoading = ref(false);
 const extensionError = ref('');
@@ -558,12 +615,7 @@ const extensionSuccess = ref('');
     const pendingList = computed(pendingExtensions);
     const resolvedList = computed(() => extensionRequests.value.filter((r) => r.status !== 'pending'));
 
-    // function approveExtendCurrent(req) {
-    //   // TODO: PATCH /api/staff/extensions/{id}/extend once the backend endpoint exists
-    //   req.status = 'approved';
-    //   req.resolution = `Extended current seat by ${req.requestedMinutes} min`;
-    //   console.log('Extension approved (same seat):', req.id);
-    // }
+   
 
     async function approveExtendCurrent(req) {
       extensionError.value = '';
@@ -637,9 +689,6 @@ const extensionSuccess = ref('');
       }
     }
 
-    // ---------------------------------------------------------------
-    // Student registration & membership verification
-    // ---------------------------------------------------------------
     const emptyStudent = () => ({
       fullName: '',
       dob: '',
@@ -821,13 +870,9 @@ const extensionSuccess = ref('');
     }
 
     function handleLogout() {
-      // TODO: POST /api/logout once the backend endpoint exists
       window.location.href = '/';
     }
 
-    // ---------------------------------------------------------------
-    // Story 6.2 — Complaint Management (Library Staff)
-    // ---------------------------------------------------------------
     const complaints = ref([]);
     const complaintFilter = ref('open');
     const resolvingComplaintId = ref(null);
@@ -929,9 +974,7 @@ const extensionSuccess = ref('');
       }
     }
 
-    // ---------------------------------------------------------------
-    // Story 6.3 — Announcements (read-only view for staff)
-    // ---------------------------------------------------------------
+   
     const announcements = ref([]);
 
     function mapAnnouncement(announcement) {
@@ -964,18 +1007,11 @@ const extensionSuccess = ref('');
       return LibraryData.announcementPriorityBadgeClass(priority);
     }
 
-    // ---------------------------------------------------------------
-    // Overview — a quick, read-only snapshot pulled from the other tabs.
-    // Shows: today's booking stats, a preview of today's schedule,
-    // pending extension requests, and the latest announcements.
-    // ---------------------------------------------------------------
     const overviewSchedulePreview = computed(() => overviewBookings.value.slice(0, 5));
     const overviewPendingExtensions = computed(() => pendingList.value.slice(0, 3));
     const overviewAnnouncements = computed(() => sortedAnnouncements.value.slice(0, 3));
 
-    // ---------------------------------------------------------------
-    // 5.1 Offline Payment Recording
-    // ---------------------------------------------------------------
+    
     const PAYMENT_MODES = ['Cash', 'UPI', 'Card'];
 
     const paymentForm = reactive({
@@ -1063,29 +1099,28 @@ const extensionSuccess = ref('');
       return 'badge-muted';
     }
 
-    // ---------------------------------------------------------------
-    // Lightly simulate the floor changing in the background so the
-    // walk-in / reassignment lists feel live. TODO: replace with real feed.
-    // ---------------------------------------------------------------
+   
     let liveTimer = null;
     onMounted(() => {
+      loadSeatZones().then(() => Promise.all([
+        loadDailyBookings(),
+        loadWalkInSeats()
+      ]));
+      loadProfile();
       loadMembershipPlans();
       loadStudentsForVerification();
-      loadDailyBookings();
       loadExtensionRequests();
-      loadWalkInSeats();
       loadRecordedPayments();
       loadComplaints();
       loadAnnouncements();
       loadNoShowSettings();
 
       liveTimer = setInterval(() => {
-        const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
-        const target = pool[Math.floor(Math.random() * pool.length)];
-        if (target && Math.random() > 0.6) {
-          target.status = target.status === 'available' ? 'reserved' : 'available';
-        }
-      }, 8000);
+        loadSeatZones().then(() => Promise.all([
+          loadDailyBookings(),
+          loadWalkInSeats()
+        ]));
+      }, 30000);
       clockTimer = setInterval(() => {
         now.value = new Date();
       }, 1000 * 30);
@@ -1106,7 +1141,6 @@ const extensionSuccess = ref('');
       initials,
       initialsOf,
 
-      // Daily overview
       overviewDate,
       overviewLoading,
       overviewError,
@@ -1122,9 +1156,8 @@ const extensionSuccess = ref('');
       checkInSavingId,
       unarrivedSavingId,
 
-      // Walk-in
       seats,
-      ZONES: LibraryData.ZONES,
+      ZONES,
       walkInForm,
       walkInError,
       walkInSuccess,
@@ -1134,7 +1167,6 @@ const extensionSuccess = ref('');
       assignWalkIn,
       dismissWalkInSuccess,
 
-      // 4.2 Check-in verification
       checkInCodeInput,
       checkInError,
       checkInMatch,
@@ -1145,7 +1177,7 @@ const extensionSuccess = ref('');
       confirmCheckIn,
       dismissCheckInSuccess,
 
-      // Extensions
+      
       pendingList,
       resolvedList,
       reassigningId,
@@ -1160,7 +1192,6 @@ const extensionSuccess = ref('');
       confirmReassign,
       rejectExtension,
 
-      // 5.1 Record payment
       PAYMENT_MODES,
       paymentForm,
       paymentError,
@@ -1170,7 +1201,6 @@ const extensionSuccess = ref('');
       recordPayment,
       paymentModeBadgeClass,
 
-      // Create student / verify (existing)
       newStudent,
       createError,
       createSuccess,
@@ -1184,7 +1214,6 @@ const extensionSuccess = ref('');
       verifyLoadingId,
       verifyMembership,
 
-      // 6.2 Complaint management
       complaints,
       complaintFilter,
       complaintFilterCounts,
@@ -1199,18 +1228,16 @@ const extensionSuccess = ref('');
       cancelResolve,
       confirmResolve,
 
-      // 6.3 Announcements (view only)
       sortedAnnouncements,
       announcementPriorityBadgeClass,
 
-      // Overview
       overviewSchedulePreview,
       overviewPendingExtensions,
       overviewAnnouncements,
 
-      // Settings
       security,
       securityError,
+      personalError,
       savedSection,
       avatarStyle,
       savePersonal,

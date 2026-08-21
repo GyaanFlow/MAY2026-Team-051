@@ -12,7 +12,6 @@
   <div id="app">
     <div class="dash">
 
-      <!-- Sidebar -->
       <aside class="sidebar">
         <div class="sidebar-brand">
           <div class="brand-mark">SLMS</div>
@@ -42,7 +41,6 @@
         </div>
       </aside>
 
-      <!-- Main content -->
       <main class="main">
         <header class="main-header">
           <div>
@@ -66,7 +64,6 @@
           </div>
         </header>
 
-        <!-- OVERVIEW -->
         <section class="tab-panel" v-if="activeTab === 'overview'">
 
           <div class="stat-card-row">
@@ -83,8 +80,8 @@
               <span class="stat-card-label">Active memberships</span>
             </div>
             <div class="stat-card">
-              <span class="stat-card-value">{{ currentReport.avgOccupancyPct }}%</span>
-              <span class="stat-card-label">Avg. occupancy</span>
+              <span class="stat-card-value">{{ overviewOccupancy.current_occupancy_pct }}%</span>
+              <span class="stat-card-label">Current occupancy</span>
             </div>
             <div class="stat-card">
               <span class="stat-card-value">{{ publishedAnnouncementsCount }}</span>
@@ -116,9 +113,9 @@
           <div class="panel-card">
             <div class="panel-card-header">
               <h2>Occupancy by Hour</h2>
-              <p class="panel-subtitle">Percentage of seats occupied through the day.</p>
+              <p class="panel-subtitle">Live seat occupancy for today (updates every 30s).</p>
             </div>
-            <bar-chart :data="currentReport.occupancyByHour" unit="%"></bar-chart>
+            <bar-chart :data="overviewOccupancy.occupancy_by_hour" unit="%"></bar-chart>
           </div>
 
           <div class="panel-card">
@@ -139,7 +136,6 @@
           </div>
         </section>
 
-        <!-- STAFF ACCOUNT MANAGEMENT TAB -->
         <section class="tab-panel" v-else-if="activeTab === 'staffAccounts'">
           <div class="profile-layout">
 
@@ -162,7 +158,6 @@
 
             <div class="forms-col">
 
-              <!-- Create staff form -->
               <form class="panel-card" @submit.prevent="createStaffAccount">
                 <div class="panel-card-header">
                   <h2>Create Staff Account</h2>
@@ -223,7 +218,6 @@
                 </button>
               </form>
 
-              <!-- Manage staff list -->
               <div class="panel-card">
                 <div class="panel-card-header">
                   <h2>Manage Staff Accounts</h2>
@@ -280,7 +274,6 @@
           </div>
         </section>
 
-        <!-- STUDENT MEMBERSHIP MANAGEMENT TAB -->
         <section class="tab-panel" v-else-if="activeTab === 'memberships'">
           <div class="profile-layout">
 
@@ -678,12 +671,13 @@
           </div>
 
           <div class="stat-card-row">
-            <stat-card label="Avg. Occupancy" :value="currentReport.avgOccupancyPct + '%'" sublabel="Across all bookable seats" tone="accent"></stat-card>
+            <stat-card label="Avg. Occupancy" :value="currentReport.avgOccupancyPct + '%'" sublabel="Across bookable seats in this period" tone="accent"></stat-card>
             <stat-card label="Peak Hour" :value="peakHour.label" :sublabel="peakHour.value + '% occupancy'" tone="warning"></stat-card>
             <stat-card label="Total Bookings" :value="currentReport.totalBookings" sublabel="Selected period" tone="default"></stat-card>
-            <stat-card label="Revenue" :value="'₹' + currentReport.totalRevenue.toLocaleString('en-IN')" sublabel="Selected period" tone="default"></stat-card>
+            <stat-card label="Revenue" :value="'₹' + Number(currentReport.totalRevenue || 0).toLocaleString('en-IN')" :sublabel="(currentReport.paymentCount || 0) + ' payment(s) recorded'" tone="default"></stat-card>
+            <stat-card label="Current Occupancy" :value="occupancyLive.current_occupancy_pct + '%'" :sublabel="occupancyLive.occupied_now + ' of ' + occupancyLive.active_seats + ' seats now'" tone="default"></stat-card>
             <stat-card label="Active Memberships" :value="activeMembershipsCount" sublabel="Currently approved students" tone="success"></stat-card>
-            <stat-card label="New Memberships" :value="currentReport.newMemberships" sublabel="Signed up this period" tone="success"></stat-card>
+            <stat-card label="Paying Students" :value="currentReport.newMemberships" sublabel="Students with payments this period" tone="success"></stat-card>
             <stat-card label="Active Staff" :value="totalStaffCount" sublabel="Across all accounts" tone="default"></stat-card>
             <stat-card label="Active Plans" :value="activePlansCount" sublabel="Membership plans on offer" tone="default"></stat-card>
             <stat-card label="Open Complaints" :value="openComplaintsCount" sublabel="Awaiting staff resolution" tone="warning"></stat-card>
@@ -692,7 +686,7 @@
           <div class="panel-card">
             <div class="panel-card-header">
               <h2>Occupancy by Hour</h2>
-              <p class="panel-subtitle">Percentage of seats occupied through the day.</p>
+              <p class="panel-subtitle">Average seat occupancy for the selected period.</p>
             </div>
             <bar-chart :data="currentReport.occupancyByHour" unit="%"></bar-chart>
           </div>
@@ -701,7 +695,7 @@
             <div class="panel-card">
               <div class="panel-card-header">
                 <h2>Revenue Trend</h2>
-                <p class="panel-subtitle">Revenue across the selected period.</p>
+                <p class="panel-subtitle">Offline payments recorded in the selected period (updates every 30s).</p>
               </div>
               <bar-chart :data="currentReport.revenueTrend"></bar-chart>
             </div>
@@ -716,7 +710,6 @@
           </div>
         </section>
 
-        <!-- 6.3 ANNOUNCEMENTS & NOTIFICATIONS -->
         <section class="tab-panel" v-else-if="activeTab === 'announcements'">
           <div class="booking-layout">
 
@@ -817,12 +810,10 @@
           </div>
         </section>
 
-        <!-- SETTINGS -->
         <section class="tab-panel" v-else-if="activeTab === 'settings'">
 
           <div class="profile-layout">
 
-            <!-- Avatar / identity card -->
             <div class="panel-card identity-card">
               <div class="avatar-wrap">
                 <div class="avatar-circle" :style="avatarStyle">
@@ -837,13 +828,10 @@
               <h3 class="identity-name">{{ admin.fullName || 'Unnamed Admin' }}</h3>
               <p class="identity-meta">{{ admin.designation || 'Administrator' }}</p>
               <p class="identity-meta muted">Admin ID: {{ admin.adminId || '—' }}</p>
-              <p class="identity-meta muted">Joined {{ admin.dateJoined || '—' }}</p>
             </div>
 
-            <!-- Forms -->
             <div class="forms-col">
 
-              <!-- Personal Information -->
               <form class="panel-card" @submit.prevent="savePersonal">
                 <div class="panel-card-header">
                   <h2>Personal Information</h2>
@@ -888,11 +876,11 @@
                   </label>
                 </div>
 
+                <p class="form-error" v-if="personalError">{{ personalError }}</p>
                 <p class="form-success" v-if="savedSection === 'personal'">Personal details saved.</p>
                 <button type="submit" class="btn-primary btn-small">Save Changes</button>
               </form>
 
-              <!-- Account & Security -->
               <form class="panel-card" @submit.prevent="changePassword">
                 <div class="panel-card-header">
                   <h2>Account &amp; Security</h2>

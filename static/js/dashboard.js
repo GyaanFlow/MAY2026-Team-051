@@ -16,7 +16,7 @@ const icons = {
   announcements: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 10v4a1 1 0 0 0 1 1h2l4 4V5l-4 4H5a1 1 0 0 0-1 1Z"/><path d="M17 9a4 4 0 0 1 0 6"/><path d="M20 6a8 8 0 0 1 0 12"/></svg>'
 };
 
-const MODIFY_WINDOW_MS = 2 * 60 * 60 * 1000; // students may modify/cancel up to 2 hours before start
+const MODIFY_WINDOW_MS = 2 * 60 * 60 * 1000; 
 
 createApp({
   setup() {
@@ -59,28 +59,7 @@ createApp({
     });
     const currentTabSubtitle = computed(() => tabSubtitles[activeTab.value] || '');
 
-    // ---------------------------------------------------------------
-    // Profile (existing)
-    // ---------------------------------------------------------------
-    // const profile = reactive({
-    //   fullName: 'Ananya Sharma',
-    //   avatarUrl: '',
-    //   dob: '2003-04-12',
-    //   gender: 'female',
-    //   phone: '9876543210',
-    //   address: '221B Lake View Road, Pune, MH',
-
-    //   studentId: 'STU-2026-0142',
-    //   membershipType: 'Premium',
-    //   membershipStart: '2026-01-05',
-    //   membershipValidUntil: '2026-12-31',
-    //   preferredSeat: 'Hall B, Seat 14, Morning Slot',
-
-    //   hoursLogged: 128,
-    //   lastVisit: 'Jul 5, 2026',
-
-    //   username: 'ananya.sharma'
-    // });
+   
     const profile = reactive({
   fullName: '',
   avatarUrl: '',
@@ -136,16 +115,7 @@ createApp({
       }, 2500);
     }
 
-    // function savePersonal() {
-    //   console.log('Personal info saved:', {
-    //     fullName: profile.fullName,
-    //     dob: profile.dob,
-    //     gender: profile.gender,
-    //     phone: profile.phone,
-    //     address: profile.address
-    //   });
-    //   flashSaved('personal');
-    // }
+ 
     async function savePersonal() {
   try {
     await apiFetch('/students/me', {
@@ -257,18 +227,41 @@ createApp({
       window.location.href = '/';
     }
 
-    // ---------------------------------------------------------------
-    // Live clock — powers "real-time" status and countdowns
-    // ---------------------------------------------------------------
     const now = ref(new Date());
     let clockTimer = null;
 
-    // ---------------------------------------------------------------
-    // 3.1 Real-Time Seat Availability
-    // ---------------------------------------------------------------
     const seats = ref(LibraryData.generateSeats());
     const lastUpdated = ref(new Date());
     let liveTimer = null;
+    const seatZonesConfig = ref([]);
+    const ZONES = computed(() => {
+      const names = seatZonesConfig.value.map((z) => z.zone).filter(Boolean);
+      return names.length ? names : LibraryData.ZONES;
+    });
+
+    function remapSeatZones() {
+      seats.value = seats.value.map((seat, idx) => {
+        const seatNumber = seat.seatNumber || `S${String(idx + 1).padStart(2, '0')}`;
+        const zone = LibraryData.resolveSeatZone(seatNumber, seatZonesConfig.value);
+        const seatNum = parseInt(String(seatNumber).replace(/\D/g, ''), 10);
+        return {
+          ...seat,
+          seatNumber,
+          zone,
+          name: seatNum ? `${zone} · Seat ${seatNum}` : (seatNumber || seat.name)
+        };
+      });
+    }
+
+    async function loadSeatZones() {
+      try {
+        const data = await apiFetch('/library/seat-zones');
+        seatZonesConfig.value = Array.isArray(data.seat_zones) ? data.seat_zones : [];
+        remapSeatZones();
+      } catch (error) {
+        console.error('Failed to load seat zones:', error);
+      }
+    }
 
     const availFilters = reactive({
       zone: 'all',
@@ -301,7 +294,6 @@ createApp({
       lastUpdated.value = new Date();
       try {
         const currentHour = now.value.getHours();
-        // find current slot
         const slot = LibraryData.TIME_SLOTS.find((s) => s.start <= currentHour && currentHour < s.end) || LibraryData.TIME_SLOTS[0];
         const start_time = slot.label.split(' – ')[0];
         const end_time = slot.label.split(' – ')[1];
@@ -330,14 +322,8 @@ createApp({
       activeTab.value = 'booking';
     }
 
-    // ---------------------------------------------------------------
-    // 3.2 Advance Booking
-    // ---------------------------------------------------------------
     const today = LibraryData.todayStr();
 
-    // Pre-seeded reservations other students already hold, keyed as
-    // "date|slotId" -> array of seat ids. Used to compute future availability
-    // independent of the live "right now" status above.
     const slotBookings = reactive({
       [`${today}|slot-3`]: ['seat-0-1', 'seat-1-2'],
       [`${LibraryData.addDays(today, 1)}|slot-2`]: ['room-0']
@@ -347,9 +333,6 @@ createApp({
       return `${date}|${slotId}`;
     }
 
-    // ---------------------------------------------------------------
-    // 4.1 Student Check-In — unique code shown to library staff
-    // ---------------------------------------------------------------
     function generateCheckInCode() {
       return String(Math.floor(100000 + Math.random() * 900000));
     }
@@ -365,11 +348,11 @@ createApp({
 
     function formatApiSeat(seat) {
       const seatNum = parseInt(String(seat.seat_number || '').replace('S', ''), 10);
-      const zone = !seatNum ? 'Library' : seatNum <= 8 ? 'Hall A' : seatNum <= 16 ? 'Hall B' : 'Silent Zone';
+      const zone = LibraryData.resolveSeatZone(seat.seat_number, seatZonesConfig.value);
       const isRoom = String(seat.seat_type || '').toLowerCase() === 'room';
       return {
         id: seat.seat_id,
-        name: seatNum ? `${zone} · Seat ${seatNum}` : (seat.seat_number || 'Seat'),
+        name: seatNum ? `${zone} · Seat ${seatNum}` : LibraryData.seatLabel(seat.seat_number, seatZonesConfig.value),
         zone,
         type: isRoom ? 'room' : 'seat',
         capacity: isRoom ? 4 : 1,
@@ -401,6 +384,16 @@ createApp({
         Cancelled: 'cancelled',
         'No-Show': 'no-show'
       };
+      const startDateTime = new Date(`${data.booking_date}T${data.start_time}`);
+      const endDateTime = new Date(`${data.booking_date}T${data.end_time}`);
+      let status = statusMap[data.status] || String(data.status || '').toLowerCase();
+      const now = new Date();
+      if (status === 'upcoming' && !Number.isNaN(endDateTime.getTime()) && endDateTime <= now) {
+        status = 'no-show';
+      }
+      if (status === 'checked-in' && !Number.isNaN(endDateTime.getTime()) && endDateTime <= now) {
+        status = 'completed';
+      }
       return {
         id: data.booking_id,
         seatId: data.seat_id,
@@ -410,9 +403,9 @@ createApp({
         date: data.booking_date,
         slotId: slot.id,
         slotLabel: slot.label,
-        startDateTime: new Date(`${data.booking_date}T${data.start_time}`),
-        endDateTime: new Date(`${data.booking_date}T${data.end_time}`),
-        status: statusMap[data.status] || String(data.status || '').toLowerCase(),
+        startDateTime,
+        endDateTime,
+        status,
         checkInCode: data.checkin_code,
         checkInTime: clockFromDateTime(data.checkin_time),
         checkOutTime: clockFromDateTime(data.checkout_time),
@@ -488,12 +481,10 @@ createApp({
       });
     });
 
-    // Fetch availability whenever the slot changes
     watch([() => bookingForm.date, () => bookingForm.slotId], () => {
       fetchBookableSeats();
     }, { immediate: true });
 
-    // Reset the selected seat whenever the filters change and it's no longer valid
     watch([() => bookingForm.date, () => bookingForm.slotId, () => bookingForm.zone, () => bookingForm.type], () => {
       if (bookingForm.seatId && !bookableSeats.value.some((s) => s.id === bookingForm.seatId)) {
         bookingForm.seatId = null;
@@ -549,9 +540,6 @@ createApp({
       bookingSuccess.value = null;
     }
 
-    // ---------------------------------------------------------------
-    // 3.3 Booking Modification (cancel / modify within permitted window)
-    // ---------------------------------------------------------------
     function canModify(booking) {
       if (booking.status !== 'upcoming') return false;
       return booking.startDateTime.getTime() - now.value.getTime() > MODIFY_WINDOW_MS;
@@ -711,9 +699,7 @@ createApp({
 
     const upcomingBookings = computed(() => myBookings.value.filter((b) => b.status === 'upcoming' || b.status === 'checked-in'));
 
-    // ---------------------------------------------------------------
-    // 4.1 Student Check-In — copy the code to share with staff
-    // ---------------------------------------------------------------
+  
     const copiedCodeId = ref('');
 
     function copyCheckInCode(booking) {
@@ -726,9 +712,6 @@ createApp({
       }, 1500);
     }
 
-    // ---------------------------------------------------------------
-    // 4.4 Study Session Check-Out
-    // ---------------------------------------------------------------
     const checkOutSavingId = ref(null);
     const checkOutErrorId = ref(null);
     const checkOutError = ref('');
@@ -749,9 +732,6 @@ createApp({
       }
     }
 
-    // ---------------------------------------------------------------
-    // Extension requests (feeds Story 3.7 on the staff side)
-    // ---------------------------------------------------------------
     const extensionRequests = ref([]);
     const extendingBookingId = ref(null);
     const extendMinutes = ref(60);
@@ -789,9 +769,6 @@ createApp({
       return booking.extensionStatus || null;
     }
 
-    // ---------------------------------------------------------------
-    // 3.4 Booking and Attendance History
-    // ---------------------------------------------------------------
     const historyFilter = ref('all');
 
     const filteredHistory = computed(() => {
@@ -823,9 +800,6 @@ createApp({
       return 'badge';
     }
 
-    // ---------------------------------------------------------------
-    // 5.2 Payment History
-    // ---------------------------------------------------------------
     const payments = ref([]);
 
     function mapPayment(payment) {
@@ -863,10 +837,6 @@ createApp({
       return 'badge-muted';
     }
 
-
-    // ---------------------------------------------------------------
-    // Story 6.1 — Complaint Submission (Student)
-    // ---------------------------------------------------------------
     const COMPLAINT_CATEGORIES = LibraryData.COMPLAINT_CATEGORIES;
     const COMPLAINT_STATUS_LABELS = LibraryData.COMPLAINT_STATUS_LABELS;
     const COMPLAINT_STATUS_MAP = {
@@ -952,9 +922,6 @@ createApp({
       }
     }
 
-    // ---------------------------------------------------------------
-    // Story 6.3 — Announcements (read-only view for students)
-    // ---------------------------------------------------------------
     const announcements = ref([]);
 
     function mapAnnouncement(announcement) {
@@ -987,11 +954,6 @@ createApp({
       return LibraryData.announcementPriorityBadgeClass(priority);
     }
 
-    // ---------------------------------------------------------------
-    // Overview — a quick, read-only snapshot pulled from the other tabs.
-    // Shows: seats free right now, the next upcoming booking, hours
-    // logged, open complaints, latest announcements, and recent payments.
-    // ---------------------------------------------------------------
     const openComplaintsCount = computed(
       () => myComplaints.value.filter((c) => c.status !== 'resolved').length
     );
@@ -1006,18 +968,10 @@ createApp({
     const overviewAnnouncements = computed(() => sortedAnnouncements.value.slice(0, 3));
     const overviewRecentPayments = computed(() => payments.value.slice(0, 3));
 
-    // ---------------------------------------------------------------
-    // Lifecycle
-    // ---------------------------------------------------------------
-    // onMounted(() => {
-    //   clockTimer = setInterval(() => {
-    //     now.value = new Date();
-    //   }, 1000 * 30);
-    //   liveTimer = setInterval(simulateLiveUpdate, 6000);
-    // });
+   
     onMounted(() => {
       loadStudentProfile();
-      refreshAvailability();
+      loadSeatZones().then(() => refreshAvailability());
       loadMyBookings();
       loadPayments();
       loadComplaints();
@@ -1027,7 +981,10 @@ createApp({
         now.value = new Date();
       }, 1000 * 30);
 
-      liveTimer = setInterval(refreshAvailability, 30000);
+      liveTimer = setInterval(() => {
+        loadSeatZones();
+        refreshAvailability();
+      }, 30000);
     });
 
     onBeforeUnmount(() => {
@@ -1058,7 +1015,6 @@ createApp({
       requestDeactivation,
       handleLogout,
 
-      // Availability
       seats,
       availFilters,
       filteredSeats,
@@ -1066,10 +1022,9 @@ createApp({
       secondsSinceUpdate,
       refreshAvailability,
       goBookSeat,
-      ZONES: LibraryData.ZONES,
+      ZONES,
       STATUS_LABELS: LibraryData.STATUS_LABELS,
 
-      // Booking
       bookingForm,
       bookingDateOptions,
       TIME_SLOTS: LibraryData.TIME_SLOTS,
@@ -1081,7 +1036,6 @@ createApp({
       confirmBooking,
       dismissBookingSuccess,
 
-      // My bookings / modification
       upcomingBookings,
       canModify,
       modifyDeadlineLabel,
@@ -1094,7 +1048,6 @@ createApp({
       saveModify,
       cancelBooking,
 
-      // 4.1 / 4.4 Check-in code & check-out
       copiedCodeId,
       copyCheckInCode,
       checkOutBooking,
@@ -1102,7 +1055,6 @@ createApp({
       checkOutErrorId,
       checkOutError,
 
-      // Extension
       extendingBookingId,
       extendMinutes,
       extendError,
@@ -1111,19 +1063,16 @@ createApp({
       submitExtension,
       extensionStatus,
 
-      // History
       history,
       historyFilter,
       filteredHistory,
       historySummary,
       statusBadgeClass,
 
-      // 5.2 Payment history
       payments,
       paymentsSummary,
       paymentModeBadgeClass,
 
-      // 6.1 Complaint submission
       COMPLAINT_CATEGORIES,
       COMPLAINT_STATUS_LABELS,
       complaintForm,
@@ -1134,11 +1083,9 @@ createApp({
       complaintStatusBadgeClass,
       submitComplaint,
 
-      // 6.3 Announcements (view only)
       sortedAnnouncements,
       announcementPriorityBadgeClass,
 
-      // Overview
       openComplaintsCount,
       nextBooking,
       overviewAnnouncements,

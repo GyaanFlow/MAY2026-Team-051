@@ -97,7 +97,6 @@ class MembershipPlanResource(Resource):
         return {"message": "Membership plan retired", "plan": plan.to_dict()}, 200
 
 class StaffMembershipPlanListResource(Resource):
-    """Return active membership plans that staff can assign during registration."""
 
     @staff_or_admin_required
     def get(self):

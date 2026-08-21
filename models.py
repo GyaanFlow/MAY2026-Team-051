@@ -279,7 +279,7 @@ class Complaint(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=False)
     category = db.Column(db.String(100), nullable=True)
-    status = db.Column(db.String(20), default="Open", nullable=False)  # Open / InProgress / Resolved
+    status = db.Column(db.String(20), default="Open", nullable=False) 
     resolution_note = db.Column(db.Text, nullable=True)
     resolved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)

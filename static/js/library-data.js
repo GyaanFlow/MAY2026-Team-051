@@ -22,8 +22,6 @@ const LibraryData = (function () {
     maintenance: 'Unavailable'
   };
 
-  // Deterministic-ish seed so the demo looks the same on every load,
-  // but still varied across seats/rooms.
   function seededStatus(index) {
     const cycle = ['available', 'available', 'occupied', 'reserved', 'available', 'occupied'];
     if (index % 17 === 0) return 'maintenance';
@@ -34,7 +32,6 @@ const LibraryData = (function () {
     const seats = [];
     let counter = 0;
 
-    // Individual study seats across three halls
     ZONES.slice(0, 3).forEach((zone, zIdx) => {
       const seatsPerZone = 8;
       for (let i = 1; i <= seatsPerZone; i++) {
@@ -51,7 +48,6 @@ const LibraryData = (function () {
       }
     });
 
-    // Silent zone individual seats
     for (let i = 1; i <= 6; i++) {
       seats.push({
         id: `seat-silent-${i}`,
@@ -65,7 +61,6 @@ const LibraryData = (function () {
       counter++;
     }
 
-    // Group study rooms
     const rooms = [
       { name: 'Study Room 101', zone: 'Hall A', capacity: 4 },
       { name: 'Study Room 102', zone: 'Hall A', capacity: 6 },
@@ -117,9 +112,6 @@ const LibraryData = (function () {
     return d;
   }
 
-  // ---------------------------------------------------------------
-  // Story 6.1 / 6.2 — Complaints (shared dummy data)
-  // ---------------------------------------------------------------
   const COMPLAINT_CATEGORIES = [
     'Seating & Furniture',
     'Wi-Fi / Internet',
@@ -136,9 +128,6 @@ const LibraryData = (function () {
     resolved: 'Resolved'
   };
 
-  // Demo seed so both the student and staff dashboards render a
-  // consistent-looking starting dataset. TODO: replace with
-  // GET /api/complaints once the backend endpoint exists.
   function seedComplaints() {
     return [
       {
@@ -186,9 +175,6 @@ const LibraryData = (function () {
     return 'badge-danger';
   }
 
-  // ---------------------------------------------------------------
-  // Story 6.3 — Announcements & Notifications (shared dummy data)
-  // ---------------------------------------------------------------
   const ANNOUNCEMENT_AUDIENCES = [
     { id: 'all', label: 'Everyone' },
     { id: 'students', label: 'Students Only' },
@@ -197,7 +183,6 @@ const LibraryData = (function () {
 
   const ANNOUNCEMENT_PRIORITIES = ['Normal', 'Important', 'Urgent'];
 
-  // TODO: replace with GET /api/announcements once the backend endpoint exists.
   function seedAnnouncements() {
     return [
       {
@@ -239,6 +224,30 @@ const LibraryData = (function () {
     return 'badge-muted';
   }
 
+  function resolveSeatZone(seatNumber, zones) {
+    const num = parseInt(String(seatNumber || '').replace(/\D/g, ''), 10);
+    const list = Array.isArray(zones) ? zones.filter((z) => z && z.zone && Number(z.seats) > 0) : [];
+    if (num && list.length) {
+      let cursor = 0;
+      for (const zone of list) {
+        cursor += Number(zone.seats);
+        if (num <= cursor) return zone.zone;
+      }
+      return list[list.length - 1].zone;
+    }
+    if (!num) return 'Library';
+    if (num <= 8) return 'Hall A';
+    if (num <= 16) return 'Hall B';
+    return 'Silent Zone';
+  }
+
+  function seatLabel(seatNumber, zones) {
+    const num = parseInt(String(seatNumber || '').replace(/\D/g, ''), 10);
+    const zone = resolveSeatZone(seatNumber, zones);
+    if (!num) return seatNumber || 'Seat';
+    return `${zone} · Seat ${num}`;
+  }
+
   return {
     ZONES,
     TIME_SLOTS,
@@ -249,6 +258,8 @@ const LibraryData = (function () {
     formatDateLabel,
     slotById,
     slotDateTime,
+    resolveSeatZone,
+    seatLabel,
 
     COMPLAINT_CATEGORIES,
     COMPLAINT_STATUS_LABELS,

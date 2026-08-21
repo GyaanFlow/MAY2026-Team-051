@@ -247,7 +247,6 @@ class LibrarySettingsResource(Resource):
 
 
 class SeatZonesResource(Resource):
-    """Any signed-in user can read the admin-configured seat zones."""
 
     @jwt_required()
     def get(self):
