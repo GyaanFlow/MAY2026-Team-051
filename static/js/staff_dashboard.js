@@ -229,7 +229,9 @@ createApp({
         source: 'advance',
         checkInCode: data.checkin_code,
         seatId: data.seat_id,
-        date: data.booking_date
+        date: data.booking_date,
+        startTime: data.start_time,
+        endTime: data.end_time
       };
     }
 
@@ -282,24 +284,61 @@ createApp({
       return status.replace('-', ' ');
     }
 
-    function markArrived(booking) {
-      // TODO: PATCH /api/staff/bookings/{id}/check-in once the backend endpoint exists
-      booking.status = 'checked-in';
-      if (booking.seatId) {
-        const seat = seatById(booking.seatId);
-        if (seat) seat.status = 'occupied';
+    const checkInSavingId = ref(null);
+    const unarrivedSavingId = ref(null);
+    const unarrivedGraceMinutes = ref(15);
+
+    async function loadNoShowSettings() {
+      try {
+        const data = await apiFetch('/staff/bookings/no-show-candidates');
+        if (data.grace_minutes != null) unarrivedGraceMinutes.value = Number(data.grace_minutes);
+      } catch (error) {
+        console.error('Failed to load no-show settings:', error);
       }
     }
 
-    // 4.3 Unarrived Management — staff must wait out a grace period
-    // after the slot start time before a booking can be marked unarrived.
-    const UNARRIVED_GRACE_MINUTES = 15;
+    function applyStaffBooking(record) {
+      const mapped = mapStaffBooking(record);
+      todaysBookings.value = [
+        mapped,
+        ...todaysBookings.value.filter((item) => item.id !== mapped.id)
+      ];
+      return mapped;
+    }
+
+    async function confirmCheckInByCode(code) {
+      const data = await apiFetch('/staff/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ checkin_code: String(code).trim().toUpperCase() })
+      });
+      const updated = applyStaffBooking(data.attendance.booking);
+      await Promise.all([loadDailyBookings(), loadWalkInSeats()]);
+      return updated;
+    }
+
+    async function markArrived(booking) {
+      if (!booking.checkInCode || overviewDate.value !== today) return;
+      overviewError.value = '';
+      checkInSavingId.value = booking.id;
+      try {
+        await confirmCheckInByCode(booking.checkInCode);
+      } catch (error) {
+        overviewError.value = error.message || 'Unable to check this student in.';
+      } finally {
+        checkInSavingId.value = null;
+      }
+    }
+
+    function bookingStartDate(booking) {
+      const start = booking.startTime || `${String(booking.slot.start || 0).padStart(2, '0')}:00`;
+      return new Date(`${booking.date}T${start}:00`);
+    }
 
     function unarrivedEligibleAt(booking) {
       if (overviewDate.value !== today) return null;
-      const d = new Date(today + 'T00:00:00');
-      d.setHours(booking.slot.start, UNARRIVED_GRACE_MINUTES, 0, 0);
-      return d;
+      const eligible = bookingStartDate(booking);
+      eligible.setMinutes(eligible.getMinutes() + Number(unarrivedGraceMinutes.value || 0));
+      return eligible;
     }
 
     function canMarkUnarrived(booking) {
@@ -317,16 +356,18 @@ createApp({
       return `Available in ${mins}m`;
     }
 
-    function markUnarrived(booking) {
+    async function markUnarrived(booking) {
       if (!canMarkUnarrived(booking)) return;
-
-      // TODO: PATCH /api/staff/bookings/{id}/unarrived once the backend endpoint exists
-      booking.status = 'no-show';
-
-      // Release the reserved seat so it becomes available to other students.
-      if (booking.seatId) {
-        const seat = seatById(booking.seatId);
-        if (seat) seat.status = 'available';
+      overviewError.value = '';
+      unarrivedSavingId.value = booking.id;
+      try {
+        const data = await apiFetch(`/staff/bookings/${booking.id}/no-show`, { method: 'POST' });
+        applyStaffBooking(data.booking);
+        await Promise.all([loadDailyBookings(), loadWalkInSeats()]);
+      } catch (error) {
+        overviewError.value = error.message || 'Unable to mark this booking unarrived.';
+      } finally {
+        unarrivedSavingId.value = null;
       }
     }
 
@@ -439,10 +480,13 @@ createApp({
     const checkInError = ref('');
     const checkInMatch = ref(null);
     const checkInSuccess = ref(null);
+    const checkInVerifying = ref(false);
+    const checkInConfirming = ref(false);
 
-    function verifyCheckInCode() {
+    async function verifyCheckInCode() {
       checkInError.value = '';
       checkInMatch.value = null;
+      checkInSuccess.value = null;
 
       const code = checkInCodeInput.value.trim();
       if (!code) {
@@ -450,31 +494,31 @@ createApp({
         return;
       }
 
-      // TODO: GET /api/staff/bookings/lookup?code=... once the backend endpoint exists
-      const booking = todaysBookings.value.find((b) => b.checkInCode === code);
-      if (!booking) {
-        checkInError.value = 'No booking found for this code today.';
-        return;
+      checkInVerifying.value = true;
+      try {
+        const data = await apiFetch(`/staff/checkin?checkin_code=${encodeURIComponent(code.toUpperCase())}`);
+        checkInMatch.value = mapStaffBooking(data.booking);
+      } catch (error) {
+        checkInError.value = error.message || 'No booking found for this code today.';
+      } finally {
+        checkInVerifying.value = false;
       }
-      if (booking.status !== 'upcoming') {
-        checkInError.value = `This booking is already marked "${booking.status.replace('-', ' ')}".`;
-        return;
-      }
-
-      checkInMatch.value = booking;
     }
 
-    function confirmCheckIn(booking) {
-      // TODO: PATCH /api/staff/bookings/{id}/check-in once the backend endpoint exists
-      booking.status = 'checked-in';
-      if (booking.seatId) {
-        const seat = seatById(booking.seatId);
-        if (seat) seat.status = 'occupied';
+    async function confirmCheckIn(booking) {
+      if (!booking || !booking.checkInCode) return;
+      checkInError.value = '';
+      checkInConfirming.value = true;
+      try {
+        const updated = await confirmCheckInByCode(booking.checkInCode);
+        checkInSuccess.value = updated;
+        checkInMatch.value = null;
+        checkInCodeInput.value = '';
+      } catch (error) {
+        checkInError.value = error.message || 'Unable to complete check-in.';
+      } finally {
+        checkInConfirming.value = false;
       }
-
-      checkInSuccess.value = booking;
-      checkInMatch.value = null;
-      checkInCodeInput.value = '';
     }
 
     function dismissCheckInSuccess() {
@@ -784,12 +828,47 @@ const extensionSuccess = ref('');
     // ---------------------------------------------------------------
     // Story 6.2 — Complaint Management (Library Staff)
     // ---------------------------------------------------------------
-    const complaints = ref(LibraryData.seedComplaints());
+    const complaints = ref([]);
     const complaintFilter = ref('open');
     const resolvingComplaintId = ref(null);
     const resolutionDraft = ref('');
-
+    const complaintError = ref('');
     const COMPLAINT_STATUS_LABELS = LibraryData.COMPLAINT_STATUS_LABELS;
+    const COMPLAINT_STATUS_MAP = {
+      Open: 'open',
+      InProgress: 'in-progress',
+      Resolved: 'resolved'
+    };
+
+    function mapComplaint(complaint) {
+      return {
+        id: complaint.complaint_id,
+        studentName: complaint.full_name || 'Student',
+        studentId: complaint.roll_number || complaint.username || complaint.student_id,
+        category: complaint.category || 'Other',
+        subject: complaint.title,
+        description: complaint.description,
+        status: COMPLAINT_STATUS_MAP[complaint.status] || 'open',
+        date: (complaint.created_at || '').slice(0, 10),
+        resolutionNote: complaint.resolution_note || '',
+        resolvedBy: complaint.resolved_by_name || ''
+      };
+    }
+
+    function upsertComplaint(record) {
+      const rest = complaints.value.filter((item) => item.id !== record.id);
+      complaints.value = [record, ...rest];
+    }
+
+    async function loadComplaints() {
+      try {
+        const data = await apiFetch('/staff/complaints');
+        complaints.value = (data.complaints || []).map(mapComplaint);
+        complaintError.value = '';
+      } catch (error) {
+        complaintError.value = error.message || 'Unable to load complaints.';
+      }
+    }
 
     const complaintFilterCounts = computed(() => ({
       open: complaints.value.filter((c) => c.status === 'open').length,
@@ -808,9 +887,17 @@ const extensionSuccess = ref('');
       return LibraryData.complaintStatusBadgeClass(status);
     }
 
-    function startReview(complaint) {
-      // TODO: PATCH /api/staff/complaints/{id}/start once the backend endpoint exists
-      complaint.status = 'in-progress';
+    async function startReview(complaint) {
+      complaintError.value = '';
+      try {
+        const data = await apiFetch(`/staff/complaints/${complaint.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ status: 'InProgress' })
+        });
+        upsertComplaint(mapComplaint(data.complaint));
+      } catch (error) {
+        complaintError.value = error.message || 'Unable to start reviewing this complaint.';
+      }
     }
 
     function startResolve(complaint) {
@@ -823,24 +910,51 @@ const extensionSuccess = ref('');
       resolutionDraft.value = '';
     }
 
-    function confirmResolve(complaint) {
+    async function confirmResolve(complaint) {
       if (!resolutionDraft.value.trim()) return;
-
-      // TODO: PATCH /api/staff/complaints/{id}/resolve once the backend endpoint exists
-      complaint.status = 'resolved';
-      complaint.resolutionNote = resolutionDraft.value.trim();
-      complaint.resolvedBy = staff.fullName;
-
-      resolvingComplaintId.value = null;
-      resolutionDraft.value = '';
+      complaintError.value = '';
+      try {
+        const data = await apiFetch(`/staff/complaints/${complaint.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            status: 'Resolved',
+            resolution_note: resolutionDraft.value.trim()
+          })
+        });
+        upsertComplaint(mapComplaint(data.complaint));
+        resolvingComplaintId.value = null;
+        resolutionDraft.value = '';
+      } catch (error) {
+        complaintError.value = error.message || 'Unable to resolve this complaint.';
+      }
     }
 
     // ---------------------------------------------------------------
     // Story 6.3 — Announcements (read-only view for staff)
     // ---------------------------------------------------------------
-    const announcements = ref(
-      LibraryData.seedAnnouncements().filter((a) => a.active && (a.audience === 'all' || a.audience === 'staff'))
-    );
+    const announcements = ref([]);
+
+    function mapAnnouncement(announcement) {
+      return {
+        id: announcement.announcement_id,
+        title: announcement.title,
+        message: announcement.content,
+        audience: announcement.audience || 'all',
+        priority: announcement.priority || 'Normal',
+        createdBy: announcement.created_by_name || 'Library admin',
+        createdAt: (announcement.created_at || '').slice(0, 10),
+        active: Boolean(announcement.is_active)
+      };
+    }
+
+    async function loadAnnouncements() {
+      try {
+        const data = await apiFetch('/announcements');
+        announcements.value = (data.announcements || []).map(mapAnnouncement);
+      } catch (error) {
+        console.error('Failed to load announcements:', error);
+      }
+    }
 
     const sortedAnnouncements = computed(() =>
       [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -961,6 +1075,9 @@ const extensionSuccess = ref('');
       loadExtensionRequests();
       loadWalkInSeats();
       loadRecordedPayments();
+      loadComplaints();
+      loadAnnouncements();
+      loadNoShowSettings();
 
       liveTimer = setInterval(() => {
         const pool = seats.value.filter((s) => s.status !== 'maintenance' && s.status !== 'occupied');
@@ -1002,6 +1119,8 @@ const extensionSuccess = ref('');
       markUnarrived,
       canMarkUnarrived,
       unarrivedWaitLabel,
+      checkInSavingId,
+      unarrivedSavingId,
 
       // Walk-in
       seats,
@@ -1020,6 +1139,8 @@ const extensionSuccess = ref('');
       checkInError,
       checkInMatch,
       checkInSuccess,
+      checkInVerifying,
+      checkInConfirming,
       verifyCheckInCode,
       confirmCheckIn,
       dismissCheckInSuccess,
@@ -1070,6 +1191,7 @@ const extensionSuccess = ref('');
       filteredComplaints,
       COMPLAINT_STATUS_LABELS,
       complaintStatusBadgeClass,
+      complaintError,
       startReview,
       resolvingComplaintId,
       resolutionDraft,

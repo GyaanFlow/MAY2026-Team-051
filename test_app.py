@@ -1,8 +1,8 @@
 import pytest
 import json
-from datetime import date
+from datetime import date, datetime, time, timedelta
 from app import create_app, db
-from models import User
+from models import User, LibrarySettings
 from werkzeug.security import generate_password_hash
 
 class TestConfig:
@@ -859,4 +859,419 @@ def test_student_cannot_record_staff_payment(client, student_token):
         "payment_mode": "Cash",
     }, headers=headers)
     assert response.status_code == 403
+
+
+# --- 6.1 / 6.2 COMPLAINTS ---
+
+def test_student_can_submit_and_list_complaints(client, student_token):
+    """Students can raise a complaint and see it on their history."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/students/me/complaints", json={
+        "title": "Wi-Fi keeps dropping",
+        "category": "Wi-Fi / Internet",
+        "description": "Hall B disconnects every few minutes.",
+    }, headers=headers)
+    assert response.status_code == 201, response.get_json()
+    complaint = response.get_json()["complaint"]
+    assert complaint["status"] == "Open"
+    assert complaint["title"] == "Wi-Fi keeps dropping"
+    assert complaint["category"] == "Wi-Fi / Internet"
+    assert complaint["username"] == "extstudent"
+
+    listed = client.get("/api/students/me/complaints", headers=headers).get_json()
+    ids = [item["complaint_id"] for item in listed["complaints"]]
+    assert complaint["complaint_id"] in ids
+
+
+def test_student_complaint_requires_title_and_description(client, student_token):
+    """Complaint create rejects a missing title or description."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/students/me/complaints", json={
+        "title": "No description",
+    }, headers=headers)
+    assert response.status_code == 400
+
+
+def test_staff_can_review_and_resolve_complaint(client, staff_token, student_token):
+    """Staff can take a student complaint in progress and mark it resolved."""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    created = client.post("/api/students/me/complaints", json={
+        "subject": "Desk was dirty",
+        "category": "Cleanliness & Hygiene",
+        "description": "Study room left uncleaned.",
+    }, headers=student_headers).get_json()["complaint"]
+    complaint_id = created["complaint_id"]
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    listed = client.get("/api/staff/complaints", headers=staff_headers)
+    assert listed.status_code == 200, listed.get_json()
+    ids = [item["complaint_id"] for item in listed.get_json()["complaints"]]
+    assert complaint_id in ids
+
+    review = client.put(
+        f"/api/staff/complaints/{complaint_id}",
+        json={"status": "InProgress"},
+        headers=staff_headers,
+    )
+    assert review.status_code == 200, review.get_json()
+    assert review.get_json()["complaint"]["status"] == "InProgress"
+
+    resolved = client.put(
+        f"/api/staff/complaints/{complaint_id}",
+        json={"status": "Resolved", "resolution_note": "Room inspected and cleaned."},
+        headers=staff_headers,
+    )
+    assert resolved.status_code == 200, resolved.get_json()
+    body = resolved.get_json()["complaint"]
+    assert body["status"] == "Resolved"
+    assert body["resolution_note"] == "Room inspected and cleaned."
+    assert body["resolved_by_name"]
+
+    mine = client.get("/api/students/me/complaints", headers=student_headers).get_json()
+    match = next(item for item in mine["complaints"] if item["complaint_id"] == complaint_id)
+    assert match["status"] == "Resolved"
+    assert match["resolution_note"] == "Room inspected and cleaned."
+
+
+def test_resolve_complaint_requires_note(client, staff_token, student_token):
+    """Resolving a complaint without a note is rejected."""
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    created = client.post("/api/students/me/complaints", json={
+        "title": "Noisy neighbours",
+        "description": "Talking loudly in Silent Zone.",
+    }, headers=student_headers).get_json()["complaint"]
+
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.put(
+        f"/api/staff/complaints/{created['complaint_id']}",
+        json={"status": "Resolved"},
+        headers=staff_headers,
+    )
+    assert response.status_code == 400
+
+
+def test_student_cannot_list_staff_complaints(client, student_token):
+    """Students cannot open the staff complaint inbox."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/staff/complaints", headers=headers)
+    assert response.status_code == 403
+
+
+# --- 6.3 ANNOUNCEMENTS ---
+
+def test_admin_can_create_and_list_announcements(client, admin_token):
+    """Admin can publish an announcement and see it in the admin list."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.post("/api/admin/announcements", json={
+        "title": "Library closed on 15th August",
+        "content": "Closed for Independence Day.",
+        "audience": "all",
+        "priority": "Important",
+    }, headers=headers)
+    assert response.status_code == 201, response.get_json()
+    announcement = response.get_json()["announcement"]
+    assert announcement["is_active"] is True
+    assert announcement["audience"] == "all"
+    assert announcement["priority"] == "Important"
+
+    listed = client.get("/api/admin/announcements", headers=headers).get_json()
+    ids = [item["announcement_id"] for item in listed["announcements"]]
+    assert announcement["announcement_id"] in ids
+
+
+def test_announcement_audience_is_filtered_by_role(client, admin_token, staff_token, student_token):
+    """Students and staff only see published announcements for their audience."""
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    everyone = client.post("/api/admin/announcements", json={
+        "title": "Open to all",
+        "content": "Applies to everyone.",
+        "audience": "all",
+    }, headers=admin_headers).get_json()["announcement"]
+    students_only = client.post("/api/admin/announcements", json={
+        "title": "Students only",
+        "content": "For students.",
+        "audience": "students",
+    }, headers=admin_headers).get_json()["announcement"]
+    staff_only = client.post("/api/admin/announcements", json={
+        "title": "Staff only",
+        "content": "For staff.",
+        "audience": "staff",
+    }, headers=admin_headers).get_json()["announcement"]
+
+    student_ids = [
+        item["announcement_id"]
+        for item in client.get(
+            "/api/announcements",
+            headers={"Authorization": f"Bearer {student_token}"},
+        ).get_json()["announcements"]
+    ]
+    staff_ids = [
+        item["announcement_id"]
+        for item in client.get(
+            "/api/announcements",
+            headers={"Authorization": f"Bearer {staff_token}"},
+        ).get_json()["announcements"]
+    ]
+    assert everyone["announcement_id"] in student_ids
+    assert students_only["announcement_id"] in student_ids
+    assert staff_only["announcement_id"] not in student_ids
+    assert everyone["announcement_id"] in staff_ids
+    assert staff_only["announcement_id"] in staff_ids
+    assert students_only["announcement_id"] not in staff_ids
+
+
+def test_unpublished_announcement_hidden_from_readers(client, admin_token, student_token):
+    """Unpublishing an announcement hides it from the public list."""
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/api/admin/announcements", json={
+        "title": "Temporary notice",
+        "content": "Will be unpublished.",
+        "audience": "all",
+    }, headers=admin_headers).get_json()["announcement"]
+
+    update = client.put(
+        f"/api/admin/announcements/{created['announcement_id']}",
+        json={"is_active": False},
+        headers=admin_headers,
+    )
+    assert update.status_code == 200
+    assert update.get_json()["announcement"]["is_active"] is False
+
+    student_ids = [
+        item["announcement_id"]
+        for item in client.get(
+            "/api/announcements",
+            headers={"Authorization": f"Bearer {student_token}"},
+        ).get_json()["announcements"]
+    ]
+    assert created["announcement_id"] not in student_ids
+
+    admin_ids = [
+        item["announcement_id"]
+        for item in client.get("/api/admin/announcements", headers=admin_headers).get_json()["announcements"]
+    ]
+    assert created["announcement_id"] in admin_ids
+
+
+def test_admin_can_edit_and_delete_announcement(client, admin_token):
+    """Admin can update announcement text and delete it."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    created = client.post("/api/admin/announcements", json={
+        "title": "Old title",
+        "content": "Old message",
+        "audience": "students",
+        "priority": "Normal",
+    }, headers=headers).get_json()["announcement"]
+
+    updated = client.put(
+        f"/api/admin/announcements/{created['announcement_id']}",
+        json={
+            "title": "New title",
+            "message": "New message",
+            "priority": "Urgent",
+        },
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.get_json()
+    body = updated.get_json()["announcement"]
+    assert body["title"] == "New title"
+    assert body["content"] == "New message"
+    assert body["priority"] == "Urgent"
+
+    deleted = client.delete(
+        f"/api/admin/announcements/{created['announcement_id']}",
+        headers=headers,
+    )
+    assert deleted.status_code == 200
+    remaining = [
+        item["announcement_id"]
+        for item in client.get("/api/admin/announcements", headers=headers).get_json()["announcements"]
+    ]
+    assert created["announcement_id"] not in remaining
+
+
+def test_staff_cannot_create_announcement(client, staff_token):
+    """Only admins can publish announcements."""
+    headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post("/api/admin/announcements", json={
+        "title": "Nope",
+        "content": "Staff should not publish this.",
+    }, headers=headers)
+    assert response.status_code == 403
+
+
+# --- 4.2 / 4.3 / 4.4 CHECK-IN, NO-SHOW, CHECK-OUT ---
+
+def _prepare_today_library(client, grace_minutes=0):
+    with client.application.app_context():
+        settings = LibrarySettings.query.first()
+        settings.open_time = time(0, 0)
+        settings.close_time = time(23, 59)
+        settings.no_show_grace_minutes = grace_minutes
+        settings.min_booking_minutes = None
+        settings.max_booking_hours = None
+        db.session.commit()
+
+
+def _book_today(client, student_token, seat_id=1, start_offset_minutes=-20, duration=60):
+    now = datetime.now().replace(second=0, microsecond=0)
+    start = now + timedelta(minutes=start_offset_minutes)
+    end = start + timedelta(minutes=duration)
+    today = date.today()
+    if start.date() != today:
+        start = datetime.combine(today, time(0, 0))
+        end = start + timedelta(minutes=max(duration, 1))
+    if end.date() != today:
+        end = datetime.combine(today, time(23, 59))
+    if end <= start:
+        end = start + timedelta(minutes=1)
+        if end.date() != today:
+            end = datetime.combine(today, time(23, 59))
+    response = client.post("/api/bookings", json={
+        "seat_id": seat_id,
+        "date": today.isoformat(),
+        "start_time": start.strftime("%H:%M"),
+        "end_time": end.strftime("%H:%M"),
+    }, headers={"Authorization": f"Bearer {student_token}"})
+    assert response.status_code == 201, response.get_json()
+    return response.get_json()["booking"]
+
+
+def test_staff_can_lookup_and_check_in_with_code(client, admin_token, staff_token, student_token):
+    """Staff can verify a today's check-in code and mark the booking Checked-In."""
+    _prepare_today_library(client)
+    booking = _book_today(client, student_token, start_offset_minutes=10)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+    lookup = client.get(
+        f"/api/staff/checkin?checkin_code={booking['checkin_code'].lower()}",
+        headers=staff_headers,
+    )
+    assert lookup.status_code == 200, lookup.get_json()
+    assert lookup.get_json()["booking"]["booking_id"] == booking["booking_id"]
+
+    response = client.post("/api/staff/checkin", json={
+        "checkin_code": booking["checkin_code"].lower(),
+    }, headers=staff_headers)
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()["attendance"]
+    assert body["booking"]["status"] == "Checked-In"
+    assert body["checkin_time"]
+
+    loaded = client.get(
+        "/api/students/me/bookings",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    match = next(item for item in loaded["bookings"] if item["booking_id"] == booking["booking_id"])
+    assert match["status"] == "Checked-In"
+    assert match["checkin_time"]
+
+    availability = client.get(
+        f"/api/seats/availability?date={date.today().isoformat()}&start_time={booking['start_time']}&end_time={booking['end_time']}",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    seat_ids = [seat["seat_id"] for seat in availability["available_seats"]]
+    assert booking["seat_id"] not in seat_ids
+
+
+def test_checkin_rejects_invalid_or_future_booking(client, staff_token, student_token, confirmed_booking):
+    """Unknown codes 404; future-dated confirmed bookings cannot be checked in."""
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    missing = client.post("/api/staff/checkin", json={
+        "checkin_code": "NOPE1234",
+    }, headers=staff_headers)
+    assert missing.status_code == 404
+
+    future = client.post("/api/staff/checkin", json={
+        "checkin_code": confirmed_booking["checkin_code"],
+    }, headers=staff_headers)
+    assert future.status_code == 400
+
+
+def test_student_cannot_use_staff_checkin(client, student_token):
+    """Students cannot verify check-in codes."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post("/api/staff/checkin", json={"checkin_code": "ABC"}, headers=headers)
+    assert response.status_code == 403
+
+
+def test_staff_can_mark_no_show_after_grace(client, staff_token, student_token):
+    """After the grace window, staff can mark a confirmed booking unarrived and free the seat."""
+    _prepare_today_library(client, grace_minutes=0)
+    booking = _book_today(client, student_token, start_offset_minutes=-30)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+
+    candidates = client.get("/api/staff/bookings/no-show-candidates", headers=staff_headers)
+    assert candidates.status_code == 200, candidates.get_json()
+    ids = [item["booking_id"] for item in candidates.get_json()["candidates"]]
+    assert booking["booking_id"] in ids
+
+    response = client.post(
+        f"/api/staff/bookings/{booking['booking_id']}/no-show",
+        headers=staff_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    assert response.get_json()["booking"]["status"] == "No-Show"
+
+    today = date.today().isoformat()
+    availability = client.get(
+        f"/api/seats/availability?date={today}&start_time={booking['start_time']}&end_time={booking['end_time']}",
+        headers={"Authorization": f"Bearer {student_token}"},
+    ).get_json()
+    seat_ids = [seat["seat_id"] for seat in availability["available_seats"]]
+    assert booking["seat_id"] in seat_ids
+
+
+def test_no_show_rejected_during_grace_period(client, staff_token, student_token):
+    """Bookings still inside the waiting window cannot be marked unarrived."""
+    _prepare_today_library(client, grace_minutes=15)
+    booking = _book_today(client, student_token, start_offset_minutes=5)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    response = client.post(
+        f"/api/staff/bookings/{booking['booking_id']}/no-show",
+        headers=staff_headers,
+    )
+    assert response.status_code == 400
+
+
+def test_student_can_check_out_after_checkin(client, staff_token, student_token):
+    """Checked-in students can check out; attendance is closed and the booking completes."""
+    _prepare_today_library(client)
+    booking = _book_today(client, student_token, start_offset_minutes=10)
+    staff_headers = {"Authorization": f"Bearer {staff_token}"}
+    client.post("/api/staff/checkin", json={
+        "checkin_code": booking["checkin_code"],
+    }, headers=staff_headers)
+
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(
+        f"/api/bookings/{booking['booking_id']}/checkout",
+        headers=student_headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    attendance = response.get_json()["attendance"]
+    assert attendance["checkout_time"]
+    assert attendance["booking"]["status"] == "Completed"
+
+    loaded = client.get("/api/students/me/bookings", headers=student_headers).get_json()
+    match = next(item for item in loaded["bookings"] if item["booking_id"] == booking["booking_id"])
+    assert match["status"] == "Completed"
+    assert match["checkout_time"]
+
+    availability = client.get(
+        f"/api/seats/availability?date={date.today().isoformat()}&start_time={booking['start_time']}&end_time={booking['end_time']}",
+        headers=student_headers,
+    ).get_json()
+    seat_ids = [seat["seat_id"] for seat in availability["available_seats"]]
+    assert booking["seat_id"] in seat_ids
+
+
+def test_checkout_requires_checked_in_booking(client, student_token, confirmed_booking):
+    """A booking that was never checked in cannot be checked out."""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.post(
+        f"/api/bookings/{confirmed_booking['booking_id']}/checkout",
+        headers=headers,
+    )
+    assert response.status_code == 400
 

@@ -186,14 +186,16 @@
                   <span class="record-sub">{{ b.seatName }} · {{ b.slot.label }} · {{ b.studentId }}</span>
                 </div>
                 <span class="badge" :class="overviewBadgeClass(b.status)">{{ overviewStatusLabel(b.status) }}</span>
-                <div class="record-actions" v-if="b.status === 'upcoming'">
-                  <button class="btn-outline" @click="markArrived(b)">Mark Arrived</button>
+                <div class="record-actions" v-if="b.status === 'upcoming' && overviewDate === today">
+                  <button class="btn-outline" :disabled="checkInSavingId === b.id" @click="markArrived(b)">
+                    {{ checkInSavingId === b.id ? 'Checking in…' : 'Mark Arrived' }}
+                  </button>
                   <button
                     class="btn-outline btn-outline-danger"
-                    :disabled="!canMarkUnarrived(b)"
+                    :disabled="!canMarkUnarrived(b) || unarrivedSavingId === b.id"
                     :title="!canMarkUnarrived(b) ? 'Wait out the grace period before releasing the seat' : ''"
                     @click="markUnarrived(b)"
-                  >{{ canMarkUnarrived(b) ? 'Mark Unarrived' : (unarrivedWaitLabel(b) || 'Mark Unarrived') }}</button>
+                  >{{ unarrivedSavingId === b.id ? 'Updating…' : (canMarkUnarrived(b) ? 'Mark Unarrived' : (unarrivedWaitLabel(b) || 'Mark Unarrived')) }}</button>
                 </div>
               </div>
             </div>
@@ -226,7 +228,9 @@
               <p class="field-hint">Use the check-in code shown on the student's My Bookings page.</p>
               <p class="form-error" v-if="checkInError">{{ checkInError }}</p>
 
-              <button class="btn-primary btn-small" @click="verifyCheckInCode">Verify Code</button>
+              <button class="btn-primary btn-small" :disabled="checkInVerifying" @click="verifyCheckInCode">
+                {{ checkInVerifying ? 'Checking…' : 'Verify Code' }}
+              </button>
             </div>
 
             <div class="panel-card">
@@ -250,8 +254,9 @@
               <button
                 class="btn-primary btn-small"
                 v-if="checkInMatch"
+                :disabled="checkInConfirming"
                 @click="confirmCheckIn(checkInMatch)"
-              >Confirm Check-In</button>
+              >{{ checkInConfirming ? 'Checking in…' : 'Confirm Check-In' }}</button>
             </div>
           </div>
 
@@ -682,6 +687,8 @@
                 >{{ opt.label }} ({{ complaintFilterCounts[opt.id] }})</button>
               </div>
             </div>
+
+            <p class="form-error" v-if="complaintError">{{ complaintError }}</p>
 
             <div class="record-list" v-if="filteredComplaints.length">
               <div class="record-row booking-row" v-for="c in filteredComplaints" :key="c.id">

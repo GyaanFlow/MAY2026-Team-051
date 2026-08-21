@@ -414,10 +414,20 @@ createApp({
         endDateTime: new Date(`${data.booking_date}T${data.end_time}`),
         status: statusMap[data.status] || String(data.status || '').toLowerCase(),
         checkInCode: data.checkin_code,
-        checkInTime: null,
-        checkOutTime: null,
+        checkInTime: clockFromDateTime(data.checkin_time),
+        checkOutTime: clockFromDateTime(data.checkout_time),
         extensionStatus: data.pending_extension ? 'pending' : null
       };
+    }
+
+    function clockFromDateTime(value) {
+      if (!value) return null;
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+      const text = String(value);
+      return text.length >= 16 ? text.slice(11, 16) : text;
     }
 
     function splitStoredBookings(records) {
@@ -719,19 +729,24 @@ createApp({
     // ---------------------------------------------------------------
     // 4.4 Study Session Check-Out
     // ---------------------------------------------------------------
-    function checkOutBooking(booking) {
-      const seat = seats.value.find((s) => s.id === booking.seatId);
-      if (seat) seat.status = 'available';
+    const checkOutSavingId = ref(null);
+    const checkOutErrorId = ref(null);
+    const checkOutError = ref('');
 
-      booking.status = 'completed';
-      booking.checkOutTime = now.value.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-      if (!booking.checkInTime) booking.checkInTime = 'Earlier today';
-
-      // TODO: PATCH /api/bookings/{id}/check-out once the backend endpoint exists
-      console.log('Checked out:', booking.id);
-
-      myBookings.value = myBookings.value.filter((b) => b.id !== booking.id);
-      history.value.unshift(booking);
+    async function checkOutBooking(booking) {
+      checkOutError.value = '';
+      checkOutErrorId.value = booking.id;
+      checkOutSavingId.value = booking.id;
+      try {
+        await apiFetch(`/bookings/${booking.id}/checkout`, { method: 'POST' });
+        checkOutError.value = '';
+        checkOutErrorId.value = null;
+        await loadMyBookings();
+      } catch (error) {
+        checkOutError.value = error.message || 'Unable to check out of this session.';
+      } finally {
+        checkOutSavingId.value = null;
+      }
     }
 
     // ---------------------------------------------------------------
@@ -854,6 +869,11 @@ createApp({
     // ---------------------------------------------------------------
     const COMPLAINT_CATEGORIES = LibraryData.COMPLAINT_CATEGORIES;
     const COMPLAINT_STATUS_LABELS = LibraryData.COMPLAINT_STATUS_LABELS;
+    const COMPLAINT_STATUS_MAP = {
+      Open: 'open',
+      InProgress: 'in-progress',
+      Resolved: 'resolved'
+    };
 
     const complaintForm = reactive({
       category: '',
@@ -863,61 +883,101 @@ createApp({
 
     const complaintError = ref('');
     const complaintSuccess = ref(false);
-    let complaintCounter = 6010;
+    const complaintSaving = ref(false);
+    const myComplaints = ref([]);
 
-    // Seed with any complaints this student already has on file, so the
-    // "My Complaints" list isn't empty on first load.
-    const myComplaints = ref(
-      LibraryData.seedComplaints().filter((c) => c.studentId === profile.studentId)
-    );
+    function mapComplaint(complaint) {
+      return {
+        id: complaint.complaint_id,
+        studentName: complaint.full_name || 'Student',
+        studentId: complaint.roll_number || complaint.username || complaint.student_id,
+        category: complaint.category || 'Other',
+        subject: complaint.title,
+        description: complaint.description,
+        status: COMPLAINT_STATUS_MAP[complaint.status] || 'open',
+        date: (complaint.created_at || '').slice(0, 10),
+        resolutionNote: complaint.resolution_note || '',
+        resolvedBy: complaint.resolved_by_name || ''
+      };
+    }
+
+    async function loadComplaints() {
+      try {
+        const data = await apiFetch('/students/me/complaints');
+        myComplaints.value = (data.complaints || []).map(mapComplaint);
+      } catch (error) {
+        console.error('Failed to load complaints:', error);
+      }
+    }
 
     function complaintStatusBadgeClass(status) {
       return LibraryData.complaintStatusBadgeClass(status);
     }
 
-    function submitComplaint() {
+    async function submitComplaint() {
       if (!complaintForm.category || !complaintForm.subject.trim() || !complaintForm.description.trim()) {
         complaintError.value = 'Please select a category and fill in both the subject and description.';
         complaintSuccess.value = false;
         return;
       }
 
-      complaintCounter += 1;
-      const complaint = {
-        id: `CMP-${complaintCounter}`,
-        studentName: profile.fullName,
-        studentId: profile.studentId,
-        category: complaintForm.category,
-        subject: complaintForm.subject.trim(),
-        description: complaintForm.description.trim(),
-        status: 'open',
-        date: today,
-        resolutionNote: '',
-        resolvedBy: ''
-      };
-
-      // TODO: POST /api/students/complaints once the backend endpoint exists
-      console.log('Complaint submitted:', complaint);
-
-      myComplaints.value.unshift(complaint);
+      complaintSaving.value = true;
       complaintError.value = '';
-      complaintSuccess.value = true;
-
-      complaintForm.category = '';
-      complaintForm.subject = '';
-      complaintForm.description = '';
-
-      setTimeout(() => {
+      try {
+        const data = await apiFetch('/students/me/complaints', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: complaintForm.subject.trim(),
+            category: complaintForm.category,
+            description: complaintForm.description.trim()
+          })
+        });
+        const record = mapComplaint(data.complaint);
+        myComplaints.value = [
+          record,
+          ...myComplaints.value.filter((item) => item.id !== record.id)
+        ];
+        complaintSuccess.value = true;
+        complaintForm.category = '';
+        complaintForm.subject = '';
+        complaintForm.description = '';
+        setTimeout(() => {
+          complaintSuccess.value = false;
+        }, 2500);
+      } catch (error) {
+        complaintError.value = error.message || 'Could not submit this complaint.';
         complaintSuccess.value = false;
-      }, 2500);
+      } finally {
+        complaintSaving.value = false;
+      }
     }
 
     // ---------------------------------------------------------------
     // Story 6.3 — Announcements (read-only view for students)
     // ---------------------------------------------------------------
-    const announcements = ref(
-      LibraryData.seedAnnouncements().filter((a) => a.active && (a.audience === 'all' || a.audience === 'students'))
-    );
+    const announcements = ref([]);
+
+    function mapAnnouncement(announcement) {
+      return {
+        id: announcement.announcement_id,
+        title: announcement.title,
+        message: announcement.content,
+        audience: announcement.audience || 'all',
+        priority: announcement.priority || 'Normal',
+        createdBy: announcement.created_by_name || 'Library admin',
+        createdAt: (announcement.created_at || '').slice(0, 10),
+        active: Boolean(announcement.is_active)
+      };
+    }
+
+    async function loadAnnouncements() {
+      try {
+        const data = await apiFetch('/announcements');
+        announcements.value = (data.announcements || []).map(mapAnnouncement);
+      } catch (error) {
+        console.error('Failed to load announcements:', error);
+      }
+    }
 
     const sortedAnnouncements = computed(() =>
       [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -960,6 +1020,8 @@ createApp({
       refreshAvailability();
       loadMyBookings();
       loadPayments();
+      loadComplaints();
+      loadAnnouncements();
 
       clockTimer = setInterval(() => {
         now.value = new Date();
@@ -1036,6 +1098,9 @@ createApp({
       copiedCodeId,
       copyCheckInCode,
       checkOutBooking,
+      checkOutSavingId,
+      checkOutErrorId,
+      checkOutError,
 
       // Extension
       extendingBookingId,
@@ -1064,6 +1129,7 @@ createApp({
       complaintForm,
       complaintError,
       complaintSuccess,
+      complaintSaving,
       myComplaints,
       complaintStatusBadgeClass,
       submitComplaint,

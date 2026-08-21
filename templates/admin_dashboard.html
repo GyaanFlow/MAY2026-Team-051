@@ -751,7 +751,9 @@
 
               <p class="form-error" v-if="announcementError">{{ announcementError }}</p>
               <p class="form-success" v-if="announcementSuccess">Announcement published.</p>
-              <button type="button" class="btn-primary btn-small" @click="createAnnouncement">Publish Announcement</button>
+              <button type="button" class="btn-primary btn-small" :disabled="announcementSaving" @click="createAnnouncement">
+                {{ announcementSaving ? 'Publishing…' : 'Publish Announcement' }}
+              </button>
             </form>
 
             <div class="panel-card">

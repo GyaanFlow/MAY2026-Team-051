@@ -274,7 +274,10 @@ class Complaint(db.Model):
     student_id = db.Column(db.Integer, db.ForeignKey("students.student_id"), nullable=False)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=False)
+    category = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(20), default="Open", nullable=False)  # Open / InProgress / Resolved
+    resolution_note = db.Column(db.Text, nullable=True)
+    resolved_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
     updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now(), nullable=False)
 
@@ -284,7 +287,10 @@ class Complaint(db.Model):
             "student_id": self.student_id,
             "title": self.title,
             "description": self.description,
+            "category": self.category,
             "status": self.status,
+            "resolution_note": self.resolution_note,
+            "resolved_by": self.resolved_by,
             "created_at": str(self.created_at),
             "updated_at": str(self.updated_at),
         }
@@ -296,7 +302,10 @@ class Announcement(db.Model):
     announcement_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
+    audience = db.Column(db.String(20), default="all", nullable=False)
+    priority = db.Column(db.String(20), default="Normal", nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey("users.user_id"), nullable=True)
     created_at = db.Column(db.DateTime, default=db.func.now(), nullable=False)
     updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now(), nullable=False)
 
@@ -305,7 +314,10 @@ class Announcement(db.Model):
             "announcement_id": self.announcement_id,
             "title": self.title,
             "content": self.content,
-            "is_active": self.is_active,
+            "audience": self.audience,
+            "priority": self.priority,
+            "is_active": bool(self.is_active),
+            "created_by": self.created_by,
             "created_at": str(self.created_at),
             "updated_at": str(self.updated_at),
         }

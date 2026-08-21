@@ -1144,10 +1144,19 @@ const app = createApp({
     // fuller picture, not just occupancy and revenue.
     const totalStaffCount = computed(() => staffAccounts.value.length);
     const activePlansCount = computed(() => membershipPlans.value.filter((p) => p.active).length);
-    const complaintsSnapshot = ref(LibraryData.seedComplaints());
+    const complaintsSnapshot = ref([]);
     const openComplaintsCount = computed(
-      () => complaintsSnapshot.value.filter((c) => c.status !== 'resolved').length
+      () => complaintsSnapshot.value.filter((c) => c.status !== 'Resolved' && c.status !== 'resolved').length
     );
+
+    async function loadComplaintsSnapshot() {
+      try {
+        const data = await apiFetch('/staff/complaints');
+        complaintsSnapshot.value = data.complaints || [];
+      } catch (error) {
+        console.error('Failed to load complaint stats:', error);
+      }
+    }
 
     function exportReport() {
       // TODO: GET /api/admin/reports/export?range={reportRange} once the backend endpoint exists.
@@ -1167,14 +1176,38 @@ const app = createApp({
       loadMemberships();
       loadOperatingHours();
       loadMembershipPlans();
+      loadComplaintsSnapshot();
+      loadAnnouncements();
     });
 
     // ---------------------------------------------------------------
     // Story 6.3 — Announcements & Notifications (Admin)
     // ---------------------------------------------------------------
-    const announcements = ref(LibraryData.seedAnnouncements());
+    const announcements = ref([]);
     const ANNOUNCEMENT_AUDIENCES = LibraryData.ANNOUNCEMENT_AUDIENCES;
     const ANNOUNCEMENT_PRIORITIES = LibraryData.ANNOUNCEMENT_PRIORITIES;
+
+    function mapAnnouncement(announcement) {
+      return {
+        id: announcement.announcement_id,
+        title: announcement.title,
+        message: announcement.content,
+        audience: announcement.audience || 'all',
+        priority: announcement.priority || 'Normal',
+        createdBy: announcement.created_by_name || 'Library admin',
+        createdAt: (announcement.created_at || '').slice(0, 10),
+        active: Boolean(announcement.is_active)
+      };
+    }
+
+    async function loadAnnouncements() {
+      try {
+        const data = await apiFetch('/admin/announcements');
+        announcements.value = (data.announcements || []).map(mapAnnouncement);
+      } catch (error) {
+        console.error('Failed to load announcements:', error);
+      }
+    }
 
     const sortedAnnouncements = computed(() =>
       [...announcements.value].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
@@ -1199,36 +1232,41 @@ const app = createApp({
     const newAnnouncement = reactive(emptyAnnouncement());
     const announcementError = ref('');
     const announcementSuccess = ref(false);
-    let announcementCounter = 103;
+    const announcementSaving = ref(false);
 
-    function createAnnouncement() {
+    async function createAnnouncement() {
       if (!newAnnouncement.title.trim() || !newAnnouncement.message.trim()) {
         announcementError.value = 'Please provide both a title and a message.';
         announcementSuccess.value = false;
         return;
       }
 
-      announcementCounter += 1;
-      const record = {
-        id: `ANN-${announcementCounter}`,
-        title: newAnnouncement.title.trim(),
-        message: newAnnouncement.message.trim(),
-        audience: newAnnouncement.audience,
-        priority: newAnnouncement.priority,
-        createdBy: admin.fullName,
-        createdAt: LibraryData.todayStr(),
-        active: true
-      };
-
-      // TODO: POST /api/admin/announcements once the backend endpoint exists
-      console.log('Announcement created:', record);
-
-      announcements.value.unshift(record);
+      announcementSaving.value = true;
       announcementError.value = '';
-      announcementSuccess.value = true;
-      Object.assign(newAnnouncement, emptyAnnouncement());
-
-      setTimeout(() => { announcementSuccess.value = false; }, 2500);
+      try {
+        const data = await apiFetch('/admin/announcements', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: newAnnouncement.title.trim(),
+            content: newAnnouncement.message.trim(),
+            audience: newAnnouncement.audience,
+            priority: newAnnouncement.priority
+          })
+        });
+        const record = mapAnnouncement(data.announcement);
+        announcements.value = [
+          record,
+          ...announcements.value.filter((item) => item.id !== record.id)
+        ];
+        announcementSuccess.value = true;
+        Object.assign(newAnnouncement, emptyAnnouncement());
+        setTimeout(() => { announcementSuccess.value = false; }, 2500);
+      } catch (error) {
+        announcementError.value = error.message || 'Could not publish this announcement.';
+        announcementSuccess.value = false;
+      } finally {
+        announcementSaving.value = false;
+      }
     }
 
     const editingAnnouncementId = ref(null);
@@ -1246,23 +1284,59 @@ const app = createApp({
       editingAnnouncementId.value = null;
     }
 
-    function saveEditAnnouncement(announcement) {
-      // TODO: PATCH /api/admin/announcements/{id} once the backend endpoint exists
-      announcement.title = announcementEditDraft.title;
-      announcement.message = announcementEditDraft.message;
-      announcement.audience = announcementEditDraft.audience;
-      announcement.priority = announcementEditDraft.priority;
-      editingAnnouncementId.value = null;
+    async function saveEditAnnouncement(announcement) {
+      if (!announcementEditDraft.title.trim() || !announcementEditDraft.message.trim()) {
+        announcementError.value = 'Please provide both a title and a message.';
+        return;
+      }
+      announcementError.value = '';
+      try {
+        const data = await apiFetch(`/admin/announcements/${announcement.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            title: announcementEditDraft.title.trim(),
+            content: announcementEditDraft.message.trim(),
+            audience: announcementEditDraft.audience,
+            priority: announcementEditDraft.priority
+          })
+        });
+        const record = mapAnnouncement(data.announcement);
+        announcements.value = announcements.value.map((item) =>
+          item.id === record.id ? record : item
+        );
+        editingAnnouncementId.value = null;
+      } catch (error) {
+        announcementError.value = error.message || 'Could not save this announcement.';
+      }
     }
 
-    function toggleAnnouncementStatus(announcement) {
-      // TODO: PATCH /api/admin/announcements/{id}/status once the backend endpoint exists
-      announcement.active = !announcement.active;
+    async function toggleAnnouncementStatus(announcement) {
+      announcementError.value = '';
+      try {
+        const data = await apiFetch(`/admin/announcements/${announcement.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ is_active: !announcement.active })
+        });
+        const record = mapAnnouncement(data.announcement);
+        announcements.value = announcements.value.map((item) =>
+          item.id === record.id ? record : item
+        );
+      } catch (error) {
+        announcementError.value = error.message || 'Could not update announcement status.';
+      }
     }
 
-    function deleteAnnouncement(announcement) {
-      // TODO: DELETE /api/admin/announcements/{id} once the backend endpoint exists
-      announcements.value = announcements.value.filter((a) => a.id !== announcement.id);
+    async function deleteAnnouncement(announcement) {
+      announcementError.value = '';
+      try {
+        await apiFetch(`/admin/announcements/${announcement.id}`, { method: 'DELETE' });
+        announcements.value = announcements.value.filter((a) => a.id !== announcement.id);
+        if (editingAnnouncementId.value === announcement.id) {
+          editingAnnouncementId.value = null;
+        }
+      } catch (error) {
+        announcementError.value = error.message || 'Could not delete this announcement.';
+      }
     }
 
     // ---------------------------------------------------------------
@@ -1370,6 +1444,7 @@ const app = createApp({
       newAnnouncement,
       announcementError,
       announcementSuccess,
+      announcementSaving,
       createAnnouncement,
       editingAnnouncementId,
       announcementEditDraft,

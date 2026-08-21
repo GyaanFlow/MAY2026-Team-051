@@ -355,9 +355,12 @@
                         @click="openExtendForm(b)"
                       >Request Extension</button>
                       <span class="badge badge-warning" v-else>Extension {{ extensionStatus(b) }}</span>
-                      <button class="btn-primary btn-small" @click="checkOutBooking(b)">Check Out</button>
+                      <button class="btn-primary btn-small" :disabled="checkOutSavingId === b.id" @click="checkOutBooking(b)">
+                        {{ checkOutSavingId === b.id ? 'Checking out…' : 'Check Out' }}
+                      </button>
                     </template>
                   </div>
+                  <p class="form-error" v-if="checkOutError && checkOutErrorId === b.id">{{ checkOutError }}</p>
 
                   <!-- 4.1 Student Check-In: present this code to library staff -->
                   <div class="checkin-code-row" v-if="b.status === 'upcoming'">
@@ -742,7 +745,9 @@
 
               <p class="form-error" v-if="complaintError">{{ complaintError }}</p>
               <p class="form-success" v-if="complaintSuccess">Your complaint has been submitted to the library staff.</p>
-              <button class="btn-primary btn-small" @click="submitComplaint">Submit Complaint</button>
+              <button class="btn-primary btn-small" :disabled="complaintSaving" @click="submitComplaint">
+                {{ complaintSaving ? 'Submitting…' : 'Submit Complaint' }}
+              </button>
             </div>
 
             <div class="panel-card">

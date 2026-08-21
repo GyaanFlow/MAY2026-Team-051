@@ -42,29 +42,29 @@ from resources.bookings import (
     StaffTodayBookingsResource,
     WalkInBookingResource,
 )
-# from resources.checkin import StaffCheckinResource
+from resources.checkin import StaffCheckinResource
 from resources.extension_requests import (
     StudentExtensionRequestResource,
     StaffExtensionRequestListResource,
     StaffExtensionRequestApproveResource,
     StaffExtensionRequestRejectResource,
 )
-# from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
+from resources.no_show import NoShowCandidatesResource, MarkNoShowResource
 from resources.payments import (
     StaffPaymentListResource,
     StudentPaymentHistoryResource,
     StaffStudentPaymentHistoryResource,
 )
-# from resources.complaints import (
-#     StudentComplaintCreateResource,
-#     StaffComplaintListResource,
-#     StaffComplaintUpdateResource,
-# )
-# from resources.announcements import (
-#     AdminAnnouncementListCreateResource,
-#     AnnouncementListResource,
-#     AdminAnnouncementDetailResource,
-# )
+from resources.complaints import (
+    StudentComplaintCreateResource,
+    StaffComplaintListResource,
+    StaffComplaintUpdateResource,
+)
+from resources.announcements import (
+    AdminAnnouncementListCreateResource,
+    AnnouncementListResource,
+    AdminAnnouncementDetailResource,
+)
 # from resources.reports import (
 #     OccupancyReportResource,
 #     PeakHoursReportResource,
@@ -129,7 +129,7 @@ def create_app(config_class=Config):
     "/staff/seats"
 )
 
-    # api.add_resource(StaffCheckinResource, "/staff/checkin")
+    api.add_resource(StaffCheckinResource, "/staff/checkin")
     api.add_resource(
         StudentExtensionRequestResource,
         "/students/me/bookings/<int:booking_id>/extension-request",
@@ -144,11 +144,11 @@ def create_app(config_class=Config):
         "/staff/extension-requests/<int:extension_request_id>/reject",
     )
 
-    # api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
-    # api.add_resource(
-    #     MarkNoShowResource,
-    #     "/staff/bookings/<int:booking_id>/no-show",
-    # )
+    api.add_resource(NoShowCandidatesResource, "/staff/bookings/no-show-candidates")
+    api.add_resource(
+        MarkNoShowResource,
+        "/staff/bookings/<int:booking_id>/no-show",
+    )
 
     api.add_resource(StaffPaymentListResource, "/staff/payments")
     api.add_resource(StudentPaymentHistoryResource, "/students/me/payments")
@@ -157,19 +157,19 @@ def create_app(config_class=Config):
         "/staff/students/<int:student_id>/payments",
     )
 
-    # api.add_resource(StudentComplaintCreateResource, "/students/me/complaints")
-    # api.add_resource(StaffComplaintListResource, "/staff/complaints")
-    # api.add_resource(
-    #     StaffComplaintUpdateResource,
-    #     "/staff/complaints/<int:complaint_id>",
-    # )
+    api.add_resource(StudentComplaintCreateResource, "/students/me/complaints")
+    api.add_resource(StaffComplaintListResource, "/staff/complaints")
+    api.add_resource(
+        StaffComplaintUpdateResource,
+        "/staff/complaints/<int:complaint_id>",
+    )
 
-    # api.add_resource(AdminAnnouncementListCreateResource, "/admin/announcements")
-    # api.add_resource(AnnouncementListResource, "/announcements")
-    # api.add_resource(
-    #     AdminAnnouncementDetailResource,
-    #     "/admin/announcements/<int:announcement_id>",
-    # )
+    api.add_resource(AdminAnnouncementListCreateResource, "/admin/announcements")
+    api.add_resource(AnnouncementListResource, "/announcements")
+    api.add_resource(
+        AdminAnnouncementDetailResource,
+        "/admin/announcements/<int:announcement_id>",
+    )
 
     # api.add_resource(OccupancyReportResource, "/admin/reports/occupancy")
     # api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
@@ -259,6 +259,30 @@ def upgrade_sqlite_schema():
         if "purpose" not in payment_columns:
             db.session.execute(text("ALTER TABLE payments ADD COLUMN purpose VARCHAR(200)"))
             changed = True
+
+    if inspector.has_table("complaints"):
+        complaint_columns = {column["name"] for column in inspector.get_columns("complaints")}
+        complaint_columns_to_add = {
+            "category": "ALTER TABLE complaints ADD COLUMN category VARCHAR(100)",
+            "resolution_note": "ALTER TABLE complaints ADD COLUMN resolution_note TEXT",
+            "resolved_by": "ALTER TABLE complaints ADD COLUMN resolved_by INTEGER",
+        }
+        for column_name, statement in complaint_columns_to_add.items():
+            if column_name not in complaint_columns:
+                db.session.execute(text(statement))
+                changed = True
+
+    if inspector.has_table("announcements"):
+        announcement_columns = {column["name"] for column in inspector.get_columns("announcements")}
+        announcement_columns_to_add = {
+            "audience": "ALTER TABLE announcements ADD COLUMN audience VARCHAR(20) DEFAULT 'all'",
+            "priority": "ALTER TABLE announcements ADD COLUMN priority VARCHAR(20) DEFAULT 'Normal'",
+            "created_by": "ALTER TABLE announcements ADD COLUMN created_by INTEGER",
+        }
+        for column_name, statement in announcement_columns_to_add.items():
+            if column_name not in announcement_columns:
+                db.session.execute(text(statement))
+                changed = True
 
     if changed:
         db.session.commit()
