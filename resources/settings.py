@@ -2,7 +2,7 @@ import json
 from datetime import datetime, time, timezone
 from flask import request
 from flask_restful import Resource
-from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import WEEKDAYS, db, LibrarySettings
 from utils import admin_required
 
@@ -244,3 +244,16 @@ class LibrarySettingsResource(Resource):
 
         db.session.commit()
         return {"message": "Settings updated", "settings": settings.to_dict()}, 200
+
+
+class SeatZonesResource(Resource):
+    """Any signed-in user can read the admin-configured seat zones."""
+
+    @jwt_required()
+    def get(self):
+        settings = LibrarySettings.query.first()
+        zones = settings.seat_zones_list() if settings else []
+        return {
+            "seat_zones": zones,
+            "total_seats": settings.total_seats if settings else None,
+        }, 200

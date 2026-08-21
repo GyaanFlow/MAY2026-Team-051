@@ -15,7 +15,7 @@ from resources.membership import (
     MembershipPlanResource,
     StaffMembershipPlanListResource,
 )
-from resources.settings import LibrarySettingsResource
+from resources.settings import LibrarySettingsResource, SeatZonesResource
 from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource, StaffSeatListResource
 from resources.profile import ProfileResource, ResetPasswordResource
 from resources.student_profile import StudentMeResource
@@ -65,12 +65,12 @@ from resources.announcements import (
     AnnouncementListResource,
     AdminAnnouncementDetailResource,
 )
-# from resources.reports import (
-#     OccupancyReportResource,
-#     PeakHoursReportResource,
-#     RevenueReportResource,
-#     MembershipStatsReportResource,
-# )
+from resources.reports import (
+    OccupancyReportResource,
+    RevenueReportResource,
+    PeakHoursReportResource,
+    MembershipStatsReportResource,
+)
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -94,6 +94,7 @@ def create_app(config_class=Config):
     api.add_resource(MembershipPlanResource, "/admin/membership-plans/<int:plan_id>")
 
     api.add_resource(LibrarySettingsResource, "/admin/settings")
+    api.add_resource(SeatZonesResource, "/library/seat-zones")
 
     api.add_resource(SeatListResource, "/admin/seats")
     api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")
@@ -171,10 +172,10 @@ def create_app(config_class=Config):
         "/admin/announcements/<int:announcement_id>",
     )
 
-    # api.add_resource(OccupancyReportResource, "/admin/reports/occupancy")
-    # api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
-    # api.add_resource(RevenueReportResource, "/admin/reports/revenue")
-    # api.add_resource(MembershipStatsReportResource, "/admin/reports/membership-stats")
+    api.add_resource(OccupancyReportResource, "/admin/reports/occupancy")
+    api.add_resource(RevenueReportResource, "/admin/reports/revenue")
+    api.add_resource(PeakHoursReportResource, "/admin/reports/peak-hours")
+    api.add_resource(MembershipStatsReportResource, "/admin/reports/membership-stats")
 
     # Frontend routes. The frontend templates/static assets are served by
     # this same Flask application, so browser calls to /api/* remain same-origin.
@@ -221,6 +222,8 @@ def upgrade_sqlite_schema():
         "full_name": "ALTER TABLE users ADD COLUMN full_name VARCHAR(150)",
         "position": "ALTER TABLE users ADD COLUMN position VARCHAR(100)",
         "address": "ALTER TABLE users ADD COLUMN address TEXT",
+        "dob": "ALTER TABLE users ADD COLUMN dob DATE",
+        "gender": "ALTER TABLE users ADD COLUMN gender VARCHAR(50)",
     }
     changed = False
     for column_name, statement in staff_columns.items():

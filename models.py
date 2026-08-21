@@ -39,6 +39,8 @@ class User(db.Model):
     full_name = db.Column(db.String(150), nullable=True)
     position = db.Column(db.String(100), nullable=True)
     address = db.Column(db.Text, nullable=True)
+    dob = db.Column(db.Date, nullable=True)
+    gender = db.Column(db.String(50), nullable=True)
     role = db.Column(db.String(20), nullable=False)
     status = db.Column(db.Boolean, default=True, nullable=False)
 
@@ -53,6 +55,8 @@ class User(db.Model):
             "full_name": self.full_name,
             "position": self.position,
             "address": self.address,
+            "dob": str(self.dob) if self.dob else None,
+            "gender": self.gender,
             "role": self.role,
             "status": self.status,
         }
