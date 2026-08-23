@@ -53,32 +53,52 @@ The **Study Library Management System (SLMS)** provides an end-to-end management
 
 ```mermaid
 graph TD
-    A[Study Library Management System] --> B[Admin Dashboard]
-    A --> C[Staff Dashboard]
-    A --> D[Student Dashboard]
+    classDef system fill:#2563eb,stroke:#1d4ed8,stroke-width:2px,color:#ffffff,font-weight:bold;
+    classDef admin fill:#7c3aed,stroke:#6d28d9,stroke-width:2px,color:#ffffff,font-weight:bold;
+    classDef staff fill:#059669,stroke:#047857,stroke-width:2px,color:#ffffff,font-weight:bold;
+    classDef student fill:#d97706,stroke:#b45309,stroke-width:2px,color:#ffffff,font-weight:bold;
 
-    B --> B1[Staff Account Management]
-    B --> B2[Membership Plan Pricing & Duration]
-    B --> B3[Student Membership Approval / Rejection]
-    B --> B4[Operating Hours & Holiday Closures]
-    B --> B5[Booking Limits & Seat Zones]
-    B --> B6[Reports: Occupancy, Revenue, Peak Hours]
-    B --> B7[Announcements Broadcasting]
+    SYS["📚 Study Library Management System"]:::system
 
-    C --> C1[Daily Booking Schedule & Check-in]
-    C --> C2[Walk-in Seat Allocations]
-    C --> C3[Extension Requests Processing]
-    C --> C4[Offline Payment Receipt Logging]
-    C --> C5[Student Account Registration]
-    C --> C6[Student Membership Verification]
-    C --> C7[Complaint Resolution Workflow]
+    SYS --> ADM["👑 Administrator Portal"]:::admin
+    SYS --> STF["🧑‍💼 Staff Operations Portal"]:::staff
+    SYS --> STU["🎓 Student Booking Portal"]:::student
 
-    D --> D1[Interactive Seat Availability Map]
-    D --> D2[Seat Reservation & Time Slots]
-    D --> D3[Active Booking Management & Check-out]
-    D --> D4[Study Session History & Hours Logged]
-    D --> D5[Membership & Fee Invoices]
-    D --> D6[Issue Reporting / Helpdesk]
+    subgraph Admin_Portal["Administrator Capabilities"]
+        direction TB
+        A1["Staff Accounts & Access Controls"]
+        A2["Membership Plans & Pricing"]
+        A3["Membership Verification & Approvals"]
+        A4["Operating Hours & Holiday Closures"]
+        A5["Capacity, Seat Zones & Booking Rules"]
+        A6["Analytics: Occupancy, Revenue & Peaks"]
+        A7["Announcement Broadcasting"]
+    end
+
+    subgraph Staff_Portal["Staff Operations"]
+        direction TB
+        S1["Daily Roster & Schedule Verification"]
+        S2["Walk-In Same-Day Seat Allocation"]
+        S3["Study Time Extension Approvals"]
+        S4["Offline / Cash Fee Payment Logging"]
+        S5["New Student Registration & Onboarding"]
+        S6["Membership ID Verification"]
+        S7["Student Complaint Resolution Helpdesk"]
+    end
+
+    subgraph Student_Portal["Student Services"]
+        direction TB
+        U1["Live Interactive Seat Availability Map"]
+        U2["Multi-Slot Seat Reservation"]
+        U3["Active Bookings & Self Check-Out"]
+        U4["Study Session History & Hours Logged"]
+        U5["Membership Subscriptions & Invoices"]
+        U6["Issue & Complaint Ticket Lodging"]
+    end
+
+    ADM --- Admin_Portal
+    STF --- Staff_Portal
+    STU --- Student_Portal
 ```
 
 ### 👑 Administrator Portal
@@ -129,7 +149,7 @@ graph TD
 ### 1. Clone / Navigate to Repository
 
 ```bash
-git clone https://github.com/your-username/MAY2026-Team-051.git
+git clone https://github.com/GyaanFlow/MAY2026-Team-051.git
 cd MAY2026-Team-051
 ```
 
