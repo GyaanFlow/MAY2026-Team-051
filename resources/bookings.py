@@ -173,10 +173,12 @@ class BookingListResource(Resource):
             if limit_error:
                 return {"message": limit_error}, 400
 
+        # gaurav: fix - clash check only looked at "Confirmed" bookings, so a seat
+        # already occupied by a checked-in student could still be double-booked.
         clash = Booking.query.filter(
             Booking.seat_id == seat_id,
             Booking.booking_date == booking_date,
-            Booking.status == "Confirmed",
+            Booking.status.in_(("Confirmed", "Checked-In")),
             Booking.start_time < end_time,
             Booking.end_time > start_time,
         ).first()
@@ -265,7 +267,7 @@ class BookingDetailResource(Resource):
         clash = Booking.query.filter(
             Booking.seat_id == new_seat_id,
             Booking.booking_date == new_date,
-            Booking.status == "Confirmed",
+            Booking.status.in_(("Confirmed", "Checked-In")),
             Booking.booking_id != booking.booking_id,
             Booking.start_time < new_end,
             Booking.end_time > new_start,

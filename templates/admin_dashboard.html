@@ -4,10 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Library Management System</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%232563eb'/%3E%3Cpath d='M6 7h12M6 12h12M6 17h8' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
-<body class="dashboard-body">
+<body class="dashboard-body" data-required-role="Admin">
+  <script src="{{ url_for('static', filename='js/auth-guard.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
   {% raw %}
   <div id="app">
     <div class="dash">
@@ -245,6 +248,13 @@
                         >
                           Deactivate
                         </button>
+                        <button
+                          v-else
+                          class="btn-outline"
+                          @click="toggleStaffStatus(staffMember)"
+                        >
+                          Activate
+                        </button>
                       </div>
                     </template>
 
@@ -410,7 +420,7 @@
 
                 <p class="form-error" v-if="hoursError">{{ hoursError }}</p>
                 <p class="form-success" v-if="hoursSuccess">Operating hours updated successfully.</p>
-                <button type="submit" class="btn-primary btn-small">Save Operating Hours</button>
+                <button type="submit" class="btn-primary btn-small" :disabled="hoursSaving">{{ hoursSaving ? 'Saving…' : 'Save Operating Hours' }}</button>
               </form>
 
               <div class="panel-card">
@@ -515,7 +525,7 @@
 
                 <p class="form-error" v-if="bookingLimitsError">{{ bookingLimitsError }}</p>
                 <p class="form-success" v-if="bookingLimitsSuccess">Booking limits updated successfully.</p>
-                <button type="submit" class="btn-primary btn-small">Save Booking Limits</button>
+                <button type="submit" class="btn-primary btn-small" :disabled="bookingLimitsSaving">{{ bookingLimitsSaving ? 'Saving…' : 'Save Booking Limits' }}</button>
               </form>
 
               <div class="panel-card">
@@ -667,7 +677,6 @@
                 @click="reportRange = r.id"
               >{{ r.label }}</button>
             </div>
-            <button type="button" class="btn-outline" @click="exportReport">Export Report</button>
           </div>
 
           <div class="stat-card-row">

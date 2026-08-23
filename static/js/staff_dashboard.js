@@ -242,7 +242,6 @@ createApp({
     }
 
    
-    const seats = ref(LibraryData.generateSeats());
     const today = LibraryData.todayStr();
     const seatZonesConfig = ref([]);
     const ZONES = computed(() => {
@@ -262,11 +261,6 @@ createApp({
     const now = ref(new Date());
     let clockTimer = null;
 
-    function seatById(id) {
-      return seats.value.find((s) => s.id === id);
-    }
-
-   
     const overviewDate = ref(today);
     const overviewLoading = ref(false);
     const overviewError = ref('');
@@ -869,7 +863,10 @@ const extensionSuccess = ref('');
       }
     }
 
+    // gaurav: fix - same logout bug as student dashboard, token was never cleared
     function handleLogout() {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
       window.location.href = '/';
     }
 
@@ -1156,7 +1153,6 @@ const extensionSuccess = ref('');
       checkInSavingId,
       unarrivedSavingId,
 
-      seats,
       ZONES,
       walkInForm,
       walkInError,

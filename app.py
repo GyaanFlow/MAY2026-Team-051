@@ -1,3 +1,4 @@
+import os
 from datetime import time
 from flask import Flask, render_template
 from flask_cors import CORS
@@ -9,7 +10,7 @@ from werkzeug.security import generate_password_hash
 from config import Config
 from models import db, User, MembershipPlan, LibrarySettings, Seat, Booking
 from resources.auth import LoginResource
-from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource
+from resources.staff import StaffListResource, StaffResource, DeactivateStaffResource, ActivateStaffResource
 from resources.membership import (
     MembershipPlanListResource,
     MembershipPlanResource,
@@ -76,7 +77,10 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    cors_origins = app.config.get("CORS_ORIGINS", "*")
+    if cors_origins != "*":
+        cors_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}}, supports_credentials=True)
 
     db.init_app(app)
     JWTManager(app)
@@ -88,6 +92,7 @@ def create_app(config_class=Config):
     api.add_resource(StaffListResource, "/admin/staff")
     api.add_resource(StaffResource, "/admin/staff/<int:user_id>")
     api.add_resource(DeactivateStaffResource, "/admin/staff/<int:user_id>/deactivate")
+    api.add_resource(ActivateStaffResource, "/admin/staff/<int:user_id>/activate")
 
     api.add_resource(MembershipPlanListResource, "/admin/membership-plans")
     api.add_resource(StaffMembershipPlanListResource, "/staff/membership-plans")
@@ -322,4 +327,6 @@ def seed_data():
 
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host=host, port=port, debug=app.config["DEBUG"])

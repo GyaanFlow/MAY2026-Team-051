@@ -495,12 +495,14 @@ const app = createApp({
       }
     }
 
+    // gaurav: fix - this only ever deactivated; there was no way back for a
+    // deactivated staff account, in the UI or the API. Now toggles both ways.
     async function toggleStaffStatus(staffMember) {
-
-      if (!staffMember.status) return;
-
+      const activating = !staffMember.status;
       const confirmed = window.confirm(
-        `Deactivate ${staffMember.fullName || staffMember.username}? They will no longer be able to log in.`
+        activating
+          ? `Reactivate ${staffMember.fullName || staffMember.username}? They will be able to log in again.`
+          : `Deactivate ${staffMember.fullName || staffMember.username}? They will no longer be able to log in.`
       );
       if (!confirmed) return;
 
@@ -508,7 +510,8 @@ const app = createApp({
       staffLoading.value = true;
 
       try {
-        const result = await apiFetch(`/admin/staff/${staffMember.user_id}/deactivate`, {
+        const endpoint = activating ? 'activate' : 'deactivate';
+        const result = await apiFetch(`/admin/staff/${staffMember.user_id}/${endpoint}`, {
           method: 'POST'
         });
 
@@ -622,6 +625,7 @@ const app = createApp({
 
     const hoursError = ref('');
     const hoursSuccess = ref(false);
+    const hoursSaving = ref(false);
     const holidayClosures = ref([]);
     const newHoliday = reactive({ date: '', reason: '' });
 
@@ -713,6 +717,8 @@ const app = createApp({
         return;
       }
 
+      if (hoursSaving.value) return;
+      hoursSaving.value = true;
       try {
         hoursError.value = '';
         await persistOperatingHours();
@@ -724,6 +730,8 @@ const app = createApp({
         console.error('Failed to save operating hours:', error);
         hoursError.value = error.message || 'Unable to save operating hours.';
         hoursSuccess.value = false;
+      } finally {
+        hoursSaving.value = false;
       }
     }
 
@@ -881,6 +889,7 @@ const app = createApp({
 
     const bookingLimitsError = ref('');
     const bookingLimitsSuccess = ref(false);
+    const bookingLimitsSaving = ref(false);
 
     function nextUnusedSeatNumbers(count) {
       const used = new Set(seats.value.map((seat) => seat.seat_number));
@@ -913,6 +922,8 @@ const app = createApp({
         return;
       }
 
+      if (bookingLimitsSaving.value) return;
+      bookingLimitsSaving.value = true;
       bookingLimitsError.value = '';
       bookingLimitsSuccess.value = false;
 
@@ -969,6 +980,8 @@ const app = createApp({
         }, 2500);
       } catch (error) {
         bookingLimitsError.value = error.message;
+      } finally {
+        bookingLimitsSaving.value = false;
       }
     }
 
@@ -1274,10 +1287,6 @@ const app = createApp({
       }
     }
 
-    function exportReport() {
-      console.log('Exporting report for range:', reportRange.value);
-    }
-
     function handleLogout() {
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
@@ -1445,7 +1454,11 @@ const app = createApp({
       }
     }
 
+    // gaurav: fix - delete had no confirmation, unlike every other destructive action here
     async function deleteAnnouncement(announcement) {
+      if (!window.confirm(`Permanently delete "${announcement.title}"? This cannot be undone.`)) {
+        return;
+      }
       announcementError.value = '';
       try {
         await apiFetch(`/admin/announcements/${announcement.id}`, { method: 'DELETE' });
@@ -1502,6 +1515,7 @@ const app = createApp({
       operatingHours,
       hoursError,
       hoursSuccess,
+      hoursSaving,
       applyToAllDays,
       saveOperatingHours,
       holidayClosures,
@@ -1519,6 +1533,7 @@ const app = createApp({
       removeSeatZone,
       bookingLimitsError,
       bookingLimitsSuccess,
+      bookingLimitsSaving,
       saveBookingLimits,
 
       membershipPlans,
@@ -1548,7 +1563,6 @@ const app = createApp({
       totalStaffCount,
       activePlansCount,
       openComplaintsCount,
-      exportReport,
 
       announcements,
       sortedAnnouncements,

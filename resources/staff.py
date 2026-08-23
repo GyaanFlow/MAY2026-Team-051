@@ -112,3 +112,23 @@ class DeactivateStaffResource(Resource):
             "message": "Staff member deactivated successfully",
             "user": staff.to_dict()
         }, 200
+
+
+# gaurav: fix - a deactivated staff account had no way to be brought back;
+# neither the UI nor the API offered a reverse of DeactivateStaffResource.
+class ActivateStaffResource(Resource):
+    @admin_required
+    def post(self, user_id):
+        staff = User.query.filter_by(user_id=user_id, role="Staff").first()
+        if not staff:
+            return {"message": "Staff member not found"}, 404
+
+        if staff.status:
+            return {"message": "Staff member is already active"}, 400
+
+        staff.status = True
+        db.session.commit()
+        return {
+            "message": "Staff member activated successfully",
+            "user": staff.to_dict()
+        }, 200

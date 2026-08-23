@@ -93,6 +93,8 @@ createApp({
     const securityError = ref('');
     const savedSection = ref('');
     const deactivationRequested = ref(false);
+    // gaurav: fix - forms had no loading/disabled state, so a slow request could be submitted twice
+    const savingSection = ref('');
 
     const initials = computed(() => {
       if (!profile.fullName) return 'S';
@@ -117,6 +119,8 @@ createApp({
 
  
     async function savePersonal() {
+  if (savingSection.value) return;
+  savingSection.value = 'personal';
   try {
     await apiFetch('/students/me', {
       method: 'PUT',
@@ -135,18 +139,23 @@ createApp({
     console.error('Failed to update profile:', error);
     securityError.value =
       error.message || 'Unable to update personal details.';
+  } finally {
+    savingSection.value = '';
   }
 }
 
+    function preferredSeatStorageKey() {
+      return profile.username ? `preferred_seat_${profile.username}` : null;
+    }
+
+    // gaurav: fix - preferred seat was never actually saved anywhere (just logged)
     function saveLibrary() {
-      console.log('Library info saved:', {
-        studentId: profile.studentId,
-        membershipType: profile.membershipType,
-        membershipStart: profile.membershipStart,
-        membershipValidUntil: profile.membershipValidUntil,
-        preferredSeat: profile.preferredSeat
-      });
+      const key = preferredSeatStorageKey();
+      if (key) {
+        localStorage.setItem(key, profile.preferredSeat || '');
+      }
       flashSaved('library');
+      if (window.appToast) window.appToast.success('Preferred seat saved.');
     }
     async function loadStudentProfile() {
   try {
@@ -171,6 +180,9 @@ createApp({
     profile.username = data.username || '';
     profile.email = data.email || '';
 
+    const key = preferredSeatStorageKey();
+    profile.preferredSeat = key ? (localStorage.getItem(key) || '') : '';
+
   } catch (error) {
     console.error('Failed to load student profile:', error);
 
@@ -180,29 +192,6 @@ createApp({
   }
 }
 
-
-    function changePassword() {
-      if (!security.currentPassword || !security.newPassword || !security.confirmPassword) {
-        securityError.value = 'Please fill in all password fields.';
-        return;
-      }
-      if (security.newPassword !== security.confirmPassword) {
-        securityError.value = 'New passwords do not match.';
-        return;
-      }
-      if (security.newPassword.length < 8) {
-        securityError.value = 'New password must be at least 8 characters.';
-        return;
-      }
-
-      securityError.value = '';
-      console.log('Password change submitted');
-
-      security.currentPassword = '';
-      security.newPassword = '';
-      security.confirmPassword = '';
-      flashSaved('security');
-    }
 
     function handleAvatarChange(event) {
       const file = event.target.files && event.target.files[0];
@@ -218,19 +207,36 @@ createApp({
       profile.avatarUrl = '';
     }
 
-    function requestDeactivation() {
-      console.log('Deactivation requested');
-      deactivationRequested.value = true;
+    // gaurav: fix - deactivation request went nowhere before, now files a real complaint staff can see
+    async function requestDeactivation() {
+      try {
+        await apiFetch('/students/me/complaints', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: 'Account deactivation request',
+            description: `${profile.fullName || profile.username} has requested account deactivation.`,
+            category: 'Account'
+          })
+        });
+        deactivationRequested.value = true;
+        if (window.appToast) window.appToast.success('Deactivation request sent to library staff.');
+      } catch (error) {
+        if (window.appToast) window.appToast.error(error.message || 'Unable to submit deactivation request.');
+      }
     }
 
+    // gaurav: fix - logout never cleared the stored session, so the login page's
+    // "already authenticated" redirect just bounced the student straight back in
     function handleLogout() {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user');
       window.location.href = '/';
     }
 
     const now = ref(new Date());
     let clockTimer = null;
 
-    const seats = ref(LibraryData.generateSeats());
+    const seats = ref([]);
     const lastUpdated = ref(new Date());
     let liveTimer = null;
     const seatZonesConfig = ref([]);
@@ -290,6 +296,9 @@ createApp({
       return { total, available, occupied, reserved };
     });
 
+    // gaurav: fix - this used to render 35 fabricated demo seats/rooms with fake
+    // occupied/available status instead of the real seat inventory. Now built from
+    // the actual /seats/availability response.
     async function refreshAvailability() {
       lastUpdated.value = new Date();
       try {
@@ -299,17 +308,11 @@ createApp({
         const end_time = slot.label.split(' – ')[1];
         const dateStr = LibraryData.todayStr();
         const data = await apiFetch(`/seats/availability?date=${dateStr}&start_time=${start_time}&end_time=${end_time}`);
-        
-        const availableNumbers = new Set(data.available_seats.map(s => s.seat_number));
-        
-        seats.value.forEach((fs, idx) => {
-          const seatNum = `S${String(idx + 1).padStart(2, '0')}`;
-          if (idx < 20) {
-            fs.status = availableNumbers.has(seatNum) ? 'available' : 'occupied';
-          } else {
-            fs.status = 'occupied';
-          }
-        });
+
+        seats.value = (data.all_seats || []).map((seat) => ({
+          ...formatApiSeat(seat),
+          status: seat.status
+        }));
       } catch (error) {
         console.error('Failed to refresh availability:', error);
       }
@@ -629,6 +632,8 @@ createApp({
     return;
   }
 
+  if (savingSection.value) return;
+  savingSection.value = 'security';
   try {
     securityError.value = '';
 
@@ -649,6 +654,8 @@ createApp({
   } catch (error) {
     securityError.value =
       error.message || 'Unable to update password.';
+  } finally {
+    savingSection.value = '';
   }
 }
 
@@ -663,6 +670,8 @@ createApp({
         return;
       }
 
+      if (savingSection.value) return;
+      savingSection.value = 'modify';
       try {
         const data = await apiFetch(`/bookings/${booking.id}`, {
           method: 'PUT',
@@ -683,10 +692,16 @@ createApp({
         await fetchBookableSeats();
       } catch (error) {
         editError.value = error.message || 'Unable to update booking.';
+      } finally {
+        savingSection.value = '';
       }
     }
 
+    // gaurav: fix - cancel had no confirmation, easy to lose a reservation by misclick
     async function cancelBooking(booking) {
+      if (!window.confirm(`Cancel your booking for ${booking.seatName || 'this seat'}? This cannot be undone.`)) {
+        return;
+      }
       try {
         await apiFetch(`/bookings/${booking.id}/cancel`, { method: 'POST' });
         booking.status = 'cancelled';
@@ -777,17 +792,26 @@ createApp({
       return combined.filter((h) => h.status === historyFilter.value);
     });
 
+    // gaurav: fix - hoursLogged was hardcoded to 0 and never actually computed,
+    // so every student always showed "0 hours logged" no matter how many
+    // sessions they completed. Now derived from each completed session's duration.
     const historySummary = computed(() => {
       const completed = history.value.filter((h) => h.status === 'completed');
       const noShows = history.value.filter((h) => h.status === 'no-show').length;
       const cancelled = history.value.filter((h) => h.status === 'cancelled').length;
       const totalSessions = history.value.length;
+      const totalMs = completed.reduce((sum, h) => {
+        const start = h.startDateTime instanceof Date ? h.startDateTime.getTime() : NaN;
+        const end = h.endDateTime instanceof Date ? h.endDateTime.getTime() : NaN;
+        if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return sum;
+        return sum + (end - start);
+      }, 0);
       return {
         totalSessions,
         completed: completed.length,
         noShows,
         cancelled,
-        hoursLogged: profile.hoursLogged
+        hoursLogged: Math.round((totalMs / 3600000) * 10) / 10
       };
     });
 
@@ -1004,6 +1028,7 @@ createApp({
       security,
       securityError,
       savedSection,
+      savingSection,
       deactivationRequested,
       initials,
       avatarStyle,

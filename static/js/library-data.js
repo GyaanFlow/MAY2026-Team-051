@@ -84,15 +84,23 @@ const LibraryData = (function () {
     return seats;
   }
 
+  // gaurav: fix - toISOString() converts to UTC, which put "today" a day behind
+  // for anyone east of UTC (e.g. IST) during local morning hours. Use local date parts instead.
+  function toLocalDateStr(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   function todayStr() {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
+    return toLocalDateStr(new Date());
   }
 
   function addDays(dateStr, days) {
     const d = new Date(dateStr + 'T00:00:00');
     d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
+    return toLocalDateStr(d);
   }
 
   function formatDateLabel(dateStr) {

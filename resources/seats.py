@@ -127,6 +127,13 @@ class SeatAvailabilityResource(Resource):
         booked_seat_ids = {b.seat_id for b in overlapping}
 
         available = [s.to_dict() for s in all_seats if s.seat_id not in booked_seat_ids]
+        # gaurav: fix - student "Seat Availability" screen was showing fabricated demo
+        # seats/rooms instead of the real inventory; expose the full seat list with status
+        # so the frontend doesn't need to invent data.
+        all_seats_with_status = [
+            {**s.to_dict(), "status": "occupied" if s.seat_id in booked_seat_ids else "available"}
+            for s in all_seats
+        ]
 
         return {
             "date": date_str,
@@ -134,4 +141,5 @@ class SeatAvailabilityResource(Resource):
             "end_time": end_str,
             "available_seats": available,
             "total_available": len(available),
+            "all_seats": all_seats_with_status,
         }, 200

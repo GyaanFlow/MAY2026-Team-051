@@ -4,10 +4,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Study Library Management System</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%232563eb'/%3E%3Cpath d='M6 7h12M6 12h12M6 17h8' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
-<body class="dashboard-body">
+<body class="dashboard-body" data-required-role="Student">
+  <script src="{{ url_for('static', filename='js/auth-guard.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
   {% raw %}
   <div id="app">
     <div class="dash">
@@ -68,7 +71,7 @@
               <span class="stat-card-label">Upcoming bookings</span>
             </div>
             <div class="stat-card stat-card-success">
-              <span class="stat-card-value">{{ profile.hoursLogged }}</span>
+              <span class="stat-card-value">{{ historySummary.hoursLogged }}</span>
               <span class="stat-card-label">Hours logged</span>
             </div>
             <div class="stat-card">
@@ -403,7 +406,7 @@
                   </div>
                   <p class="form-error" v-if="editError">{{ editError }}</p>
                   <div class="record-actions">
-                    <button class="btn-primary btn-small" @click="saveModify(b)">Save Changes</button>
+                    <button class="btn-primary btn-small" :disabled="savingSection === 'modify'" @click="saveModify(b)">{{ savingSection === 'modify' ? 'Saving…' : 'Save Changes' }}</button>
                     <button class="btn-ghost" @click="cancelModify">Cancel</button>
                   </div>
                 </template>
@@ -495,7 +498,7 @@
                 <div class="record-avatar">₹</div>
                 <div class="record-info">
                   <span class="record-name">{{ p.purpose }}</span>
-                  <span class="record-sub">{{ p.date }} · {{ p.id }}</span>
+                  <span class="record-sub">{{ p.date }}</span>
                 </div>
                 <span class="badge" :class="paymentModeBadgeClass(p.mode)">{{ p.mode }}</span>
                 <span class="record-amount">₹{{ p.amount }}</span>
@@ -567,7 +570,7 @@
                 </div>
 
                 <p class="form-success" v-if="savedSection === 'personal'">Personal details saved.</p>
-                <button type="submit" class="btn-primary btn-small">Save Changes</button>
+                <button type="submit" class="btn-primary btn-small" :disabled="savingSection === 'personal'">{{ savingSection === 'personal' ? 'Saving…' : 'Save Changes' }}</button>
               </form>
 
               <div class="panel-card">
@@ -641,7 +644,7 @@
                 </div>
                 <div class="stat-row">
                   <div class="stat-box">
-                    <span class="stat-value">{{ profile.hoursLogged }}</span>
+                    <span class="stat-value">{{ historySummary.hoursLogged }}</span>
                     <span class="stat-label">Hours Logged</span>
                   </div>
                   <div class="stat-box">
@@ -681,7 +684,7 @@
 
                 <p class="form-error" v-if="securityError">{{ securityError }}</p>
                 <p class="form-success" v-if="savedSection === 'security'">Password updated.</p>
-                <button type="submit" class="btn-primary btn-small">Update Password</button>
+                <button type="submit" class="btn-primary btn-small" :disabled="savingSection === 'security'">{{ savingSection === 'security' ? 'Updating…' : 'Update Password' }}</button>
               </form>
 
               <div class="panel-card danger-card">
