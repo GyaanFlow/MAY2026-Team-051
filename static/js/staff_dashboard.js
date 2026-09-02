@@ -253,6 +253,9 @@ createApp({
       try {
         const data = await apiFetch('/library/seat-zones');
         seatZonesConfig.value = Array.isArray(data.seat_zones) ? data.seat_zones : [];
+        if (data.open_time || data.weekly_hours) {
+          LibraryData.updateOperatingHours(data);
+        }
       } catch (error) {
         console.error('Failed to load seat zones:', error);
       }

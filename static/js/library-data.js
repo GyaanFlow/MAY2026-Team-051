@@ -6,13 +6,13 @@ const LibraryData = (function () {
 
   const ZONES = ['Hall A', 'Hall B', 'Hall C', 'Silent Zone'];
 
-  const TIME_SLOTS = [
-    { id: 'slot-1', label: '08:00 – 10:00', start: 8, end: 10 },
-    { id: 'slot-2', label: '10:00 – 12:00', start: 10, end: 12 },
-    { id: 'slot-3', label: '12:00 – 14:00', start: 12, end: 14 },
-    { id: 'slot-4', label: '14:00 – 16:00', start: 14, end: 16 },
-    { id: 'slot-5', label: '16:00 – 18:00', start: 16, end: 18 },
-    { id: 'slot-6', label: '18:00 – 20:00', start: 18, end: 20 }
+  let TIME_SLOTS = [
+    { id: 'slot-1', label: '08:00 – 10:00', start: 8, end: 10, startTime: '08:00', endTime: '10:00' },
+    { id: 'slot-2', label: '10:00 – 12:00', start: 10, end: 12, startTime: '10:00', endTime: '12:00' },
+    { id: 'slot-3', label: '12:00 – 14:00', start: 12, end: 14, startTime: '12:00', endTime: '14:00' },
+    { id: 'slot-4', label: '14:00 – 16:00', start: 14, end: 16, startTime: '14:00', endTime: '16:00' },
+    { id: 'slot-5', label: '16:00 – 18:00', start: 16, end: 18, startTime: '16:00', endTime: '18:00' },
+    { id: 'slot-6', label: '18:00 – 20:00', start: 18, end: 20, startTime: '18:00', endTime: '20:00' }
   ];
 
   const STATUS_LABELS = {
@@ -108,15 +108,169 @@ const LibraryData = (function () {
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
-  function slotById(id) {
-    return TIME_SLOTS.find((s) => s.id === id);
+  function parseTimeToMinutes(timeVal) {
+    if (typeof timeVal === 'number') {
+      return Math.round(timeVal * 60);
+    }
+    if (typeof timeVal === 'string' && timeVal.includes(':')) {
+      const parts = timeVal.trim().split(':').map(Number);
+      return (parts[0] || 0) * 60 + (parts[1] || 0);
+    }
+    const n = Number(timeVal) || 0;
+    return Math.round(n * 60);
   }
 
-  function slotDateTime(dateStr, slotId, which) {
-    const slot = slotById(slotId);
-    if (!slot) return null;
+  function formatHHMM(totalMinutes) {
+    const h = Math.floor(totalMinutes / 60) % 24;
+    const m = Math.floor(totalMinutes % 60);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  function generateTimeSlots(openTimeStr = '08:00', closeTimeStr = '20:00', stepMinutes = 120, minMinutes = null) {
+    const openM = parseTimeToMinutes(openTimeStr || '08:00');
+    let closeM = parseTimeToMinutes(closeTimeStr || '20:00');
+    if (closeM <= openM) {
+      closeM = 24 * 60;
+    }
+
+    const slots = [];
+    let current = openM;
+    let idx = 1;
+
+    while (current < closeM) {
+      let next = current + stepMinutes;
+      if (next > closeM) {
+        next = closeM;
+      }
+      if (minMinutes && (next - current) < minMinutes) {
+        break;
+      }
+      const sStr = formatHHMM(current);
+      const eStr = formatHHMM(next);
+
+      slots.push({
+        id: `slot-${idx}`,
+        label: `${sStr} – ${eStr}`,
+        start: current / 60,
+        end: next / 60,
+        startTime: sStr,
+        endTime: eStr
+      });
+
+      current = next;
+      idx++;
+    }
+
+    return slots;
+  }
+
+  function getOperatingHoursForDate(dateStr, settings) {
+    if (!settings) {
+      return { isOpen: true, openTime: '08:00', closeTime: '20:00' };
+    }
+
+    const closures = settings.holiday_closures || [];
+    const holiday = closures.find((c) => c.date === dateStr);
+    if (holiday) {
+      return {
+        isOpen: false,
+        reason: holiday.reason || 'Holiday Closure',
+        openTime: null,
+        closeTime: null
+      };
+    }
+
     const d = new Date(dateStr + 'T00:00:00');
-    d.setHours(which === 'end' ? slot.end : slot.start, 0, 0, 0);
+    const dayIndex = d.getDay();
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = weekdays[dayIndex];
+
+    const weekly = settings.weekly_hours || [];
+    const dayEntry = weekly.find((item) => item.day === dayName);
+
+    if (dayEntry) {
+      if (!dayEntry.is_open) {
+        return {
+          isOpen: false,
+          reason: `Closed on ${dayName}`,
+          openTime: null,
+          closeTime: null
+        };
+      }
+      return {
+        isOpen: true,
+        openTime: dayEntry.open_time || settings.open_time || '08:00',
+        closeTime: dayEntry.close_time || settings.close_time || '20:00'
+      };
+    }
+
+    const openTime = settings.open_time || '08:00';
+    const closeTime = settings.close_time || '20:00';
+    return {
+      isOpen: true,
+      openTime,
+      closeTime
+    };
+  }
+
+  function getTimeSlotsForDate(dateStr, settings, stepMinutes = 120) {
+    const hours = getOperatingHoursForDate(dateStr, settings);
+    if (!hours.isOpen) {
+      return [];
+    }
+    const minMinutes = settings && settings.min_booking_minutes ? Number(settings.min_booking_minutes) : null;
+    return generateTimeSlots(hours.openTime, hours.closeTime, stepMinutes, minMinutes);
+  }
+
+  function updateOperatingHours(settings) {
+    if (!settings) return TIME_SLOTS;
+    const openTime = settings.open_time || '08:00';
+    const closeTime = settings.close_time || '20:00';
+    const minMinutes = settings.min_booking_minutes ? Number(settings.min_booking_minutes) : null;
+    const newSlots = generateTimeSlots(openTime, closeTime, 120, minMinutes);
+    TIME_SLOTS.length = 0;
+    newSlots.forEach((s) => TIME_SLOTS.push(s));
+    return TIME_SLOTS;
+  }
+
+  function slotById(id) {
+    if (!id) return null;
+    let found = TIME_SLOTS.find((s) => s.id === id);
+    if (found) return found;
+
+    if (typeof id === 'string' && id.startsWith('slot-')) {
+      const raw = id.slice(5);
+      const parts = raw.split('-');
+      if (parts.length === 2) {
+        const sM = parseTimeToMinutes(parts[0]);
+        const eM = parseTimeToMinutes(parts[1]);
+        const sStr = formatHHMM(sM);
+        const eStr = formatHHMM(eM);
+        return {
+          id,
+          label: `${sStr} – ${eStr}`,
+          start: sM / 60,
+          end: eM / 60,
+          startTime: sStr,
+          endTime: eStr
+        };
+      }
+    }
+    return null;
+  }
+
+  function slotDateTime(dateStr, slotIdOrObj, which) {
+    if (!dateStr) return null;
+    const slot = (typeof slotIdOrObj === 'object' && slotIdOrObj !== null)
+      ? slotIdOrObj
+      : slotById(slotIdOrObj);
+    const d = new Date(dateStr + 'T00:00:00');
+    if (!slot) return d;
+    const val = which === 'end' ? (slot.end ?? slot.endTime) : (slot.start ?? slot.startTime);
+    const totalMinutes = parseTimeToMinutes(val);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    d.setHours(h, m, 0, 0);
     return d;
   }
 
@@ -266,6 +420,12 @@ const LibraryData = (function () {
     formatDateLabel,
     slotById,
     slotDateTime,
+    generateTimeSlots,
+    getOperatingHoursForDate,
+    getTimeSlotsForDate,
+    updateOperatingHours,
+    parseTimeToMinutes,
+    formatHHMM,
     resolveSeatZone,
     seatLabel,
 

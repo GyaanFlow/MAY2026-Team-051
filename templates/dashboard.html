@@ -240,7 +240,8 @@
                 </label>
                 <label class="field">
                   <span>Time Slot</span>
-                  <select v-model="bookingForm.slotId">
+                  <select v-model="bookingForm.slotId" :disabled="bookingHoursInfo && !bookingHoursInfo.isOpen">
+                    <option v-if="bookingHoursInfo && !bookingHoursInfo.isOpen" :value="null">Library Closed ({{ bookingHoursInfo.reason }})</option>
                     <option v-for="s in TIME_SLOTS" :key="s.id" :value="s.id">{{ s.label }}</option>
                   </select>
                 </label>
@@ -265,7 +266,8 @@
             <div class="panel-card">
               <div class="panel-card-header">
                 <h2>Available for This Slot</h2>
-                <p class="panel-subtitle">{{ bookableSeats.length }} option(s) open for the selected date &amp; time.</p>
+                <p class="panel-subtitle" v-if="bookingHoursInfo && !bookingHoursInfo.isOpen">The library is closed on this date ({{ bookingHoursInfo.reason }}).</p>
+                <p class="panel-subtitle" v-else>{{ bookableSeats.length }} option(s) open for the selected date &amp; time.</p>
               </div>
 
               <div class="seat-grid" v-if="bookableSeats.length">
@@ -286,14 +288,15 @@
                   </p>
                 </button>
               </div>
-              <p class="data-list-empty" v-else>Nothing free for this combination — try another slot, zone, or type.</p>
+              <p class="data-list-empty" v-if="bookingHoursInfo && !bookingHoursInfo.isOpen">The library is closed on {{ bookingForm.date }} ({{ bookingHoursInfo.reason }}). Please choose another date.</p>
+              <p class="data-list-empty" v-else-if="!bookableSeats.length">Nothing free for this combination — try another slot, zone, or type.</p>
 
               <p class="form-error" v-if="bookingError">{{ bookingError }}</p>
 
               <div class="booking-confirm-row" v-if="selectedBookingSeat">
                 <p class="booking-selected-summary">
                   Booking <strong>{{ selectedBookingSeat.name }}</strong> for
-                  <strong>{{ bookingForm.date }}</strong>, {{ TIME_SLOTS.find(s => s.id === bookingForm.slotId).label }}
+                  <strong>{{ bookingForm.date }}</strong>, {{ (TIME_SLOTS.find(s => s.id === bookingForm.slotId) || {}).label || 'Selected Slot' }}
                 </p>
                 <button class="btn-primary btn-small" :disabled="bookingSaving" @click="confirmBooking">{{ bookingSaving ? 'Booking...' : 'Confirm Booking' }}</button>
               </div>
@@ -392,8 +395,9 @@
                     </label>
                     <label class="field">
                       <span>Time Slot</span>
-                      <select v-model="editForm.slotId">
-                        <option v-for="s in TIME_SLOTS" :key="s.id" :value="s.id">{{ s.label }}</option>
+                      <select v-model="editForm.slotId" :disabled="editHoursInfo && !editHoursInfo.isOpen">
+                        <option v-if="editHoursInfo && !editHoursInfo.isOpen" :value="null">Library Closed ({{ editHoursInfo.reason }})</option>
+                        <option v-for="s in editTimeSlots" :key="s.id" :value="s.id">{{ s.label }}</option>
                       </select>
                     </label>
                     <label class="field field-full">

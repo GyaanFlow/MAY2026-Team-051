@@ -259,10 +259,49 @@ createApp({
       });
     }
 
+    const libraryHoursConfig = ref({
+      open_time: '08:00',
+      close_time: '20:00',
+      weekly_hours: [],
+      holiday_closures: [],
+      min_booking_minutes: null,
+      max_booking_hours: null
+    });
+
+    async function loadOperatingHours() {
+      try {
+        const data = await apiFetch('/library/operating-hours');
+        if (data) {
+          libraryHoursConfig.value = {
+            open_time: data.open_time || '08:00',
+            close_time: data.close_time || '20:00',
+            weekly_hours: data.weekly_hours || [],
+            holiday_closures: data.holiday_closures || [],
+            min_booking_minutes: data.min_booking_minutes,
+            max_booking_hours: data.max_booking_hours
+          };
+          LibraryData.updateOperatingHours(data);
+        }
+      } catch (error) {
+        console.error('Failed to load operating hours:', error);
+      }
+    }
+
     async function loadSeatZones() {
       try {
         const data = await apiFetch('/library/seat-zones');
         seatZonesConfig.value = Array.isArray(data.seat_zones) ? data.seat_zones : [];
+        if (data.open_time || data.weekly_hours) {
+          libraryHoursConfig.value = {
+            open_time: data.open_time || '08:00',
+            close_time: data.close_time || '20:00',
+            weekly_hours: data.weekly_hours || [],
+            holiday_closures: data.holiday_closures || [],
+            min_booking_minutes: data.min_booking_minutes,
+            max_booking_hours: data.max_booking_hours
+          };
+          LibraryData.updateOperatingHours(data);
+        }
         remapSeatZones();
       } catch (error) {
         console.error('Failed to load seat zones:', error);
@@ -346,7 +385,9 @@ createApp({
     }
 
     function slotClock(hour) {
-      return `${String(hour).padStart(2, '0')}:00`;
+      if (typeof hour === 'string' && hour.includes(':')) return hour;
+      const totalMinutes = LibraryData.parseTimeToMinutes ? LibraryData.parseTimeToMinutes(hour) : Math.round((Number(hour) || 0) * 60);
+      return LibraryData.formatHHMM ? LibraryData.formatHHMM(totalMinutes) : `${String(Math.floor(totalMinutes / 60)).padStart(2, '0')}:${String(totalMinutes % 60).padStart(2, '0')}`;
     }
 
     function formatApiSeat(seat) {
@@ -370,7 +411,8 @@ createApp({
       const startHour = Number(String(start).slice(0, 2));
       const endHour = Number(String(end).slice(0, 2));
       return LibraryData.TIME_SLOTS.find((slot) => slot.start === startHour && slot.end === endHour)
-        || { id: `slot-${start}-${end}`, label: `${start} – ${end}`, start: startHour, end: endHour };
+        || LibraryData.slotById(`slot-${start}-${end}`)
+        || { id: `slot-${start}-${end}`, label: `${start} – ${end}`, start: startHour, end: endHour, startTime: start, endTime: end };
     }
 
     function mapBooking(data) {
@@ -443,27 +485,55 @@ createApp({
 
     const bookingForm = reactive({
       date: today,
-      slotId: 'slot-4',
+      slotId: null,
       zone: 'all',
       type: 'all',
       seatId: null
     });
 
     const bookingDateOptions = computed(() => {
-      return Array.from({ length: 7 }, (_, i) => {
+      const daysAhead = libraryHoursConfig.value.max_booking_days_ahead != null
+        ? Math.max(1, libraryHoursConfig.value.max_booking_days_ahead + 1)
+        : 7;
+      return Array.from({ length: daysAhead }, (_, i) => {
         const d = LibraryData.addDays(today, i);
-        return { value: d, label: i === 0 ? `Today · ${LibraryData.formatDateLabel(d)}` : LibraryData.formatDateLabel(d) };
+        const hours = LibraryData.getOperatingHoursForDate(d, libraryHoursConfig.value);
+        const closedSuffix = (!hours || !hours.isOpen) ? ' (Closed)' : '';
+        const baseLabel = i === 0 ? `Today · ${LibraryData.formatDateLabel(d)}` : LibraryData.formatDateLabel(d);
+        return { value: d, label: `${baseLabel}${closedSuffix}` };
       });
     });
+
+    const bookingHoursInfo = computed(() => {
+      return LibraryData.getOperatingHoursForDate(bookingForm.date, libraryHoursConfig.value);
+    });
+
+    const TIME_SLOTS = computed(() => {
+      const slots = LibraryData.getTimeSlotsForDate(bookingForm.date, libraryHoursConfig.value);
+      return slots && slots.length > 0 ? slots : LibraryData.TIME_SLOTS;
+    });
+
+    watch([() => bookingForm.date, () => TIME_SLOTS.value], ([newDate, newSlots]) => {
+      if (newSlots && newSlots.length > 0) {
+        if (!newSlots.some((s) => s.id === bookingForm.slotId)) {
+          bookingForm.slotId = newSlots[0].id;
+        }
+      } else {
+        bookingForm.slotId = null;
+      }
+    }, { immediate: true });
 
     const availableSeatsForSlot = ref([]);
     const loadingAvailability = ref(false);
 
     async function fetchBookableSeats() {
-      if (!bookingForm.date || !bookingForm.slotId) return;
+      if (!bookingForm.date || !bookingForm.slotId) {
+        availableSeatsForSlot.value = [];
+        return;
+      }
       loadingAvailability.value = true;
       try {
-        const slot = LibraryData.TIME_SLOTS.find(s => s.id === bookingForm.slotId);
+        const slot = TIME_SLOTS.value.find((s) => s.id === bookingForm.slotId) || LibraryData.slotById(bookingForm.slotId);
         if (!slot) return;
         const start_time = slotClock(slot.start);
         const end_time = slotClock(slot.end);
@@ -508,7 +578,7 @@ createApp({
         bookingError.value = 'Please select an available seat or room.';
         return;
       }
-      const slot = LibraryData.slotById(bookingForm.slotId);
+      const slot = TIME_SLOTS.value.find((s) => s.id === bookingForm.slotId) || LibraryData.slotById(bookingForm.slotId);
       if (!slot) {
         bookingError.value = 'Please choose a valid time slot.';
         return;
@@ -559,18 +629,35 @@ createApp({
     }
 
     const editingBookingId = ref(null);
-    const editForm = reactive({ date: today, slotId: 'slot-4', seatId: null });
+    const editForm = reactive({ date: today, slotId: 'slot-1', seatId: null });
     const editError = ref('');
     const editAvailableSeats = ref([]);
 
+    const editHoursInfo = computed(() => {
+      return LibraryData.getOperatingHoursForDate(editForm.date, libraryHoursConfig.value);
+    });
+
+    const editTimeSlots = computed(() => {
+      const slots = LibraryData.getTimeSlotsForDate(editForm.date, libraryHoursConfig.value);
+      return slots && slots.length > 0 ? slots : LibraryData.TIME_SLOTS;
+    });
+
     const editBookableSeats = computed(() => editAvailableSeats.value);
+
+    watch([() => editForm.date, () => editTimeSlots.value], ([newDate, newSlots]) => {
+      if (editingBookingId.value && newSlots && newSlots.length > 0) {
+        if (!newSlots.some((s) => s.id === editForm.slotId)) {
+          editForm.slotId = newSlots[0].id;
+        }
+      }
+    });
 
     async function fetchEditSeats() {
       if (!editingBookingId.value || !editForm.date || !editForm.slotId) {
         editAvailableSeats.value = [];
         return;
       }
-      const slot = LibraryData.slotById(editForm.slotId);
+      const slot = editTimeSlots.value.find((s) => s.id === editForm.slotId) || LibraryData.slotById(editForm.slotId);
       if (!slot) return;
       try {
         const data = await apiFetch(
@@ -664,7 +751,7 @@ createApp({
         editError.value = 'Please choose a seat or room.';
         return;
       }
-      const slot = LibraryData.slotById(editForm.slotId);
+      const slot = editTimeSlots.value.find((s) => s.id === editForm.slotId) || LibraryData.slotById(editForm.slotId);
       if (!slot) {
         editError.value = 'Please choose a valid time slot.';
         return;
@@ -995,6 +1082,7 @@ createApp({
    
     onMounted(() => {
       loadStudentProfile();
+      loadOperatingHours();
       loadSeatZones().then(() => refreshAvailability());
       loadMyBookings();
       loadPayments();
@@ -1006,6 +1094,7 @@ createApp({
       }, 1000 * 30);
 
       liveTimer = setInterval(() => {
+        loadOperatingHours();
         loadSeatZones();
         refreshAvailability();
       }, 30000);
@@ -1052,7 +1141,11 @@ createApp({
 
       bookingForm,
       bookingDateOptions,
-      TIME_SLOTS: LibraryData.TIME_SLOTS,
+      bookingHoursInfo,
+      TIME_SLOTS,
+      editTimeSlots,
+      editHoursInfo,
+      libraryHoursConfig,
       bookableSeats,
       selectedBookingSeat,
       bookingError,

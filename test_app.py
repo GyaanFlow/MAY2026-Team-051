@@ -1,6 +1,6 @@
 import pytest
 import json
-from datetime import date
+from datetime import date, timedelta
 from app import create_app, db
 from models import User
 from werkzeug.security import generate_password_hash
@@ -169,8 +169,9 @@ def staff_token(client, admin_token):
 @pytest.fixture
 def confirmed_booking(client, student_token):
     headers = {"Authorization": f"Bearer {student_token}"}
+    future_date = (date.today() + timedelta(days=2)).isoformat()
     response = client.post("/api/bookings", json={
-        "seat_id": 1, "date": "2026-09-01", "start_time": "10:00", "end_time": "11:00"
+        "seat_id": 1, "date": future_date, "start_time": "10:00", "end_time": "11:00"
     }, headers=headers)
     return response.get_json()["booking"]
 
@@ -253,7 +254,7 @@ def test_staff_approve_extension_reassigns_seat_on_clash(client, staff_token, st
     a seat_id fails with 409, and approving with a free seat_id reassigns the booking"""
     other_token = register_and_approve_student(client, admin_token, "blockerstudent")
     client.post("/api/bookings", json={
-        "seat_id": confirmed_booking["seat_id"], "date": "2026-09-01", "start_time": "11:00", "end_time": "12:00"
+        "seat_id": confirmed_booking["seat_id"], "date": confirmed_booking["booking_date"], "start_time": "11:00", "end_time": "12:00"
     }, headers={"Authorization": f"Bearer {other_token}"})
 
     student_headers = {"Authorization": f"Bearer {student_token}"}
@@ -1047,6 +1048,67 @@ def test_update_library_settings_invalid_hours(client, admin_token):
     }, headers=headers)
     assert response.status_code == 400
 
+def test_get_library_operating_hours_endpoint(client):
+    """Anyone can query library operating hours"""
+    response = client.get("/api/library/operating-hours")
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "open_time" in data
+    assert "close_time" in data
+    assert "weekly_hours" in data
+    assert "holiday_closures" in data
+
+def test_get_seat_zones_includes_operating_hours(client, student_token):
+    """Seat zones endpoint includes operating hours for client convenience"""
+    headers = {"Authorization": f"Bearer {student_token}"}
+    response = client.get("/api/library/seat-zones", headers=headers)
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "seat_zones" in data
+    assert "open_time" in data
+    assert "close_time" in data
+
+def test_admin_increase_operating_hours_allows_late_slot_booking(client, admin_token, student_token):
+    """Admin increases library closing time to 22:00 and student can book 20:00-22:00 slot"""
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    update_res = client.put("/api/admin/settings", json={
+        "open_time": "08:00", "close_time": "22:00"
+    }, headers=admin_headers)
+    assert update_res.status_code == 200
+
+    hours_res = client.get("/api/library/operating-hours")
+    assert hours_res.get_json()["close_time"] == "22:00"
+
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    booking_res = client.post("/api/bookings", json={
+        "seat_id": 2,
+        "date": "2026-10-15",
+        "start_time": "20:00",
+        "end_time": "22:00"
+    }, headers=student_headers)
+    assert booking_res.status_code == 201
+    booking = booking_res.get_json()["booking"]
+    assert booking["start_time"] == "20:00"
+    assert booking["end_time"] == "22:00"
+
+def test_admin_decrease_operating_hours_rejects_out_of_bounds_booking(client, admin_token, student_token):
+    """Admin decreases library closing time to 18:00; booking for 18:00-20:00 is rejected"""
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+    update_res = client.put("/api/admin/settings", json={
+        "open_time": "08:00", "close_time": "18:00"
+    }, headers=admin_headers)
+    assert update_res.status_code == 200
+
+    student_headers = {"Authorization": f"Bearer {student_token}"}
+    booking_res = client.post("/api/bookings", json={
+        "seat_id": 2,
+        "date": "2026-10-16",
+        "start_time": "18:00",
+        "end_time": "20:00"
+    }, headers=student_headers)
+    assert booking_res.status_code == 400
+    assert "operating hours" in booking_res.get_json()["message"].lower()
+
 
 # --- SEATS: CREATE / UPDATE / AVAILABILITY ---
 
@@ -1095,8 +1157,9 @@ def test_seat_availability_missing_params(client, student_token):
 def test_seat_availability_excludes_booked_seat(client, student_token, confirmed_booking):
     """A booked seat is excluded from availability for the same slot"""
     headers = {"Authorization": f"Bearer {student_token}"}
+    b_date = confirmed_booking["booking_date"]
     response = client.get(
-        "/api/seats/availability?date=2026-09-01&start_time=10:00&end_time=11:00",
+        f"/api/seats/availability?date={b_date}&start_time=10:00&end_time=11:00",
         headers=headers,
     )
     assert response.status_code == 200

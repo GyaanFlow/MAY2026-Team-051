@@ -16,7 +16,7 @@ from resources.membership import (
     MembershipPlanResource,
     StaffMembershipPlanListResource,
 )
-from resources.settings import LibrarySettingsResource, SeatZonesResource
+from resources.settings import LibrarySettingsResource, SeatZonesResource, LibraryOperatingHoursResource
 from resources.seats import SeatListResource, SeatResource, SeatAvailabilityResource, StaffSeatListResource
 from resources.profile import ProfileResource, ResetPasswordResource
 from resources.student_profile import StudentMeResource
@@ -100,6 +100,7 @@ def create_app(config_class=Config):
 
     api.add_resource(LibrarySettingsResource, "/admin/settings")
     api.add_resource(SeatZonesResource, "/library/seat-zones")
+    api.add_resource(LibraryOperatingHoursResource, "/library/operating-hours")
 
     api.add_resource(SeatListResource, "/admin/seats")
     api.add_resource(SeatResource, "/admin/seats/<int:seat_id>")

@@ -177,6 +177,16 @@ class LibrarySettingsResource(Resource):
         if has_hours:
             settings.open_time = new_open
             settings.close_time = new_close
+            if not has_weekly and settings.weekly_hours:
+                current_weekly = settings.weekly_hours_list()
+                updated_weekly = []
+                for entry in current_weekly:
+                    item = dict(entry)
+                    if item.get("is_open"):
+                        item["open_time"] = _format_hhmm(new_open)
+                        item["close_time"] = _format_hhmm(new_close)
+                    updated_weekly.append(item)
+                settings.weekly_hours = json.dumps(updated_weekly)
 
         if has_weekly:
             error, weekly_hours = _validate_weekly_hours(data.get("weekly_hours"))
@@ -246,13 +256,45 @@ class LibrarySettingsResource(Resource):
         return {"message": "Settings updated", "settings": settings.to_dict()}, 200
 
 
+class LibraryOperatingHoursResource(Resource):
+    @jwt_required(optional=True)
+    def get(self):
+        settings = LibrarySettings.query.first()
+        if not settings:
+            return {
+                "open_time": "08:00",
+                "close_time": "20:00",
+                "weekly_hours": [],
+                "holiday_closures": [],
+                "min_booking_minutes": None,
+                "max_booking_hours": None,
+            }, 200
+
+        return {
+            "open_time": settings.open_time.strftime("%H:%M") if settings.open_time else "08:00",
+            "close_time": settings.close_time.strftime("%H:%M") if settings.close_time else "20:00",
+            "weekly_hours": settings.weekly_hours_list(),
+            "holiday_closures": settings.holiday_closures_list(),
+            "min_booking_minutes": settings.min_booking_minutes,
+            "max_booking_hours": settings.max_booking_hours,
+            "max_booking_days_ahead": settings.max_booking_days_ahead,
+        }, 200
+
+
 class SeatZonesResource(Resource):
 
-    @jwt_required()
+    @jwt_required(optional=True)
     def get(self):
         settings = LibrarySettings.query.first()
         zones = settings.seat_zones_list() if settings else []
         return {
             "seat_zones": zones,
             "total_seats": settings.total_seats if settings else None,
+            "open_time": settings.open_time.strftime("%H:%M") if settings and settings.open_time else "08:00",
+            "close_time": settings.close_time.strftime("%H:%M") if settings and settings.close_time else "20:00",
+            "weekly_hours": settings.weekly_hours_list() if settings else [],
+            "holiday_closures": settings.holiday_closures_list() if settings else [],
+            "min_booking_minutes": settings.min_booking_minutes if settings else None,
+            "max_booking_hours": settings.max_booking_hours if settings else None,
+            "max_booking_days_ahead": settings.max_booking_days_ahead if settings else None,
         }, 200
