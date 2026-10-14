@@ -1,0 +1,142 @@
+// ZenStudy - Study Library Management System
+// DBML
+
+Table users {
+  user_id bigint [pk, increment]
+  username varchar(100) [unique, not null]
+  password_hash varchar(255) [not null]
+  id_type varchar(255)
+  id_number varchar(255)
+  email varchar(150)
+  phone varchar(20)
+  role varchar(20)
+  status varchar(20)
+}
+
+Table students {
+  student_id bigint [pk, increment]
+  user_id bigint [not null]
+  full_name varchar(150)
+  address text
+  membership_status varchar(20)
+}
+
+Table membership_plans {
+  plan_id bigint [pk, increment]
+  plan_name varchar(100)
+  duration_days int
+  price decimal
+}
+
+Table memberships {
+  membership_id bigint [pk, increment]
+  student_id bigint [not null]
+  plan_id bigint [not null]
+  start_date date
+  expiry_date date
+  status varchar(20)
+  approved_by bigint
+}
+
+Table seats {
+  seat_id bigint [pk, increment]
+  seat_number varchar(20) [unique]
+  status varchar(20)
+}
+
+Table bookings {
+  booking_id bigint [pk, increment]
+  student_id bigint [not null]
+  seat_id bigint [not null]
+  booking_date date
+  start_time datetime
+  end_time datetime
+  checkin_code varchar(50)
+  booking_type varchar(20)
+  booking_status varchar(20)
+}
+
+Table attendance {
+  attendance_id bigint [pk, increment]
+  booking_id bigint [not null]
+  checkin_time datetime
+  checkout_time datetime
+  verified_by bigint
+}
+
+Table extension_requests {
+  extension_request_id bigint [pk, increment]
+  booking_id bigint [not null]
+  requested_end_time datetime
+  status varchar(20)
+  approved_by bigint
+}
+
+Table payments {
+  payment_id bigint [pk, increment]
+  student_id bigint [not null]
+  membership_id bigint [not null]
+  amount decimal
+  payment_mode varchar(20)
+  payment_date datetime
+  recorded_by bigint
+}
+
+Table complaints {
+  complaint_id bigint [pk, increment]
+  student_id bigint [not null]
+  title varchar(200)
+  description text
+  status varchar(20)
+  resolved_by bigint
+}
+
+Table announcements {
+  announcement_id bigint [pk, increment]
+  title varchar(200)
+  message text
+  created_by bigint
+  created_at datetime
+}
+
+Table library_settings {
+  setting_id bigint [pk, increment]
+  open_time time
+  close_time time
+  total_seats int
+  no_show_grace_minutes int
+  cancellation_period int
+  max_booking_days_ahead int
+  extension_limit_minutes int
+  updated_by bigint
+  updated_at datetime
+}
+
+
+Relationships
+
+Ref: students.user_id > users.user_id
+
+Ref: memberships.student_id > students.student_id
+Ref: memberships.plan_id > membership_plans.plan_id
+Ref: memberships.approved_by > users.user_id
+
+Ref: bookings.student_id > students.student_id
+Ref: bookings.seat_id > seats.seat_id
+
+Ref: attendance.booking_id > bookings.booking_id
+Ref: attendance.verified_by > users.user_id
+
+Ref: extension_requests.booking_id > bookings.booking_id
+Ref: extension_requests.approved_by > users.user_id
+
+Ref: payments.student_id > students.student_id
+Ref: payments.membership_id > memberships.membership_id
+Ref: payments.recorded_by > users.user_id
+
+Ref: complaints.student_id > students.student_id
+Ref: complaints.resolved_by > users.user_id
+
+Ref: announcements.created_by > users.user_id
+
+Ref: library_settings.updated_by > users.user_id

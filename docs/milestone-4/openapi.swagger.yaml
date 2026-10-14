@@ -1,0 +1,2294 @@
+openapi: 3.0.3
+info:
+  title: ZenStudy - Study Library Management System API
+  description: |
+    Backend API for ZenStudy, a Study Library Management System
+    (Team DeerInTheCode, Team-051, IITM BS Software Engineering Project May-2026).
+
+    Documents every API currently implemented in the codebase, matching
+    proposedListOfApis.docx. All 6 epics / 23 stories are now present:
+    - Epic 1: User & Membership Management - Stories 1.1-1.5
+    - Epic 2: System Administration & Configuration - Stories 2.1-2.4
+    - Epic 3: Booking and Seat Management - Stories 3.1-3.7
+    - Epic 4: Check-in & Attendance Management - Stories 4.1-4.4
+    - Epic 5: Payment Management - Stories 5.1-5.2
+    - Epic 6: Complaints & Communication - Stories 6.1-6.3
+
+    All endpoints except POST /auth/login require a JWT bearer token
+    (Authorization: Bearer <access_token>) obtained from login; the token
+    embeds the caller's role (Admin/Staff/Student) and expires after 8 hours.
+
+    Two error shapes appear in this API: business errors return
+    {"message": "..."} (ErrorResponse); auth errors raised by
+    Flask-JWT-Extended before an endpoint runs (missing/expired/malformed
+    token) return {"msg": "..."} (JWTErrorResponse) with status 401 or 422,
+    on every protected endpoint.
+
+    KNOWN LIMITATIONS (accurately reflects current code behavior - see the
+    per-endpoint notes below for detail; none of these have been changed
+    while writing this spec, only documented):
+    - GET /admin/reports/revenue does not read the payments table. It sums
+      membership_plans.price x count of currently-Active students per plan,
+      so it does not reflect amounts actually recorded via
+      POST /staff/payments.
+    - GET /admin/reports/occupancy and GET /admin/reports/peak-hours only
+      count bookings whose status is still "Confirmed". Since check-in
+      intentionally moves a booking's status away from "Confirmed" (see
+      guide.txt section 15 item 11), a booking a student actually attended
+      today is excluded from both reports for that day. Neither endpoint
+      reads the attendance table.
+    - proposedListOfApis.docx specifies GET /admin/reports/memberships;
+      the implemented route is GET /admin/reports/membership-stats. A
+      client built against the documented path will get a 404.
+    - The complaints table no longer has a resolved_by column (it existed
+      through Story 6.1 but was dropped while Story 6.2 was built).
+      PUT /staff/complaints/{complaint_id} has no way to record which
+      staff/admin resolved a complaint.
+    - GET /announcements returns a bare JSON array, unlike every other
+      list endpoint in this API (which returns a {"total": N, ...} wrapper
+      object).
+    - PUT /admin/announcements/{announcement_id} silently keeps the old
+      title/content if you send an empty string for either, instead of
+      rejecting it with 400 the way every other PUT-a-field endpoint here
+      does.
+  version: 2.0.0
+
+servers:
+- url: http://localhost:5000/api
+  description: Local development server
+security:
+- bearerAuth: []
+x-user-stories:
+- id: US-1.1
+  actor: Admin
+  story: As an Admin, I want to create, update, and deactivate library staff
+    accounts, so that only authorized staff members can access the system.
+  api_mapping:
+  - path: /admin/staff
+    method: get
+    operationId: listStaff
+  - path: /admin/staff/{user_id}
+    method: get
+    operationId: getStaff
+  - path: /admin/staff
+    method: post
+    operationId: createStaff
+  - path: /admin/staff/{user_id}
+    method: put
+    operationId: updateStaff
+  - path: /admin/staff/{user_id}/deactivate
+    method: post
+    operationId: deactivateStaff
+- id: US-1.2
+  actor: Admin
+  story: As an Admin, I want to approve and manage student memberships, so
+    that only eligible students can use the study library.
+  api_mapping:
+  - path: /admin/memberships/pending
+    method: get
+    operationId: listPendingMemberships
+  - path: /admin/memberships
+    method: get
+    operationId: listMemberships
+  - path: /admin/memberships/{membership_id}/approve
+    method: post
+    operationId: approveMembership
+  - path: /admin/memberships/{membership_id}/reject
+    method: post
+    operationId: rejectMembership
+  - path: /admin/memberships/{membership_id}/disapprove
+    method: post
+    operationId: disapproveMembership
+  - path: /admin/memberships/{membership_id}
+    method: put
+    operationId: updateMembership
+- id: US-1.3
+  actor: Library Staff
+  story: As a Library Staff, I want to register new students and verify
+    their memberships, so that students can access the study library
+    without delays.
+  api_mapping:
+  - path: /staff/students/register
+    method: post
+    operationId: registerStudent
+  - path: /staff/students/{student_id}
+    method: get
+    operationId: getStudentByStaff
+  - path: /staff/students/{student_id}/verify
+    method: get
+    operationId: verifyStudentMembership
+- id: US-1.4
+  actor: Student
+  story: As a student, I want to securely log in to my account, reset my
+    password if needed, and view my membership details and validity, so
+    that I can securely access the system, manage my account, and know my
+    membership status and renewal date.
+  api_mapping:
+  - path: /auth/login
+    method: post
+    operationId: login
+  - path: /auth/reset-password
+    method: post
+    operationId: resetPassword
+  - path: /students/me
+    method: get
+    operationId: getStudentMe
+- id: US-1.5
+  actor: Student
+  story: As a Student, I want to update my personal details, so that my
+    contact information remains up-to-date.
+  api_mapping:
+  - path: /students/me
+    method: put
+    operationId: updateStudentMe
+- id: US-2.1
+  actor: Admin
+  story: As an Admin, I want to configure the operating hours of the study
+    library, so that students can only book and access the library during
+    working hours.
+  api_mapping:
+  - path: /admin/settings
+    method: get
+    operationId: getLibrarySettings
+  - path: /admin/settings
+    method: put
+    operationId: updateLibrarySettings
+- id: US-2.2
+  actor: Admin
+  story: As an Admin, I want to set booking limits, including the number of
+    available seats, so that occupancy is managed efficiently.
+  api_mapping:
+  - path: /admin/seats
+    method: get
+    operationId: listSeats
+  - path: /admin/seats
+    method: post
+    operationId: createSeat
+  - path: /admin/seats/{seat_id}
+    method: put
+    operationId: updateSeat
+- id: US-2.3
+  actor: Admin
+  story: As an Admin, I want to create and manage membership plans, so that
+    students can subscribe to the plan that best suits their needs.
+  api_mapping:
+  - path: /admin/membership-plans
+    method: get
+    operationId: listMembershipPlans
+  - path: /admin/membership-plans
+    method: post
+    operationId: createMembershipPlan
+  - path: /admin/membership-plans/{plan_id}
+    method: put
+    operationId: updateMembershipPlan
+  - path: /admin/membership-plans/{plan_id}
+    method: delete
+    operationId: retireMembershipPlan
+- id: US-2.4
+  actor: Admin
+  story: As an Admin, I want to view reports and statistics on occupancy,
+    peak hours, memberships, and revenue, so that I can make informed
+    operational decisions.
+  api_mapping:
+  - path: /admin/reports/occupancy
+    method: get
+    operationId: getOccupancyReport
+  - path: /admin/reports/peak-hours
+    method: get
+    operationId: getPeakHoursReport
+  - path: /admin/reports/revenue
+    method: get
+    operationId: getRevenueReport
+  - path: /admin/reports/membership-stats
+    method: get
+    operationId: getMembershipStatsReport
+- id: US-3.1
+  actor: Student
+  story: As a Student, I want to view real-time seat and study room
+    availability, so that I can choose an available space.
+  api_mapping:
+  - path: /seats/availability
+    method: get
+    operationId: getSeatAvailability
+- id: US-3.2
+  actor: Student
+  story: As a Student, I want to book study seats or rooms in advance, so
+    that I can reserve a study space before arriving.
+  api_mapping:
+  - path: /bookings
+    method: post
+    operationId: createBooking
+- id: US-3.3
+  actor: Student
+  story: As a Student, I want to modify or cancel my booking within the
+    permitted time, so that I can adjust my reservation if my plans change.
+  api_mapping:
+  - path: /bookings/{booking_id}
+    method: put
+    operationId: updateBooking
+  - path: /bookings/{booking_id}/cancel
+    method: post
+    operationId: cancelBooking
+- id: US-3.4
+  actor: Student
+  story: As a Student, I want to view my booking and attendance history, so
+    that I can review my study sessions.
+  api_mapping:
+  - path: /students/me/bookings
+    method: get
+    operationId: getStudentBookingHistory
+- id: US-3.5
+  actor: Library Staff
+  story: As a Library Staff, I want to view daily bookings and expected
+    arrivals, so that I can prepare for incoming students.
+  api_mapping:
+  - path: /staff/bookings/today
+    method: get
+    operationId: getTodaysBookings
+- id: US-3.6
+  actor: Library Staff
+  story: As a Library Staff, I want to handle same-day walk-in admissions by
+    assigning available seats, so that students without reservations can
+    use the facility.
+  api_mapping:
+  - path: /staff/bookings/walk-in
+    method: post
+    operationId: createWalkInBooking
+- id: US-3.7
+  actor: Library Staff
+  story: As a Library Staff, I want to review extension requests and either
+    extend the current booking or assign a new available seat, so that
+    students can continue their study sessions while ensuring efficient
+    seat utilization.
+  api_mapping:
+  - path: /students/me/bookings/{booking_id}/extension-request
+    method: post
+    operationId: requestBookingExtension
+  - path: /staff/extension-requests
+    method: get
+    operationId: listExtensionRequests
+  - path: /staff/extension-requests/{extension_request_id}/approve
+    method: post
+    operationId: approveExtensionRequest
+  - path: /staff/extension-requests/{extension_request_id}/reject
+    method: post
+    operationId: rejectExtensionRequest
+- id: US-4.1-4.2
+  actor: Student / Library Staff
+  story: As a student, I want to present my unique check-in code to the
+    library staff, so that my attendance can be verified before I access
+    the study library. As a Library Staff, I want to verify booking details
+    using the student's check-in code, so that only students with valid
+    bookings are checked in.
+  api_mapping:
+  - path: /staff/checkin
+    method: post
+    operationId: staffCheckin
+- id: US-4.3
+  actor: Library Staff
+  story: As a Library Staff, I want to mark no-show bookings after waiting
+    time and release reserved seats, so that unused seats become available
+    to other students.
+  api_mapping:
+  - path: /staff/bookings/no-show-candidates
+    method: get
+    operationId: listNoShowCandidates
+  - path: /staff/bookings/{booking_id}/no-show
+    method: post
+    operationId: markNoShow
+- id: US-4.4
+  actor: Student
+  story: As a Student, I want to check out after completing my study
+    session, so that my attendance is recorded accurately and my seat
+    becomes available for other students.
+  api_mapping:
+  - path: /bookings/{booking_id}/checkout
+    method: post
+    operationId: checkoutBooking
+- id: US-5.1
+  actor: Library Staff
+  story: As a Library Staff, I want to record student payments and specify
+    the payment mode, such as cash, UPI, or card, so that all transactions
+    are documented accurately.
+  api_mapping:
+  - path: /staff/payments
+    method: post
+    operationId: recordPayment
+- id: US-5.2
+  actor: Student
+  story: As a Student, I want to view my payment history, so that I can
+    keep track of all my library transactions.
+  api_mapping:
+  - path: /students/me/payments
+    method: get
+    operationId: getOwnPaymentHistory
+  - path: /staff/students/{student_id}/payments
+    method: get
+    operationId: getStudentPaymentHistory
+- id: US-6.1
+  actor: Student
+  story: As a Student, I want to raise complaints to the library staff, so
+    that my issues can be addressed promptly.
+  api_mapping:
+  - path: /students/me/complaints
+    method: post
+    operationId: submitComplaint
+- id: US-6.2
+  actor: Library Staff
+  story: As a Library Staff, I want to view and resolve student complaints,
+    so that reported issues are handled efficiently and in a timely manner.
+  api_mapping:
+  - path: /staff/complaints
+    method: get
+    operationId: listComplaints
+  - path: /staff/complaints/{complaint_id}
+    method: put
+    operationId: updateComplaint
+- id: US-6.3
+  actor: Admin
+  story: As an Admin, I want to create and manage announcements and
+    notifications, so that important information can be communicated to
+    all users.
+  api_mapping:
+  - path: /admin/announcements
+    method: post
+    operationId: createAnnouncement
+  - path: /announcements
+    method: get
+    operationId: listAnnouncements
+  - path: /admin/announcements/{announcement_id}
+    method: put
+    operationId: updateAnnouncement
+  - path: /admin/announcements/{announcement_id}
+    method: delete
+    operationId: deleteAnnouncement
+paths:
+  /auth/login:
+    post:
+      operationId: login
+      summary: Log in
+      security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Missing username/password, or body not JSON
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid username or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Account is deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      summary: Reset own password (any logged-in role)
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401':
+          description: Old password is wrong, or missing/expired token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /profile:
+    get:
+      operationId: getProfile
+      summary: Get own profile (Admin/Staff only - Students get 403, use /students/me)
+      tags: [Profile]
+      responses:
+        '200':
+          description: Own user record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateProfile
+      summary: Update own profile (Admin/Staff only)
+      tags: [Profile]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/staff:
+    get:
+      operationId: listStaff
+      summary: List all staff accounts (Admin only)
+      tags: [Staff]
+      responses:
+        '200':
+          description: Staff list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createStaff
+      summary: Create a staff account (Admin only)
+      tags: [Staff]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffCreateRequest'
+      responses:
+        '201':
+          description: Staff created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Username already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/staff/{user_id}:
+    parameters:
+    - name: user_id
+      in: path
+      required: true
+      schema: { type: integer }
+    get:
+      operationId: getStaff
+      summary: Get one staff member (Admin only)
+      tags: [Staff]
+      responses:
+        '200':
+          description: Staff record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateStaff
+      summary: Update a staff member's details (Admin only)
+      tags: [Staff]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StaffUpdateRequest' }
+      responses:
+        '200':
+          description: Updated staff record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/staff/{user_id}/deactivate:
+    parameters:
+    - name: user_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: deactivateStaff
+      summary: Deactivate a staff account (Admin only; no reactivate route exists)
+      tags: [Staff]
+      responses:
+        '200':
+          description: Staff deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  user: { $ref: '#/components/schemas/User' }
+        '400':
+          description: Already deactivated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/membership-plans:
+    get:
+      operationId: listMembershipPlans
+      summary: List all plans, including retired ones (Admin only)
+      tags: [Membership Plans]
+      responses:
+        '200':
+          description: Plan list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MembershipPlan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createMembershipPlan
+      summary: Create a membership plan (Admin only)
+      tags: [Membership Plans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipPlanCreateRequest' }
+      responses:
+        '201':
+          description: Plan created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipPlan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/membership-plans/{plan_id}:
+    parameters:
+    - name: plan_id
+      in: path
+      required: true
+      schema: { type: integer }
+    put:
+      operationId: updateMembershipPlan
+      summary: Edit an existing plan (Admin only)
+      tags: [Membership Plans]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipPlanUpdateRequest' }
+      responses:
+        '200':
+          description: Updated plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipPlan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: retireMembershipPlan
+      summary: Retire (soft-delete) a plan; does not hard-delete the row (Admin only)
+      tags: [Membership Plans]
+      responses:
+        '200':
+          description: Plan retired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  plan: { $ref: '#/components/schemas/MembershipPlan' }
+        '400':
+          description: Plan already retired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /students/me:
+    get:
+      operationId: getStudentMe
+      summary: Get own profile + membership validity (Student only)
+      tags: [Student Self-Service]
+      responses:
+        '200':
+          description: Own student record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StudentMe' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateStudentMe
+      summary: Update own contact/profile details (Student only)
+      tags: [Student Self-Service]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentUpdateRequest' }
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  student: { $ref: '#/components/schemas/Student' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /staff/students/register:
+    post:
+      operationId: registerStudent
+      summary: Register a new student - creates users + students rows (Staff or Admin)
+      tags: [Staff-Students]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StudentRegisterRequest' }
+      responses:
+        '201':
+          description: Student registered, membership_status starts Pending
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  student: { $ref: '#/components/schemas/Student' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: plan_id given but not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Username already taken
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /staff/students/{student_id}:
+    parameters:
+    - name: student_id
+      in: path
+      required: true
+      schema: { type: integer }
+    get:
+      operationId: getStudentByStaff
+      summary: View a student's profile & membership status (Staff or Admin)
+      tags: [Staff-Students]
+      responses:
+        '200':
+          description: Student record (with username/email/phone joined in)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Student' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /staff/students/{student_id}/verify:
+    parameters:
+    - name: student_id
+      in: path
+      required: true
+      schema: { type: integer }
+    get:
+      operationId: verifyStudentMembership
+      summary: Verify a student's membership validity (Staff or Admin)
+      tags: [Staff-Students]
+      responses:
+        '200':
+          description: Membership validity
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipVerifyResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /staff/students/{student_id}/payments:
+    parameters:
+    - name: student_id
+      in: path
+      required: true
+      schema: { type: integer }
+    get:
+      operationId: getStudentPaymentHistory
+      summary: View a specific student's payment history, newest first (Staff or Admin)
+      tags: [Payments]
+      responses:
+        '200':
+          description: Payment history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student_id: { type: integer }
+                  full_name: { type: string }
+                  total_payments: { type: integer }
+                  payments:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/memberships/pending:
+    get:
+      operationId: listPendingMemberships
+      summary: List membership requests awaiting approval (Admin only)
+      tags: [Memberships]
+      responses:
+        '200':
+          description: Pending students
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Student' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/memberships:
+    get:
+      operationId: listMemberships
+      summary: List/filter all memberships (Admin only)
+      tags: [Memberships]
+      parameters:
+      - name: status
+        in: query
+        required: false
+        description: Pending / Active / Rejected / Disapproved
+        schema: { type: string }
+      responses:
+        '200':
+          description: Students matching the filter
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Student' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/memberships/{membership_id}/approve:
+    parameters:
+    - name: membership_id
+      in: path
+      required: true
+      description: This is the student_id - there is no separate memberships table
+      schema: { type: integer }
+    post:
+      operationId: approveMembership
+      summary: Approve a student's membership, setting membership_expiry (Admin only)
+      tags: [Memberships]
+      responses:
+        '200':
+          description: Membership approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  student: { $ref: '#/components/schemas/Student' }
+        '400':
+          description: Membership already active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/memberships/{membership_id}/reject:
+    parameters:
+    - name: membership_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: rejectMembership
+      summary: Reject a pending membership request - only from Pending (Admin only)
+      tags: [Memberships]
+      responses:
+        '200':
+          description: Membership rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  student: { $ref: '#/components/schemas/Student' }
+        '400':
+          description: Only pending memberships can be rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/memberships/{membership_id}/disapprove:
+    parameters:
+    - name: membership_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: disapproveMembership
+      summary: Disapprove an active membership - only from Active (Admin only)
+      tags: [Memberships]
+      responses:
+        '200':
+          description: Membership disapproved, expiry cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  student: { $ref: '#/components/schemas/Student' }
+        '400':
+          description: Only active memberships can be disapproved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/memberships/{membership_id}:
+    parameters:
+    - name: membership_id
+      in: path
+      required: true
+      schema: { type: integer }
+    put:
+      operationId: updateMembership
+      summary: Extend/modify an existing membership (Admin only)
+      tags: [Memberships]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MembershipUpdateRequest' }
+      responses:
+        '200':
+          description: Membership updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  student: { $ref: '#/components/schemas/Student' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/settings:
+    get:
+      operationId: getLibrarySettings
+      summary: Fetch current library_settings row (Admin only)
+      tags: [Settings]
+      responses:
+        '200':
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LibrarySettings' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Settings row not yet seeded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    put:
+      operationId: updateLibrarySettings
+      summary: Update operating hours (Admin only). No route exists yet for
+        total_seats, no_show_grace_minutes, cancellation_period,
+        max_booking_days_ahead, or extension_limit_minutes - those are only
+        settable directly in the DB.
+      tags: [Settings]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LibrarySettingsUpdateRequest' }
+      responses:
+        '200':
+          description: Operating hours updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  settings: { $ref: '#/components/schemas/LibrarySettings' }
+        '400':
+          description: Bad HH:MM format, or close_time not after open_time
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/seats:
+    get:
+      operationId: listSeats
+      summary: List all seats with seat_type/is_active (Admin only)
+      tags: [Seats]
+      responses:
+        '200':
+          description: Seat list
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Seat' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createSeat
+      summary: Add a new seat to inventory (Admin only)
+      tags: [Seats]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeatCreateRequest' }
+      responses:
+        '201':
+          description: Seat created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Seat' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: seat_number already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/seats/{seat_id}:
+    parameters:
+    - name: seat_id
+      in: path
+      required: true
+      schema: { type: integer }
+    put:
+      operationId: updateSeat
+      summary: Change a seat's is_active flag and/or seat_type (Admin only).
+        seat_number is not renameable via this route.
+      tags: [Seats]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeatUpdateRequest' }
+      responses:
+        '200':
+          description: Seat updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  seat: { $ref: '#/components/schemas/Seat' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/reports/occupancy:
+    get:
+      operationId: getOccupancyReport
+      summary: Occupancy trend for the last 7 days (Admin only)
+      description: |
+        CAVEAT: counts bookings whose status is still "Confirmed" for each
+        of the last 7 days, grouped by booking_date. It does not read the
+        attendance table. Because check-in moves a booking's status away
+        from "Confirmed", a booking that was actually attended today will
+        not appear here - see the Known Limitations note at the top of
+        this document.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Daily booking counts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OccupancyReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/peak-hours:
+    get:
+      operationId: getPeakHoursReport
+      summary: Booking counts grouped by start_time hour, all-time (Admin only)
+      description: |
+        CAVEAT: only counts bookings whose status is still "Confirmed", for
+        the same reason described on /admin/reports/occupancy - see the
+        Known Limitations note at the top of this document.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Hour-of-day breakdown
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PeakHoursReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/revenue:
+    get:
+      operationId: getRevenueReport
+      summary: Revenue summary by plan (Admin only)
+      description: |
+        CAVEAT: this is plan.price x count of currently-Active students per
+        plan, not a sum of the payments table - see the Known Limitations
+        note at the top of this document. It does not reflect amounts
+        actually recorded via POST /staff/payments.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Revenue by plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RevenueReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/reports/membership-stats:
+    get:
+      operationId: getMembershipStatsReport
+      summary: Student counts grouped by membership_status (Admin only)
+      description: |
+        NOTE: proposedListOfApis.docx specifies this route as
+        GET /admin/reports/memberships; the implemented path is
+        /admin/reports/membership-stats instead - see the Known
+        Limitations note at the top of this document.
+      tags: [Reports]
+      responses:
+        '200':
+          description: Membership status breakdown
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MembershipStatsReport' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /seats/availability:
+    get:
+      operationId: getSeatAvailability
+      summary: Real-time seat availability for a slot (any logged-in role)
+      tags: [Bookings]
+      parameters:
+      - name: date
+        in: query
+        required: true
+        schema: { type: string, format: date, example: '2026-09-01' }
+      - name: start_time
+        in: query
+        required: true
+        schema: { type: string, example: '10:00' }
+      - name: end_time
+        in: query
+        required: true
+        schema: { type: string, example: '11:00' }
+      responses:
+        '200':
+          description: Available seats for that window
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatAvailabilityResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /bookings:
+    post:
+      operationId: createBooking
+      summary: Create an advance booking, generating a checkin_code (any logged-in role)
+      tags: [Bookings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingCreateRequest' }
+      responses:
+        '201':
+          description: Booking created (Confirmed)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  booking: { $ref: '#/components/schemas/Booking' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Seat not found or inactive
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Seat already booked for this time slot
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /bookings/{booking_id}:
+    parameters:
+    - name: booking_id
+      in: path
+      required: true
+      schema: { type: integer }
+    put:
+      operationId: updateBooking
+      summary: Modify a Confirmed booking's date/time (owning student, or Staff/Admin)
+      tags: [Bookings]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingUpdateRequest' }
+      responses:
+        '200':
+          description: Booking updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  booking: { $ref: '#/components/schemas/Booking' }
+        '400':
+          description: Bad date/time, or booking not Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Not your booking
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: New slot clashes with another booking on that seat
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /bookings/{booking_id}/cancel:
+    parameters:
+    - name: booking_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: cancelBooking
+      summary: Cancel a booking, freeing the seat (owning student, or Staff/Admin)
+      tags: [Bookings]
+      responses:
+        '200':
+          description: Booking cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  booking: { $ref: '#/components/schemas/Booking' }
+        '400':
+          description: Already cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Not your booking
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /bookings/{booking_id}/checkout:
+    parameters:
+    - name: booking_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: checkoutBooking
+      summary: Close out a Checked-In booking (owning student, or Staff/Admin)
+      tags: [Check-in & Attendance]
+      responses:
+        '200':
+          description: Checked out, attendance record closed, booking Completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  attendance:
+                    allOf:
+                    - $ref: '#/components/schemas/Attendance'
+                    - type: object
+                      properties:
+                        booking: { $ref: '#/components/schemas/Booking' }
+                        seat_number: { type: string }
+                        full_name: { type: string }
+                        username: { type: string }
+        '400':
+          description: Booking not currently Checked-In
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Not your booking
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Booking not found, or no open attendance record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /students/me/bookings:
+    get:
+      operationId: getStudentBookingHistory
+      summary: Full booking history for the logged-in student, newest first (Student only)
+      tags: [Bookings]
+      responses:
+        '200':
+          description: Booking history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_bookings: { type: integer }
+                  bookings:
+                    type: array
+                    items:
+                      allOf:
+                      - $ref: '#/components/schemas/Booking'
+                      - type: object
+                        properties:
+                          seat_number: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /staff/bookings/today:
+    get:
+      operationId: getTodaysBookings
+      summary: Today's Confirmed bookings, earliest first (Staff or Admin)
+      tags: [Bookings]
+      responses:
+        '200':
+          description: Today's bookings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: { type: string, format: date }
+                  total_expected: { type: integer }
+                  bookings:
+                    type: array
+                    items:
+                      allOf:
+                      - $ref: '#/components/schemas/Booking'
+                      - type: object
+                        properties:
+                          seat_number: { type: string }
+                          username: { type: string }
+                          full_name: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /staff/bookings/walk-in:
+    post:
+      operationId: createWalkInBooking
+      summary: Auto-assign a free seat right now for a walk-in student (Staff or Admin)
+      tags: [Bookings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WalkInRequest' }
+      responses:
+        '201':
+          description: Walk-in booking created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  booking:
+                    allOf:
+                    - $ref: '#/components/schemas/Booking'
+                    - type: object
+                      properties:
+                        seat_number: { type: string }
+                        full_name: { type: string }
+        '400':
+          description: Missing/invalid student_id or duration, or membership not Active
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Student not found, or no seats configured
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: No free seat available right now
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /staff/bookings/no-show-candidates:
+    get:
+      operationId: listNoShowCandidates
+      summary: List overdue Confirmed bookings past the no-show grace period (Staff or Admin)
+      tags: [Check-in & Attendance]
+      responses:
+        '200':
+          description: Candidates for no-show
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NoShowCandidatesResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /staff/bookings/{booking_id}/no-show:
+    parameters:
+    - name: booking_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: markNoShow
+      summary: Mark a Confirmed booking No-Show once past the grace cutoff, releasing the seat (Staff or Admin)
+      tags: [Check-in & Attendance]
+      responses:
+        '200':
+          description: Marked No-Show
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  booking:
+                    allOf:
+                    - $ref: '#/components/schemas/Booking'
+                    - type: object
+                      properties:
+                        seat_number: { type: string }
+                        full_name: { type: string }
+                        username: { type: string }
+        '400':
+          description: Booking not Confirmed, or still within the grace period
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /students/me/bookings/{booking_id}/extension-request:
+    parameters:
+    - name: booking_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: requestBookingExtension
+      summary: Request an extension on your own Confirmed booking (Student only)
+      tags: [Extension Requests]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExtensionRequestCreate' }
+      responses:
+        '201':
+          description: Extension request submitted (Pending)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  extension_request: { $ref: '#/components/schemas/ExtensionRequest' }
+        '400':
+          description: Missing/bad time, booking not Confirmed, requested time not
+            after current end, or exceeds extension_limit_minutes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Booking not found or not yours
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: An extension request is already Pending for this booking
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /staff/extension-requests:
+    get:
+      operationId: listExtensionRequests
+      summary: List extension requests, defaulting to Pending (Staff or Admin)
+      tags: [Extension Requests]
+      parameters:
+      - name: status
+        in: query
+        required: false
+        description: Pending (default) / Approved / Rejected
+        schema: { type: string }
+      responses:
+        '200':
+          description: Extension requests, annotated with booking/seat/student context
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  extension_requests:
+                    type: array
+                    items:
+                      allOf:
+                      - $ref: '#/components/schemas/ExtensionRequest'
+                      - type: object
+                        properties:
+                          booking_date: { type: string, format: date }
+                          current_end_time: { type: string }
+                          seat_id: { type: integer }
+                          seat_number: { type: string }
+                          full_name: { type: string }
+                          username: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /staff/extension-requests/{extension_request_id}/approve:
+    parameters:
+    - name: extension_request_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: approveExtensionRequest
+      summary: Approve - extend the same seat, or reassign with seat_id (Staff or Admin)
+      tags: [Extension Requests]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExtensionApproveRequest' }
+      responses:
+        '200':
+          description: Extension approved (and reassigned, if seat_id given)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  extension_request: { $ref: '#/components/schemas/ExtensionRequest' }
+                  booking: { $ref: '#/components/schemas/Booking' }
+        '400':
+          description: Request already resolved, or booking no longer Confirmed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Request or seat not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Seat clash - retry with a free seat_id to reassign
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /staff/extension-requests/{extension_request_id}/reject:
+    parameters:
+    - name: extension_request_id
+      in: path
+      required: true
+      schema: { type: integer }
+    post:
+      operationId: rejectExtensionRequest
+      summary: Reject an extension request; underlying booking is untouched (Staff or Admin)
+      tags: [Extension Requests]
+      responses:
+        '200':
+          description: Extension request rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  extension_request: { $ref: '#/components/schemas/ExtensionRequest' }
+        '400':
+          description: Already resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /staff/checkin:
+    post:
+      operationId: staffCheckin
+      summary: Verify a checkin_code, create an attendance row, flip status to
+        Checked-In (Staff or Admin). Booking must be dated today.
+      tags: [Check-in & Attendance]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkin_code]
+              properties:
+                checkin_code: { type: string }
+      responses:
+        '201':
+          description: Check-in successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  attendance:
+                    allOf:
+                    - $ref: '#/components/schemas/Attendance'
+                    - type: object
+                      properties:
+                        booking: { $ref: '#/components/schemas/Booking' }
+                        seat_number: { type: string }
+                        full_name: { type: string }
+                        username: { type: string }
+        '400':
+          description: Missing checkin_code, booking not Confirmed, or not dated today
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Unknown checkin_code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /staff/payments:
+    post:
+      operationId: recordPayment
+      summary: Record an offline payment against a student (Staff or Admin).
+        payment_date and recorded_by are always server-set.
+      tags: [Payments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentCreateRequest' }
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  payment:
+                    allOf:
+                    - $ref: '#/components/schemas/Payment'
+                    - type: object
+                      properties:
+                        full_name: { type: string }
+        '400':
+          description: Missing/invalid student_id, non-positive amount, or invalid payment_mode
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /students/me/payments:
+    get:
+      operationId: getOwnPaymentHistory
+      summary: Full payment history for the logged-in student, newest first (Student only)
+      tags: [Payments]
+      responses:
+        '200':
+          description: Payment history (empty list if none recorded)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_payments: { type: integer }
+                  payments:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payment' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /students/me/complaints:
+    post:
+      operationId: submitComplaint
+      summary: Submit a complaint against your own account (Student only)
+      tags: [Complaints]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplaintCreateRequest' }
+      responses:
+        '201':
+          description: Complaint submitted (status Open)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  complaint: { $ref: '#/components/schemas/Complaint' }
+        '400':
+          description: Missing/empty title or description
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /staff/complaints:
+    get:
+      operationId: listComplaints
+      summary: List/filter complaints by status (Staff or Admin)
+      tags: [Complaints]
+      parameters:
+      - name: status
+        in: query
+        required: false
+        description: Open / InProgress / Resolved
+        schema: { type: string }
+      responses:
+        '200':
+          description: Complaints, newest first, annotated with the submitting
+            student's username/role
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total_complaints: { type: integer }
+                  complaints:
+                    type: array
+                    items:
+                      allOf:
+                      - $ref: '#/components/schemas/Complaint'
+                      - type: object
+                        properties:
+                          username: { type: string }
+                          role: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /staff/complaints/{complaint_id}:
+    parameters:
+    - name: complaint_id
+      in: path
+      required: true
+      schema: { type: integer }
+    put:
+      operationId: updateComplaint
+      summary: Update a complaint's status (Staff or Admin)
+      description: |
+        CAVEAT: the complaints table has no resolved_by column, so there is
+        no record of which staff/admin resolved the complaint - see the
+        Known Limitations note at the top of this document.
+      tags: [Complaints]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ComplaintUpdateRequest' }
+      responses:
+        '200':
+          description: Complaint updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  complaint: { $ref: '#/components/schemas/Complaint' }
+        '400':
+          description: status missing or not one of Open/InProgress/Resolved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/announcements:
+    post:
+      operationId: createAnnouncement
+      summary: Create an announcement (Admin only)
+      tags: [Announcements]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementCreateRequest' }
+      responses:
+        '201':
+          description: Announcement created (is_active true)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  announcement: { $ref: '#/components/schemas/Announcement' }
+        '400':
+          description: Missing title or content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /announcements:
+    get:
+      operationId: listAnnouncements
+      summary: Fetch active announcements, newest first (any logged-in role)
+      description: |
+        CAVEAT: returns a bare JSON array, unlike every comparable list
+        endpoint in this API - see the Known Limitations note at the top
+        of this document.
+      tags: [Announcements]
+      responses:
+        '200':
+          description: Active announcements
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Announcement' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/announcements/{announcement_id}:
+    parameters:
+    - name: announcement_id
+      in: path
+      required: true
+      schema: { type: integer }
+    put:
+      operationId: updateAnnouncement
+      summary: Edit an announcement (Admin only)
+      description: |
+        CAVEAT: sending an empty string for title or content is silently
+        ignored (the old value is kept) rather than rejected with 400 -
+        see the Known Limitations note at the top of this document.
+      tags: [Announcements]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementUpdateRequest' }
+      responses:
+        '200':
+          description: Announcement updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  announcement: { $ref: '#/components/schemas/Announcement' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteAnnouncement
+      summary: Remove an announcement (Admin only, hard delete)
+      tags: [Announcements]
+      responses:
+        '200':
+          description: Announcement deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Missing/invalid fields, or body not JSON
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Unauthorized:
+      description: Missing, expired, or malformed token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/JWTErrorResponse' }
+    Forbidden:
+      description: Caller's role is not permitted on this route
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Conflicts with existing data
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message: { type: string }
+    JWTErrorResponse:
+      type: object
+      properties:
+        msg: { type: string }
+    MessageResponse:
+      type: object
+      properties:
+        message: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    LoginResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+    ResetPasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password: { type: string }
+        new_password: { type: string }
+
+    User:
+      type: object
+      properties:
+        user_id: { type: integer }
+        username: { type: string }
+        email: { type: string }
+        id_type: { type: string, nullable: true }
+        id_number: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        role: { type: string, enum: [Admin, Staff, Student] }
+        status: { type: boolean, description: 'true = active, false = deactivated' }
+    ProfileUpdateRequest:
+      type: object
+      properties:
+        email: { type: string }
+        phone: { type: string }
+    StaffCreateRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        email: { type: string }
+        id_type: { type: string }
+        id_number: { type: string }
+        phone: { type: string }
+    StaffUpdateRequest:
+      type: object
+      properties:
+        email: { type: string }
+        id_type: { type: string }
+        id_number: { type: string }
+        phone: { type: string }
+        password: { type: string }
+
+    MembershipPlan:
+      type: object
+      properties:
+        plan_id: { type: integer }
+        plan_name: { type: string }
+        duration_days: { type: integer }
+        price: { type: number, format: float }
+        is_active: { type: boolean }
+    MembershipPlanCreateRequest:
+      type: object
+      required: [plan_name, duration_days, price]
+      properties:
+        plan_name: { type: string }
+        duration_days: { type: integer, minimum: 1 }
+        price: { type: number, minimum: 0 }
+    MembershipPlanUpdateRequest:
+      type: object
+      properties:
+        plan_name: { type: string }
+        duration_days: { type: integer, minimum: 1 }
+        price: { type: number, minimum: 0 }
+
+    Student:
+      type: object
+      properties:
+        student_id: { type: integer }
+        user_id: { type: integer }
+        full_name: { type: string }
+        address: { type: string, nullable: true }
+        membership_status: { type: string, enum: [Pending, Active, Rejected, Disapproved] }
+        plan_id: { type: integer, nullable: true }
+        membership_expiry: { type: string, format: date, nullable: true }
+        username: { type: string, description: 'joined in on staff-facing routes' }
+        email: { type: string, description: 'joined in on staff-facing routes' }
+        phone: { type: string, description: 'joined in on staff-facing routes' }
+    StudentMe:
+      allOf:
+      - $ref: '#/components/schemas/Student'
+      - type: object
+        properties:
+          membership_valid: { type: boolean }
+    StudentRegisterRequest:
+      type: object
+      required: [username, password, email, full_name]
+      properties:
+        username: { type: string }
+        password: { type: string }
+        email: { type: string }
+        full_name: { type: string }
+        address: { type: string }
+        plan_id: { type: integer }
+        id_type: { type: string }
+        id_number: { type: string }
+        phone: { type: string }
+    StudentUpdateRequest:
+      type: object
+      properties:
+        email: { type: string }
+        phone: { type: string }
+        full_name: { type: string }
+        address: { type: string }
+    MembershipVerifyResponse:
+      type: object
+      properties:
+        status: { type: string }
+        valid: { type: boolean }
+        membership_expiry: { type: string, format: date, nullable: true }
+    MembershipUpdateRequest:
+      type: object
+      description: Any one of the three fields
+      properties:
+        plan_id: { type: integer, nullable: true }
+        extend_days: { type: integer }
+        membership_expiry: { type: string, format: date }
+
+    LibrarySettings:
+      type: object
+      properties:
+        setting_id: { type: integer }
+        open_time: { type: string, nullable: true, example: '09:00' }
+        close_time: { type: string, nullable: true, example: '21:00' }
+        total_seats: { type: integer, nullable: true, description: 'not yet managed by any story' }
+        no_show_grace_minutes: { type: integer, nullable: true, description: 'settable only directly in the DB' }
+        cancellation_period: { type: integer, nullable: true, description: 'not yet managed by any story' }
+        max_booking_days_ahead: { type: integer, nullable: true, description: 'not yet managed by any story' }
+        extension_limit_minutes: { type: integer, nullable: true, description: 'settable only directly in the DB' }
+        updated_by: { type: integer, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+    LibrarySettingsUpdateRequest:
+      type: object
+      properties:
+        open_time: { type: string, example: '09:00' }
+        close_time: { type: string, example: '21:00' }
+
+    Seat:
+      type: object
+      properties:
+        seat_id: { type: integer }
+        seat_number: { type: string }
+        seat_type: { type: string, nullable: true }
+        is_active: { type: boolean }
+    SeatCreateRequest:
+      type: object
+      required: [seat_number]
+      properties:
+        seat_number: { type: string }
+        seat_type: { type: string }
+        is_active: { type: boolean, default: true }
+    SeatUpdateRequest:
+      type: object
+      properties:
+        is_active: { type: boolean }
+        seat_type: { type: string }
+    SeatAvailabilityResponse:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        start_time: { type: string }
+        end_time: { type: string }
+        available_seats:
+          type: array
+          items: { $ref: '#/components/schemas/Seat' }
+        total_available: { type: integer }
+
+    Booking:
+      type: object
+      properties:
+        booking_id: { type: integer }
+        user_id: { type: integer }
+        seat_id: { type: integer }
+        booking_date: { type: string, format: date }
+        start_time: { type: string }
+        end_time: { type: string }
+        checkin_code: { type: string }
+        status: { type: string, enum: [Confirmed, Checked-In, Cancelled, No-Show, Completed] }
+        created_at: { type: string, format: date-time }
+    BookingCreateRequest:
+      type: object
+      required: [seat_id, date, start_time, end_time]
+      properties:
+        seat_id: { type: integer }
+        date: { type: string, format: date }
+        start_time: { type: string }
+        end_time: { type: string }
+    BookingUpdateRequest:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        start_time: { type: string }
+        end_time: { type: string }
+    WalkInRequest:
+      type: object
+      required: [student_id]
+      properties:
+        student_id: { type: integer }
+        duration_minutes: { type: integer, default: 60 }
+
+    Attendance:
+      type: object
+      properties:
+        attendance_id: { type: integer }
+        booking_id: { type: integer }
+        checkin_time: { type: string, format: date-time, nullable: true }
+        checkout_time: { type: string, format: date-time, nullable: true }
+        verified_by: { type: integer, nullable: true }
+    NoShowCandidatesResponse:
+      type: object
+      properties:
+        grace_minutes: { type: integer }
+        total_candidates: { type: integer }
+        candidates:
+          type: array
+          items:
+            allOf:
+            - $ref: '#/components/schemas/Booking'
+            - type: object
+              properties:
+                seat_number: { type: string }
+                full_name: { type: string }
+                username: { type: string }
+                minutes_overdue: { type: integer }
+
+    ExtensionRequest:
+      type: object
+      properties:
+        extension_request_id: { type: integer }
+        booking_id: { type: integer }
+        requested_end_time: { type: string }
+        status: { type: string, enum: [Pending, Approved, Rejected] }
+        approved_by: { type: integer, nullable: true }
+        requested_at: { type: string, format: date-time }
+    ExtensionRequestCreate:
+      type: object
+      required: [requested_end_time]
+      properties:
+        requested_end_time: { type: string, example: '11:30' }
+    ExtensionApproveRequest:
+      type: object
+      description: If omitted, tries to extend on the booking's current seat
+      properties:
+        seat_id: { type: integer }
+
+    Payment:
+      type: object
+      properties:
+        payment_id: { type: integer }
+        student_id: { type: integer }
+        amount: { type: number, format: float }
+        payment_mode: { type: string, enum: [Cash, UPI, Card] }
+        payment_date: { type: string, format: date-time }
+        recorded_by: { type: integer, nullable: true }
+    PaymentCreateRequest:
+      type: object
+      required: [student_id, amount, payment_mode]
+      properties:
+        student_id: { type: integer }
+        amount: { type: number, minimum: 0.01 }
+        payment_mode: { type: string, enum: [Cash, UPI, Card] }
+
+    Complaint:
+      type: object
+      description: |
+        NOTE: no resolved_by field exists (removed from the schema while
+        Story 6.2 was built) - see the Known Limitations note at the top
+        of this document.
+      properties:
+        complaint_id: { type: integer }
+        student_id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [Open, InProgress, Resolved] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ComplaintCreateRequest:
+      type: object
+      required: [title, description]
+      properties:
+        title: { type: string }
+        description: { type: string }
+    ComplaintUpdateRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [Open, InProgress, Resolved] }
+
+    Announcement:
+      type: object
+      properties:
+        announcement_id: { type: integer }
+        title: { type: string }
+        content: { type: string }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AnnouncementCreateRequest:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string }
+        content: { type: string }
+    AnnouncementUpdateRequest:
+      type: object
+      properties:
+        title: { type: string }
+        content: { type: string }
+        is_active: { type: boolean }
+
+    OccupancyReport:
+      type: object
+      properties:
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+        occupancy:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string, format: date }
+              bookings: { type: integer }
+    PeakHoursReport:
+      type: object
+      properties:
+        peak_hours:
+          type: array
+          items:
+            type: object
+            properties:
+              hour: { type: string, example: '09' }
+              bookings: { type: integer }
+    RevenueReport:
+      type: object
+      properties:
+        total_revenue: { type: number, format: float }
+        by_plan:
+          type: array
+          items:
+            type: object
+            properties:
+              plan_name: { type: string }
+              active_members: { type: integer }
+              revenue: { type: number, format: float }
+    MembershipStatsReport:
+      type: object
+      properties:
+        total_students: { type: integer }
+        by_status:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { type: string }
+              count: { type: integer }

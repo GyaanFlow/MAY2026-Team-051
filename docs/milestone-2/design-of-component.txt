@@ -1,0 +1,88 @@
+DESIGN OF COMPONENTS
+
+1. Student Component (Booking, Membership & Self-Service APIs)
+
+• Securely log in to the study library portal and manage account credentials.
+• View membership details, membership validity, and subscribed membership plan.
+• Update personal profile and contact information.
+• View real-time seat and study room availability before visiting the library.
+• Reserve study seats or study rooms in advance.
+• Modify or cancel bookings within the permitted time period.
+• View current booking details and assigned study seat.
+• Present a unique check-in code to library staff during check-in.
+• Check out after completing the study session.
+• View booking history, attendance history, and payment history from a unified dashboard.
+• Raise complaints or support requests regarding library services.
+
+
+2. Library Staff Component (Operations, Attendance & Payment APIs)
+
+• Register new students and verify membership eligibility.
+• View daily bookings, expected arrivals, and current occupancy.
+• Verify student bookings using unique check-in codes.
+• Perform student check-ins and check-outs.
+• Handle same-day walk-in admissions by allocating available seats.
+• Review booking extension requests and extend bookings or allocate alternate seats based on availability.
+• Mark no-show students after the configured waiting period and release reserved seats.
+• Record offline payments using cash, UPI, card, or other supported payment methods.
+• Manage booking approvals and booking cancellations when necessary.
+• View and resolve student complaints through a centralized complaint management system.
+• Monitor daily attendance and seat occupancy to support smooth library operations.
+
+
+
+3. Admin Component (Administration, Configuration & Analytics APIs)
+
+• Create, update, and deactivate library staff accounts.
+• Approve, suspend, or manage student memberships.
+• Configure study library operating hours.
+• Configure booking policies, booking limits, and available seating capacity.
+• Create, modify, and manage membership plans.
+• Publish announcements and notifications for students and staff.
+• View dashboards displaying occupancy statistics, peak usage hours, memberships, attendance, and revenue.
+• Monitor overall library performance through analytical reports.
+• Manage system-wide configurations and operational policies.
+
+
+4. Booking & Seat Allocation Component (Reservation Management APIs)
+
+• Maintain real-time seat availability across all study areas.
+• Allocate seats during advance bookings.
+• Allocate seats for walk-in students.
+• Handle booking modifications and cancellations.
+• Process booking extension requests.
+• Reassign seats when the originally assigned seat is unavailable.
+• Automatically release seats after booking cancellations or no-shows.
+• Prevent double-booking through availability validation.
+
+
+
+5. Attendance Management Component (Check-in & Occupancy APIs)
+
+• Generate unique booking check-in codes.
+• Validate student check-in codes during arrival.
+• Record check-in and check-out timestamps.
+• Update seat occupancy status in real time.
+• Identify no-shows after the configured grace period.
+• Release reserved seats for reallocation.
+• Maintain attendance history for every student.
+
+
+6. Payment Management Component (Payment & Transaction APIs)
+
+• Record offline membership and booking payments.
+• Support multiple payment modes (Cash, UPI, Card).
+• Maintain payment transaction history.
+• Link payments with memberships and bookings.
+• Generate payment receipts.
+• Track payment records for administrative reporting.
+
+
+
+7. Complaint & Communication Component (Support APIs)
+
+• Allow students to submit complaints and support requests.
+• Enable staff to review, update, and resolve complaints.
+• Maintain complaint history and resolution status.
+• Publish announcements and notifications to all users.
+• Notify students about membership expiry, booking confirmations, booking updates, and important announcements.

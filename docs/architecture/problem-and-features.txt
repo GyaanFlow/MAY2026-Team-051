@@ -1,0 +1,138 @@
+PROBLEM STATEMENT
+
+Study libraries and reading rooms are increasingly popular among students seeking quiet and dedicated spaces for learning. However, many study libraries continue to rely on manual or semi-digital processes to manage memberships, seat bookings, attendance, payments, and daily operations. These traditional methods often lead to inefficiencies, operational delays, and poor resource utilization.
+
+Students frequently face challenges such as the lack of real-time information on seat availability, difficulty in reserving study spaces, limited visibility into their bookings and membership status, and inconvenience when requesting booking extensions or resolving issues. Manual check-in procedures and the absence of a centralized platform also result in longer waiting times and reduced user satisfaction.
+
+From an operational perspective, library staff must manually manage walk-in admissions, verify bookings, process offline payments, allocate seats, track attendance, handle no-shows, and resolve complaints. These repetitive administrative tasks increase the likelihood of human error and make it difficult to efficiently utilize available study spaces.
+
+Additionally, library administrators often lack comprehensive insights into occupancy trends, peak usage hours, membership statistics, and revenue, limiting their ability to make informed decisions regarding resource allocation and policy improvements.
+
+Therefore, there is a need for a centralized Study Library Management System that streamlines membership management, seat booking, attendance tracking, payment recording, and administrative operations while providing real-time information to students, supporting efficient daily operations for staff, and enabling data-driven decision-making for administrators. Such a system would improve operational efficiency, optimize space utilization, and enhance the overall study library experience for all stakeholders.
+
+
+
+FEATURES 
+
+1. USER & MEMBERSHIP MANAGEMENT
+• User authentication (Login/Logout)
+• Role-based access control (Admin, Library Staff, Student)
+• Student registration
+• Library staff account management
+• Student membership approval
+• Membership validity tracking
+• Membership plan management
+• Student profile management
+• Password reset
+• Membership renewal
+
+
+2. BOOKING & SEAT MANAGEMENT
+• Real-time seat availability
+• Study room availability
+• Advance seat booking
+• Seat allocation
+• Booking modification
+• Booking cancellation
+• Walk-in seat allocation
+• Booking extension requests
+• Seat reassignment
+• Booking history
+• Attendance history
+• Prevent double booking
+
+
+3. CHECK-IN & ATTENDANCE MANAGEMENT
+• Unique check-in code generation
+• Check-in verification
+• Student check-in
+• Student check-out
+• Attendance recording
+• Occupancy tracking
+• No-show detection
+• Automatic seat release
+• Attendance history
+
+
+4. PAYMENT MANAGEMENT
+• Offline payment recording
+• Multiple payment modes (Cash, UPI, Card)
+• Payment history
+• Payment receipt generation
+• Payment status tracking
+• Membership payment records
+
+
+5. ADMINISTRATION & CONFIGURATION
+• Library operating hours configuration
+• Booking limit configuration
+• Seat capacity management
+• Membership plan configuration
+• Staff account management
+• Student membership management
+• System settings management
+• Library policy management
+
+
+6. REPORTS & ANALYTICS
+• Occupancy reports
+• Peak hour analysis
+• Revenue reports
+• Membership statistics
+• Attendance reports
+• Dashboard analytics
+• Student usage statistics
+
+
+7. COMPLAINTS & COMMUNICATION
+• Complaint submission
+• Complaint tracking
+• Complaint resolution
+• Announcements
+• Notifications
+• Membership expiry reminders
+• Booking confirmation notifications
+• Booking update notifications
+
+
+8. LIBRARY STAFF OPERATIONS
+• Register students
+• Verify memberships
+• View daily bookings
+• View expected arrivals
+• Handle walk-in admissions
+• Verify check-in codes
+• Allocate seats
+• Process booking extensions
+• Mark no-shows
+• Record payments
+• Resolve complaints
+
+
+9. STUDENT SELF-SERVICE
+• Login securely
+• View membership details
+• View seat availability
+• Book study seats
+• Modify bookings
+• Cancel bookings
+• View booking history
+• View attendance history
+• View payment history
+• Check in using unique code
+• Check out after study session
+• Update profile
+• Raise complaints
+
+
+10. FUTURE ENHANCEMENTS
+• Online payment gateway integration
+• QR code self check-in
+• Mobile application
+• AI-based seat recommendation
+• Occupancy prediction
+• Email and SMS notifications
+• Digital membership card
+• Multi-branch study library support
+• Online membership renewal
+• Student feedback and rating system

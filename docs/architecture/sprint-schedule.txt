@@ -1,0 +1,82 @@
+SPRINT SCHEDULE
+
+Sprint 1: Project Initiation & Planning
+Duration: 18/06/2026 – 21/06/2026
+• Finalize project topic and scope.
+• Identify primary stakeholders.
+• Finalize user research strategy.
+• Prepare interview questionnaire and observation plan.
+• Assign team roles and responsibilities.
+• Plan project milestones and timeline.
+
+
+Sprint 2: User Research & Requirements Engineering
+Duration: 22/06/2026 – 28/06/2026
+• Conduct stakeholder interviews and observations.
+• Analyze interview responses and identify pain points.
+• Identify functional and non-functional requirements.
+• Define system features.
+• Create product backlog.
+• Write SMART user stories and epics.
+• Validate requirements with stakeholders.
+• Prepare Milestone 1 deliverables (Problem Statement, Users, Pain Points, User Stories).
+
+
+Sprint 3: System Planning & Design
+Duration: 29/06/2026 – 05/07/2026
+• Finalize project branding and technology stack.
+• Create project schedule and Gantt chart.
+• Set up Jira project and task assignments.
+• Design system architecture.
+• Create Component Diagram.
+• Create UML Class Diagram.
+• Design database schema (ER Diagram).
+• Develop UI wireframes and page navigation.
+• Prepare design documentation.
+
+
+Sprint 4: Frontend Development (Phase I)
+Duration: 06/07/2026 – 14/07/2026
+• Develop authentication and user management pages.
+• Develop membership management pages.
+• Develop admin dashboard and configuration pages.
+• Develop responsive UI components.
+• Perform frontend unit testing.
+
+
+Sprint 5: Frontend Development (Phase II)
+Duration: 15/07/2026 – 23/07/2026
+• Develop booking and seat management pages.
+• Develop check-in and attendance pages.
+• Develop payment management pages.
+• Develop complaints and communication pages.
+• Integrate all frontend pages.
+• Complete all frontend screens by 23/07/2026.
+
+
+Sprint 6: Backend Development & Integration
+Duration: 24/07/2026 – 03/08/2026
+• Develop backend APIs for all modules.
+• Implement business logic and database integration.
+• Integrate frontend with backend APIs.
+• Implement authentication and role-based access.
+• Perform API testing and fix integration issues.
+
+
+Sprint 7: Testing & Quality Assurance
+Duration: 04/08/2026 – 10/08/2026
+• Execute unit, integration, and system testing.
+• Perform bug fixing and regression testing.
+• Validate user stories and acceptance criteria.
+• Conduct User Acceptance Testing (UAT).
+• Optimize performance and usability.
+
+
+Sprint 8: Final Documentation & Project Submission
+Duration: 11/08/2026 – 15/08/2026
+• Finalize project documentation.
+• Update README and deployment guide.
+• Prepare final project report and presentation.
+• Perform final system validation.
+• Deploy the application.
+• Submit all project deliverables.

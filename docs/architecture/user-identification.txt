@@ -1,0 +1,62 @@
+IDENTIFICATION OF USERS
+
+
+1. Primary Users
+
+These are the core operational users of the Study Library Management System. The platform's daily workflows, including membership verification, seat reservations, check-ins, payments, and occupancy management, are primarily designed around their interactions. Their continuous use ensures the smooth functioning of the study library.
+
+
+1.1 Library Staff
+
+Library Staff are responsible for the day-to-day operations of the study library. Their responsibilities include:
+
+• Registering new students and verifying memberships.
+• Viewing daily bookings and expected arrivals.
+• Verifying student bookings and performing check-ins using the student's unique check-in code.
+• Handling same-day walk-in admissions by allocating available seats.
+• Recording payments (Cash, UPI, Card, etc.).
+• Marking no-shows and releasing unoccupied reserved seats.
+• Managing bookings by approving or cancelling reservations when necessary.
+• Handling student complaints and providing operational support.
+
+The system must provide an efficient operational dashboard that enables staff to manage bookings, occupancy, payments, and student services with minimal manual effort.
+
+
+1.2 Student
+
+Students are the primary beneficiaries of the study library services and interact with the platform to access study facilities. Their responsibilities include:
+
+• Logging in to access their account.
+• Viewing membership details and validity.
+• Checking real-time seat and study room availability and payment history.
+• Booking study seats or rooms in advance.
+• Modifying or cancelling bookings within the permitted period.
+• Presenting their unique check-in code to library staff upon arrival.
+• Checking out after completing a study session.
+• Raising complaints or support requests when necessary.
+
+The system must provide students with a simple and convenient platform for reserving study spaces, tracking their activity, and communicating with library staff.
+
+
+2. Secondary Users
+
+These users oversee the overall functioning of the study library and are responsible for administrative decisions rather than daily operational activities.
+
+
+2.1 Admin
+
+The Admin supervises the entire Study Library Management System and ensures that policies and configurations are maintained effectively. Responsibilities include:
+
+• Managing library staff accounts.
+• Approving and managing student memberships.
+• Configuring operating hours, booking limits, and membership plans.
+• Viewing reports and statistics related to occupancy, peak hours, memberships, and revenue.
+• Managing announcements and notifications for users.
+
+The system must provide comprehensive administrative controls, configurable system settings, and analytical dashboards to support informed decision-making and efficient management.
+
+
+3. Tertiary Users
+
+
+The proposed Study Library Management System does not include any tertiary users. All identified stakeholders who directly interact with the platform are classified as either primary or secondary users based on their operational responsibilities and level of system interaction.

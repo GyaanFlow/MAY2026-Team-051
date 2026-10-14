@@ -1172,8 +1172,9 @@ def test_seat_availability_excludes_booked_seat(client, student_token, confirmed
 def test_create_booking_success(client, student_token):
     """Student can create a booking for an available seat"""
     headers = {"Authorization": f"Bearer {student_token}"}
+    booking_date = (date.today() + timedelta(days=2)).isoformat()
     response = client.post("/api/bookings", json={
-        "seat_id": 3, "date": "2026-10-01", "start_time": "14:00", "end_time": "15:00"
+        "seat_id": 3, "date": booking_date, "start_time": "14:00", "end_time": "15:00"
     }, headers=headers)
     assert response.status_code == 201
     assert response.get_json()["booking"]["status"] == "Confirmed"
@@ -1241,14 +1242,19 @@ def test_staff_today_bookings(client, staff_token, todays_booking):
 
 def test_walk_in_booking_success(client, staff_token, admin_token):
     """Staff can create a walk-in booking for an active student"""
+    from unittest.mock import patch
+    from datetime import datetime as dt_cls
     student = _register_pending_student(client, admin_token, "walkinstudent")
     headers = {"Authorization": f"Bearer {admin_token}"}
     client.post(f"/api/admin/memberships/{student['student_id']}/approve", headers=headers)
 
     staff_headers = {"Authorization": f"Bearer {staff_token}"}
-    response = client.post("/api/staff/bookings/walk-in", json={
-        "student_id": student["student_id"], "duration_minutes": 30
-    }, headers=staff_headers)
+    with patch("resources.bookings.datetime") as mock_dt:
+        mock_dt.now.return_value = dt_cls(2026, 10, 15, 14, 0, 0)
+        mock_dt.strptime = dt_cls.strptime
+        response = client.post("/api/staff/bookings/walk-in", json={
+            "student_id": student["student_id"], "duration_minutes": 30
+        }, headers=staff_headers)
     assert response.status_code == 201
     assert response.get_json()["booking"]["status"] == "Confirmed"
 

@@ -10,7 +10,7 @@
 [![Framework](https://img.shields.io/badge/Framework-Flask%203.1-black.svg)](https://flask.palletsprojects.com/)
 [![Frontend](https://img.shields.io/badge/Frontend-Vue%203%20SPA-42b883.svg)](https://vuejs.org/)
 [![Database](https://img.shields.io/badge/Database-SQLAlchemy%20%2F%20SQLite-red.svg)](https://www.sqlalchemy.org/)
-[![Tests](https://img.shields.io/badge/Tests-119%20Passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-123%20Passed-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/License-MIT-purple.svg)]()
 
 </div>
@@ -37,8 +37,10 @@
 - [Default Seed Credentials](#-default-seed-credentials)
 - [Project Structure](#-project-structure)
 - [API Reference](#-api-reference)
+- [Milestones & Project Deliverables](#-milestones--project-deliverables)
 - [Running Automated Tests](#-running-automated-tests)
 - [Production Deployment](#-production-deployment)
+- [Team Members & Contributors](#-team-members--contributors)
 - [License](#-license)
 
 ---
@@ -264,6 +266,14 @@ When starting the application for the first time, default seed data is automatic
 ├── .env.example               # Environment variables template
 ├── .gitignore                 # Git ignore rules for Python, IDEs, and environments
 │
+├── docs/                      # Course deliverables, reports, API specs & diagrams
+│   ├── architecture/          # ER diagram, class diagram, Gantt chart, Kanban board
+│   ├── milestone-1/           # Requirements, user stories, MoM, consent & honor codes
+│   ├── milestone-2/           # Frontend prototype report, UI architecture, ER DBML
+│   ├── milestone-3/           # Backend API specs (OpenAPI / Swagger) & report
+│   ├── milestone-4/           # Testing suite deliverable, guide & API schemas
+│   └── milestone-5/           # Final project report, presentations & user guide
+│
 ├── resources/                 # RESTful API controllers
 │   ├── auth.py                # JWT authentication & login controller
 │   ├── profile.py             # User profile updates & password resets
@@ -357,6 +367,40 @@ When starting the application for the first time, default seed data is automatic
 
 ---
 
+## 📑 Milestones & Project Deliverables
+
+All project milestone submissions, documentation, and architecture artifacts are organized in the [`docs/`](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs) directory:
+
+### Milestone 1: Requirements Analysis & Project Planning
+- **Deliverables**: [Milestone 1 Report (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/Milestone_1_Deliverables.pdf) | [Word Document](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/Milestone_1_Deliverables.docx)
+- **Problem Statement & Features**: [Problem & Features](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/problem-and-features.txt)
+- **User Identification**: [User Personas & Identification](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/user-identification.txt)
+- **Project Planning**: [Gantt Chart](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/gantt-chart.png) | [Kanban Board](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/kanban-board.png) | [Sprint Schedule](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/sprint-schedule.txt)
+- **Meetings & Interviews**: [Minutes of Meetings (MoM)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/minutes-of-meeting) | [Consent & Proofs](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/interviews-and-proofs)
+- **Team Honor Codes**: [Honor Code Submissions](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-1/honor-code)
+
+### Milestone 2: System Design & Frontend Prototype
+- **Deliverables**: [Milestone 2 Report (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-2/Milestone-2_report.pdf)
+- **Architecture & Design**: [Entity Relationship Diagram](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-2/er.png) | [DBML Schema](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-2/er-dbml.txt)
+- **Component Design**: [Class Diagram](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-2/class-diagram.png) | [Component Architecture](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-2/design-of-component.txt)
+- **User Stories**: [User Stories Breakdown](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-2/user-stories.txt)
+
+### Milestone 3: Backend API Architecture & Core Endpoints
+- **Deliverables**: [Milestone 3 Report (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-3/Milestone_3_Deliverables.pdf)
+- **API Documentation**: [OpenAPI / Swagger Spec (YAML)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-3/openapi.swagger.yaml)
+
+### Milestone 4: Comprehensive Backend API & Automated Testing Suite
+- **Deliverables**: [Milestone 4 Report (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-4/Milestone_4_Deliverables.pdf)
+- **API Specification**: [OpenAPI 3.0 Specification (YAML)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-4/openapi.swagger.yaml)
+- **Implementation Guide**: [Backend & Testing Guide](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-4/guide.txt)
+
+### Milestone 5: Full System Integration, Packaging & Final Presentation
+- **Final Report**: [Milestone 5 Report (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-5/Milestone_5_Report.pdf)
+- **Executive Summary & User Manual**: [README (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-5/README.pdf)
+- **Presentations**: [Brief Presentation (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-5/Brief_Presentation.pdf) | [Detailed Presentation (PDF)](file:///c:/Users/gaura/OneDrive/Desktop/seProject%20Test/MAY2026-Team-051/docs/milestone-5/Detailed_Presentation.pdf)
+
+---
+
 ## 🧪 Running Automated Tests
 
 The repository includes a comprehensive test suite covering backend logic, JWT security, and API endpoints.
@@ -387,6 +431,20 @@ waitress-serve --listen=0.0.0.0:5000 app:create_app
 ```bash
 gunicorn -w 4 -b 0.0.0.0:5000 "app:create_app()"
 ```
+
+---
+
+## 👥 Team Members & Contributors
+
+**Team MAY2026-Team-051**
+
+| Roll Number | Name | Contribution & Role |
+| :--- | :--- | :--- |
+| `23f1000805` | Gaurav Tomar | Lead Developer & System Integration |
+| `23f1000033` | Karthik V N | Backend Architecture & API Development |
+| `23f1001878` | Akshatha A | UI/UX & Frontend Development |
+| `23f2004899` | Diksha Sharma | Quality Assurance & Testing Suite |
+| `24f1002416` | Neha Chacko | Requirements Analysis & Documentation |
 
 ---
 

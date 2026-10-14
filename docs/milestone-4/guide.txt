@@ -1,0 +1,1649 @@
+========================================================================
+LIBRARY MANAGEMENT SYSTEM - BACKEND PROJECT GUIDE
+Team: MAY2026-Team-051
+Prepared by: Gaurav
+========================================================================
+
+This guide covers everything needed to run, understand, and test the
+backend API built so far. Read this fully before touching the code.
+
+========================================================================
+1. PROJECT OVERVIEW
+========================================================================
+
+This is a Flask + Flask-RESTful + JWT based REST API for a Library
+Membership Management System, now extended with Seat Booking and
+Extension Approval. It has three user roles:
+
+  - Admin   : manages staff, membership plans, approves/rejects memberships,
+              configures operating hours and seat inventory
+  - Staff   : registers new students, views student profiles, handles
+              walk-ins, reviews/approves booking extension requests
+  - Student : views/edits own profile, resets password, books seats and
+              requests booking extensions
+
+Tech stack:
+  - Flask 3.0.3
+  - Flask-RESTful 0.3.10
+  - Flask-SQLAlchemy 3.1.1
+  - Flask-JWT-Extended 4.6.0
+  - Werkzeug 3.0.3
+  - Flask-CORS 4.0.1
+  - SQLite (default local database, file: app.db)
+
+========================================================================
+2. PROJECT STRUCTURE
+========================================================================
+
+seProject/
+|-- app.py                  -> creates Flask app, registers all routes, seeds admin+plans
+|-- config.py                -> app config (secret keys, database URL, JWT expiry)
+|-- models.py                 -> SQLAlchemy models: User, MembershipPlan, Student,
+|                                 Seat, LibrarySettings, Booking, Attendance,
+|                                 ExtensionRequest, Payment, Complaint
+|-- utils.py                   -> admin_required, staff_or_admin_required, student_required decorators
+|-- requirements.txt            -> pinned dependency versions
+|-- resources/
+|     |-- auth.py               -> login
+|     |-- staff.py               -> admin managing staff accounts (Story 1.1)
+|     |-- membership.py           -> admin managing membership plans (Story 2.3)
+|     |-- profile.py                -> Admin/Staff own profile + password reset (any role)
+|     |-- student_profile.py         -> Story 1.4/1.5: student's own profile at /students/me
+|     |-- staff_students.py          -> staff registers/views/verifies a student (Story 1.3)
+|     |-- admin_memberships.py        -> admin membership approval workflow (Story 1.2)
+|     |-- settings.py                 -> admin library settings / operating hours (Story 2.1)
+|     |-- seats.py                     -> admin seat inventory (Story 2.2) + real-time
+|     |                                   seat availability search (Story 3.1)
+|     |-- bookings.py                   -> advance booking, modification, cancellation,
+|     |                                   booking history, daily overview, walk-in
+|     |                                   admission (Stories 3.2-3.6), and study
+|     |                                   session check-out (Story 4.4)
+|     |-- extension_requests.py          -> booking extension request/approve/reject
+|                                          and seat reassignment (Story 3.7)
+|     |-- checkin.py                      -> staff verifies a checkin_code and records
+|                                          attendance (Story 4.1/4.2)
+|     |-- no_show.py                       -> staff lists overdue Confirmed bookings and
+|                                          marks them No-Show, releasing the seat (Story 4.3)
+|     |-- payments.py                       -> staff records an offline payment against a
+|                                          student (Story 5.1), student/staff view
+|                                          payment history (Story 5.2)
+|     |-- complaints.py                      -> student submits a complaint (Story 6.1)
+
+NOTE: resources/students.py (the original generic student CRUD file) was
+removed. It duplicated functionality that staff_students.py and
+admin_memberships.py now implement with the exact routes from the API
+spec. Its unique bits were relocated, not dropped:
+  - membership verification -> staff_students.py (StaffVerifyStudentMembershipResource)
+  - disapprove -> admin_memberships.py (DisapproveMembershipResource)
+
+========================================================================
+3. HOW TO RUN THE PROJECT (STEP BY STEP)
+========================================================================
+
+Step 1 - Install dependencies
+    pip install -r requirements.txt
+
+Step 2 - Delete old database if schema changed
+    Windows:
+        del app.db
+    or if it is inside an instance folder:
+        del instance\app.db
+
+Step 3 - Run the server
+    python app.py
+
+    Server runs at: http://localhost:5000
+    All routes are prefixed with /api
+
+Step 4 - Confirm it started with no errors
+    You should see:
+    " * Running on http://127.0.0.1:5000"
+    with no red traceback text.
+
+Step 5 - Default admin login (auto-seeded on first run)
+    username: admin
+    password: test-password
+
+Step 6 - Default membership plans (auto-seeded)
+    Weekly   - 7 days
+    Monthly  - 30 days
+    Yearly   - 365 days
+
+========================================================================
+4. AUTHENTICATION FLOW
+========================================================================
+
+Every route except /auth/login requires a Bearer token.
+
+Step 1: Login
+    POST /api/auth/login
+    Body (JSON):
+    {
+      "username": "admin",
+      "password": "test-password"
+    }
+
+    Response:
+    {
+      "access_token": "xxxxx.....",
+      "user": { ...user fields... }
+    }
+
+Step 2: Use token on every other request
+    Header:
+    Authorization: Bearer <access_token>
+
+Token expires after 8 hours.
+
+Roles embedded in JWT: role = Admin / Staff / Student.
+Decorators in utils.py:
+    admin_required           -> Admin only
+    staff_or_admin_required  -> Staff or Admin
+
+========================================================================
+5. COMPLETE API REFERENCE
+========================================================================
+
+5.1 AUTH
+POST   /api/auth/login
+    Body: { "username": "", "password": "" }
+    Errors: 400 missing fields, 401 invalid credentials, 403 deactivated
+
+POST   /api/auth/reset-password   (any logged-in user)
+    Body: { "old_password": "", "new_password": "" }
+    Errors: 400 missing fields, 401 old password wrong, 404 user not found
+
+5.2 PROFILE (Story 1.1/general - Admin or Staff only; Students get 403 here)
+GET    /api/profile
+PUT    /api/profile
+    Body (any of): { "email":"", "phone":"" }
+
+5.3 STAFF MANAGEMENT (Story 1.1 - Admin only)
+GET    /api/admin/staff
+POST   /api/admin/staff
+    Body: { "username":"", "password":"", "email":"", "id_type":"", "id_number":"", "phone":"" }
+GET    /api/admin/staff/<user_id>
+PUT    /api/admin/staff/<user_id>
+    Body (any of): { "email":"", "id_type":"", "id_number":"", "phone":"", "password":"" }
+POST   /api/admin/staff/<user_id>/deactivate
+
+5.4 MEMBERSHIP PLANS (Story 2.3 - Admin only)
+GET    /api/admin/membership-plans
+    Lists all plans, including retired ones (check is_active)
+POST   /api/admin/membership-plans
+    Body: { "plan_name": "Quarterly", "duration_days": 90, "price": 900 }
+    Errors: 400 missing/invalid fields
+PUT    /api/admin/membership-plans/<plan_id>
+    Body (any of): { "plan_name":"", "duration_days":90, "price":300 }
+    Errors: 404 not found, 400 invalid field values
+DELETE /api/admin/membership-plans/<plan_id>
+    Retires the plan (sets is_active=False). Does NOT hard-delete the
+    row - students already on this plan (students.plan_id) still
+    reference it. There is no "un-retire" route yet (same limitation
+    as staff deactivate - see section 15).
+    Errors: 404 not found, 400 already retired
+
+5.5 STUDENT SELF-SERVICE (Story 1.4/1.5 - Student only)
+GET    /api/students/me
+    Returns own profile fields + membership_status/membership_expiry/membership_valid
+PUT    /api/students/me
+    Body (any of): { "email":"", "phone":"", "full_name":"", "address":"" }
+
+5.6 STAFF STUDENT REGISTRATION & LOOKUP (Story 1.3 - Staff or Admin)
+POST   /api/staff/students/register
+    Body: { "username":"", "password":"", "email":"", "full_name":"", "address":"", "plan_id": 1, "id_type":"", "id_number":"", "phone":"" }
+GET    /api/staff/students/<student_id>
+GET    /api/staff/students/<student_id>/verify
+    Returns { "status": "", "valid": true/false, "membership_expiry": "" }
+
+5.7 ADMIN MEMBERSHIP MANAGEMENT (Story 1.2 - Admin only)
+GET    /api/admin/memberships/pending
+GET    /api/admin/memberships  (optional ?status=Active)
+POST   /api/admin/memberships/<membership_id>/approve
+POST   /api/admin/memberships/<membership_id>/reject      (only from Pending)
+POST   /api/admin/memberships/<membership_id>/disapprove  (only from Active)
+PUT    /api/admin/memberships/<membership_id>
+    Body (any of): { "plan_id": 2 } or { "extend_days": 30 } or { "membership_expiry": "2026-12-31" }
+
+5.8 LIBRARY SETTINGS (Story 2.1 - Operating Hours - Admin only)
+GET    /api/admin/settings
+    Returns the single library_settings row (open_time, close_time, and
+    other library_settings columns - total_seats, no_show_grace_minutes,
+    cancellation_period, max_booking_days_ahead, extension_limit_minutes -
+    which are still null until the stories that own them are implemented)
+PUT    /api/admin/settings
+    Body (any of): { "open_time": "09:00", "close_time": "21:00" }
+    Times are 24-hour "HH:MM". close_time must be after open_time.
+    Errors: 400 bad time format, 400 close_time <= open_time
+    A default row (09:00-21:00) is auto-seeded on first app run.
+
+5.9 SEAT INVENTORY (Story 2.2 - Admin only)
+GET    /api/admin/seats
+    List all seats with seat_type/is_active
+POST   /api/admin/seats
+    Body: { "seat_number": "A1", "seat_type": "Standard", "is_active": true }
+    seat_type and is_active are optional (is_active defaults to true).
+    seat_number must be unique.
+    Errors: 400 missing/invalid, 409 seat_number already exists
+PUT    /api/admin/seats/<seat_id>
+    Body (any of): { "is_active": false, "seat_type": "Premium" }
+    Changes a seat's active flag and/or type (seat_number is not
+    renameable via this route). A seat with is_active=false is excluded
+    from booking/availability (this replaced the earlier
+    status Available/Maintenance field - see section 15 item 8).
+    Errors: 404 seat not found, 400 missing/invalid fields
+
+5.10 SEAT AVAILABILITY & BOOKING (Stories 3.1-3.6 - any logged-in role
+     unless noted)
+GET    /api/seats/availability?date=YYYY-MM-DD&start_time=HH:MM&end_time=HH:MM
+    Lists active seats with no overlapping Confirmed booking in that
+    window.
+POST   /api/bookings
+    Body: { "seat_id": 1, "date": "YYYY-MM-DD", "start_time": "HH:MM", "end_time": "HH:MM" }
+    Creates a Confirmed booking for the logged-in user and generates a
+    checkin_code. Errors: 400 missing/invalid fields or bad time range,
+    404 seat not found/inactive, 409 seat already booked for that slot.
+PUT    /api/bookings/<booking_id>
+    Body (any of): { "date":"", "start_time":"", "end_time":"" }
+    Only the booking's own user, or Staff/Admin, may modify it, and only
+    while it is still Confirmed. Errors: 403 not your booking, 400 bad
+    fields, 409 new slot clashes with another booking on that seat.
+POST   /api/bookings/<booking_id>/cancel
+    Sets status to Cancelled, freeing the seat. Same ownership rule as
+    PUT above. Errors: 403 not your booking, 400 already cancelled.
+GET    /api/students/me/bookings   (Student - own bookings only)
+    Full booking history for the logged-in student, newest first,
+    each entry annotated with seat_number.
+GET    /api/staff/bookings/today   (Staff or Admin)
+    Today's Confirmed bookings, earliest first, annotated with
+    seat_number/username/full_name.
+POST   /api/staff/bookings/walk-in   (Staff or Admin)
+    Body: { "student_id": 1, "duration_minutes": 60 }
+    Auto-assigns the first free active seat for right now and creates a
+    Confirmed booking. duration_minutes optional, defaults to 60.
+    Errors: 400 missing/invalid student_id or duration, 404 student not
+    found or no seats configured, 400 membership not Active, 409 no free
+    seat available right now.
+
+5.11 EXTENSION APPROVAL & SEAT ALLOCATION (Story 3.7)
+POST   /api/students/me/bookings/<booking_id>/extension-request  (Student, own booking only)
+    Body: { "requested_end_time": "HH:MM" }
+    Creates a Pending extension request against a Confirmed booking the
+    caller owns. requested_end_time must be after the booking's current
+    end_time. If library_settings.extension_limit_minutes is set (see
+    section 5.8), the requested extra time cannot exceed it - this is
+    the first story to actually enforce that setting.
+    Errors: 400 missing/bad time, booking not Confirmed, requested time
+    not after current end, or extension exceeds the configured limit;
+    404 booking not found or not yours; 409 an extension request is
+    already Pending for this booking.
+GET    /api/staff/extension-requests   (Staff or Admin)
+    Body: none. Optional ?status= (defaults to "Pending"; pass Approved/
+    Rejected to review resolved ones). Each entry is annotated with the
+    booking's current end_time, seat_number, and the requesting
+    student's full_name/username.
+POST   /api/staff/extension-requests/<id>/approve   (Staff or Admin)
+    Body (optional): { "seat_id": 6 }
+    With no seat_id, tries to extend the booking on its current seat.
+    If another Confirmed booking occupies that seat during the extra
+    time, this returns 409 instead of silently failing - the staff
+    member is expected to retry with a free seat_id to reassign the
+    student instead (Story 3.7's "...or assign a new available seat").
+    On success the underlying Booking row's end_time (and seat_id, if
+    reassigned) is updated directly; the extension_request itself is
+    marked Approved with approved_by set to the acting staff/admin.
+    Errors: 404 request or seat not found, 400 request already
+    resolved or booking no longer Confirmed, 409 seat clash.
+POST   /api/staff/extension-requests/<id>/reject   (Staff or Admin)
+    Marks the request Rejected, approved_by set to the acting user.
+    Errors: 404 not found, 400 already resolved.
+
+Overlap detection (used by booking creation/modification, seat
+availability search, and extension approval alike):
+    existing_start < new_end AND existing_end > new_start
+This correctly blocks partial overlaps while still allowing back-to-back
+bookings (one ending exactly when another starts).
+
+5.12 CHECK-IN & ATTENDANCE (Story 4.1/4.2 - Staff or Admin)
+POST   /api/staff/checkin
+    Body: { "checkin_code": "" }
+    Looks up the Confirmed booking with this checkin_code, creates an
+    attendance row (checkin_time = now, verified_by = acting staff/admin),
+    and flips the booking's status to "Checked-In". Booking status values
+    are now "Confirmed" / "Checked-In" / "Cancelled" / "No-Show" /
+    "Completed" (Checked-In added by this story, No-Show by Story 4.3,
+    Completed by Story 4.4 - see sections 5.13/5.14 below).
+    The booking must be dated today - this endpoint verifies a student
+    physically arriving right now, so a checkin_code for a future advance
+    booking is rejected until its date arrives. (No time-of-day window
+    check here - that's Story 4.3's no_show_grace_minutes logic, see
+    section 5.13.)
+    Errors: 400 missing/empty checkin_code, 404 checkin_code not found,
+    400 booking not Confirmed (already checked in, cancelled, etc.) or
+    not dated today.
+
+5.13 NO-SHOW MANAGEMENT (Story 4.3 - Staff or Admin)
+GET    /api/staff/bookings/no-show-candidates
+    Body: none. Lists every Confirmed booking whose slot (booking_date +
+    start_time) is at or past library_settings.no_show_grace_minutes
+    from now. If no_show_grace_minutes is unset (null), grace defaults
+    to 0 - a booking becomes a candidate the moment its start_time
+    passes. Response includes grace_minutes used and each candidate
+    annotated with seat_number/full_name/username/minutes_overdue,
+    sorted most-overdue first.
+POST   /api/staff/bookings/<booking_id>/no-show
+    Body: none. Marks a Confirmed booking No-Show once it's past the
+    same grace cutoff used above, freeing its seat immediately (the
+    same overlap queries that block double-booking only match
+    status="Confirmed", so nothing else needs updating).
+    Errors: 404 booking not found; 400 booking not Confirmed (already
+    Checked-In/Cancelled/No-Show) or still within the grace period.
+
+5.14 STUDY SESSION CHECK-OUT (Story 4.4 - own booking, or Staff/Admin)
+POST   /api/bookings/<booking_id>/checkout
+    Body: none. Closes out a Checked-In booking: finds its open (still
+    checkout_time=null) attendance row, stamps checkout_time = now, and
+    flips the booking's status to "Completed". Ownership rule matches
+    PUT /bookings/<id> and POST /bookings/<id>/cancel - only the
+    booking's own student, or Staff/Admin, may call this.
+    The seat itself was already excluded from every overlap/
+    availability query the moment check-in flipped status away from
+    "Confirmed" (see section 15 item 11), so checkout doesn't need to
+    do anything extra to "free" it - it only closes the attendance
+    record and finalizes the booking's status.
+    Errors: 404 booking not found (or, in the unexpected case a
+    Checked-In booking somehow has no open attendance row, 404); 403
+    not your booking; 400 booking not currently Checked-In (never
+    checked in, cancelled, already checked out, etc.).
+
+5.15 OFFLINE PAYMENT RECORDING (Story 5.1 - Staff or Admin)
+POST   /api/staff/payments
+    Body: { "student_id": 1, "amount": 500, "payment_mode": "Cash" }
+    payment_mode must be one of "Cash" / "UPI" / "Card" (the fixed set
+    dbSchema.docx documents for this column, unlike free-text fields
+    such as id_type/seat_type). payment_date and recorded_by are always
+    server-set (payment_date = now, recorded_by = the acting staff/
+    admin) - the client cannot backdate a payment or claim it was
+    recorded by someone else.
+    New Payment model (payment_id, student_id, amount, payment_mode,
+    payment_date, recorded_by) - see section 13. dbSchema.docx's
+    payments table also has a membership_id column; it's omitted here
+    because, per the existing membership_id == student_id convention
+    (section 15 item 1), it would just duplicate student_id with no new
+    information.
+    Errors: 400 missing/invalid student_id, amount (must be a positive
+    number), or payment_mode; 404 student not found.
+
+5.16 PAYMENT HISTORY (Story 5.2)
+GET    /api/students/me/payments   (Student - own payments only)
+    Body: none. Full payment history for the logged-in student, newest
+    first (ordered by payment_date descending). Returns an empty list
+    (not an error) if the student has no recorded payments yet.
+GET    /api/staff/students/<student_id>/payments   (Staff or Admin)
+    Body: none. Full payment history for the given student, newest
+    first, response includes full_name for context.
+    Errors: 404 student not found.
+
+5.17 COMPLAINT SUBMISSION (Story 6.1 - Student only)
+POST   /api/students/me/complaints
+    Body: { "title": "", "description": "" }
+    Both title and description are required - a complaint with no
+    description would carry no information for staff to act on.
+    Creates a Complaint row with status "Open" (server-set, not
+    client-settable) against the logged-in student.
+    New Complaint model (complaint_id, student_id, title, description,
+    status, resolved_by, created_at) - see section 13. created_at isn't
+    in dbSchema.docx's complaints table, but every other story-created
+    table has one for ordering/audit (Booking.created_at,
+    ExtensionRequest.requested_at, Payment.payment_date); Story 6.2
+    (Complaint Management) will need it to list complaints sensibly, so
+    it's added now rather than as a later migration.
+    Errors: 400 missing/empty title or description.
+    No GET route yet - Story 6.2 (Complaint Management) owns listing/
+    resolving complaints and is not implemented.
+
+========================================================================
+6. TESTING METHODS - THUNDER CLIENT SETUP
+========================================================================
+
+1. Install "Thunder Client" extension in VS Code.
+2. Open Thunder Client icon from sidebar.
+3. Create environment "Library" with variables:
+       admin_token, staff_token, student_token
+4. After login, paste token value into the matching variable.
+5. In every request Auth tab -> Bearer Token -> type {{admin_token}} etc.
+6. Group requests into folders: Auth, Staff, Membership-Plans, Students,
+   Staff-Students, Admin-Memberships, Profile, Settings, Seats, Bookings,
+   Extension-Requests.
+
+========================================================================
+7. COMMON ERRORS AND FIXES
+========================================================================
+
+"Email is required" even though sent -> set Content-Type: application/json,
+    Body tab set to JSON not Text.
+401 Unauthorized on every request -> token missing/expired/no "Bearer " prefix.
+403 not allowed -> wrong role's token used for that route.
+sqlite3.OperationalError: no such column -> delete app.db, restart server.
+ModuleNotFoundError: No module named 'flask_cors' -> pip install -r requirements.txt.
+git push rejected (fetch first) -> git pull origin dev, then push again.
+
+========================================================================
+8. GIT WORKFLOW FOR THE TEAM
+========================================================================
+
+Branches: main (stable) and dev (shared working branch)
+
+Daily workflow:
+    git checkout dev
+    git pull origin dev
+    git add .
+    git commit -m "short clear message"
+    git push origin dev
+
+For bigger features:
+    git checkout -b feature/your-feature-name
+    (work, commit, push -u origin feature/your-feature-name)
+    Open Pull Request into dev, review, merge.
+
+Never commit directly to main.
+
+========================================================================
+9. WORK COMPLETED SO FAR (BY GAURAV)
+========================================================================
+
+- Converted all resources from reqparse to request.get_json() JSON handling
+- Added Flask-CORS support for frontend integration
+- Fixed route URL patterns with <int:...> converters in app.py
+- Implemented Story 1.3: Staff Student Registration
+- Implemented Story 1.2: Admin Membership Management
+- All endpoints tested via Thunder Client including error/role cases
+- Changes committed and pushed to dev branch
+
+Epic 1 completion pass (2026-08-02):
+- Story 1.1 routes aligned to the API spec: /staff -> /admin/staff,
+  deactivate changed from PATCH to POST
+- Removed resources/students.py: it duplicated Story 1.2/1.3 routes and
+  had drifted (its reject route was missing the "only Pending can be
+  rejected" guard that the Story 1.2 route had - fixed before removal)
+- Relocated membership verification to
+  GET /staff/students/<id>/verify (staff_students.py)
+- Relocated disapprove to
+  POST /admin/memberships/<id>/disapprove (admin_memberships.py)
+- Implemented Story 1.4: GET /students/me (student_profile.py)
+- Implemented Story 1.5: PUT /students/me (student_profile.py)
+- ProfileResource (/profile) is now Admin/Staff only; Students get 403
+  and must use /students/me instead, to avoid two overlapping paths to
+  the same student data
+- Epic 1 (Stories 1.1-1.5) is now fully implemented and matches
+  proposedListOfApis.docx
+
+Epic 2 progress (2026-08-02):
+- Implemented Story 2.1: Operating Hours Configuration
+  (GET/PUT /admin/settings, resources/settings.py, LibrarySettings model)
+- Fixed a pre-existing bug in utils.py: admin_required/staff_or_admin_
+  required/student_required were returning jsonify({...}), 403 from
+  inside a Flask-RESTful resource method. Flask-RESTful re-serializes
+  the tuple's first element through its own JSON encoder, and a Flask
+  Response object isn't serializable there - every 403 from these
+  decorators was actually crashing to a 500. Fixed by returning plain
+  dicts instead of jsonify(...). This affected EVERY role-restricted
+  route in the app (Epic 1 included) - if you previously saw 500s
+  instead of 403s in role-restriction tests, this was why. Re-test all
+  403 cases across both epics.
+- Implemented Story 2.2: Booking Limit Configuration
+  (GET/POST /admin/seats, PUT /admin/seats/<id>, resources/seats.py,
+  Seat model). PUT only changes status (Available/Maintenance) -
+  seat_number is not renameable via the API.
+- Implemented Story 2.3: Membership Plan Management
+  (full CRUD at /admin/membership-plans, resources/membership.py).
+  Routes moved from /membership-plans to /admin/membership-plans to
+  match the spec (same fix applied to Story 1.1's staff routes).
+  Added is_active to MembershipPlan (not in dbSchema.docx) so DELETE
+  can soft-retire a plan instead of hard-deleting a row that students
+  still reference via students.plan_id.
+
+Epic 3 (Stories 3.1-3.6, by a teammate, merged to origin/dev via 7
+separate PRs): seat/booking models, real-time seat availability search,
+advance booking with checkin_code generation, booking modification,
+booking cancellation, student booking history, staff daily overview,
+walk-in admission with auto seat assignment.
+
+Merge + Story 3.7 (2026-08-10):
+- The feature/extension-approval-and-seat-allocation branch had been
+  cut before Epic 3 existed, so it was missing Booking/seat-booking
+  entirely. Merged origin/dev in to bring Stories 3.1-3.6 across before
+  building on top of them.
+- That merge surfaced a real schema conflict: Epic 2.2's Seat model
+  used status ("Available"/"Maintenance") while Epic 3's Seat model
+  (built independently, in parallel) used is_active/seat_type instead.
+  Resolved by keeping is_active/seat_type as canonical (it's what all
+  the booking code already reads) and rewriting the Epic 2.2 admin seat
+  endpoints (resources/seats.py: SeatListResource, SeatResource) to
+  operate on is_active/seat_type. See section 15 item 8 for why this
+  deviates from dbSchema.docx.
+- Implemented Story 3.7: Extension Approval & Seat Allocation
+  (resources/extension_requests.py, ExtensionRequest model). Wires up
+  library_settings.extension_limit_minutes, which every prior story had
+  left unused (see section 5.8/13) - it's now enforced when a student
+  requests an extension.
+- Added pytest coverage for the new endpoints in test_app.py (fixtures:
+  student_token, staff_token, confirmed_booking).
+
+Story 4.1/4.2 (2026-08-11):
+- Implemented Student Check-In / Check-In Verification
+  (resources/checkin.py: StaffCheckinResource, POST /staff/checkin).
+- Added the Attendance model (attendance_id, booking_id, checkin_time,
+  checkout_time, verified_by) matching dbSchema.docx's attendance table.
+  checkout_time stays null until Story 4.4 (Study Session Check-Out)
+  implements it.
+- Booking.status gained a third value, "Checked-In", alongside the
+  existing Confirmed/Cancelled. dbSchema.docx's booking_status enum is
+  Booked/Checked-In/Cancelled/Completed/No-Show; consistent with the
+  existing Confirmed-instead-of-Booked drift (see section 15 item 8),
+  this only adds Checked-In now - Completed and No-Show are Story 4.4
+  and 4.3's job respectively.
+- Added pytest coverage in test_app.py (fixture: todays_booking) for
+  success, missing/invalid checkin_code, already-checked-in, wrong-date,
+  cancelled-booking, and role-restriction cases.
+
+Story 4.3 (2026-08-11):
+- Implemented No-Show Management
+  (resources/no_show.py: NoShowCandidatesResource, MarkNoShowResource;
+  GET /staff/bookings/no-show-candidates, POST
+  /staff/bookings/<id>/no-show).
+- Wires up library_settings.no_show_grace_minutes, the last remaining
+  unused column left over from Story 2.1's schema (see section 5.8/13).
+  Unlike extension_limit_minutes (Story 3.7), which is unenforced until
+  an Admin sets it, a null grace period here defaults to 0 minutes -
+  the story's entire purpose is marking overdue bookings, so it needs
+  to work out of the box without any DB setup.
+  There is still no PUT /admin/settings support for this column - only
+  settable directly in the DB or a future admin route.
+  No schema/model change was needed for Booking.status: it's a free
+  string column, so "No-Show" is just a new value alongside the
+  existing Confirmed/Checked-In/Cancelled (dbSchema.docx's
+  booking_status enum already lists No-Show). Marking a booking
+  No-Show frees its seat automatically, with no extra code - every
+  overlap/availability query already filters on status="Confirmed", so
+  a booking that's left that status stops blocking the slot.
+- Added pytest coverage in test_app.py (fixture: overdue_booking, a
+  Confirmed booking dated today with start/end times already in the
+  past) for: candidate listing includes overdue/excludes future
+  bookings, successful no-show marking, seat becomes rebookable
+  afterward, rejection while still within a configured grace period,
+  404 on unknown booking, rejection of an already-cancelled booking,
+  and role restriction.
+
+Story 4.4 (2026-08-11):
+- Implemented Study Session Check-Out
+  (resources/bookings.py: BookingCheckoutResource; POST
+  /bookings/<id>/checkout). Kept in bookings.py rather than a new file
+  since it's the same /bookings/<id>/... URL family and ownership rule
+  as BookingDetailResource (PUT) and BookingCancelResource (cancel) -
+  own student or Staff/Admin, not staff-only like checkin.py/no_show.py.
+- Closes the attendance loop Story 4.1/4.2 opened: finds the booking's
+  attendance row with checkout_time still null, stamps it, and moves
+  Booking.status from "Checked-In" to "Completed" - the last unused
+  value in dbSchema.docx's booking_status enum is now implemented.
+  This is now the full lifecycle: Confirmed -> Checked-In -> Completed
+  (or -> Cancelled / No-Show as off-ramps).
+- No new "free the seat" code needed, and for a subtly different reason
+  than Story 4.3's no-show freeing: a Checked-In booking already isn't
+  "Confirmed", so it was already excluded from every overlap/
+  availability query from the moment of check-in, not checkout. See
+  section 15 item 11.
+- Added pytest coverage in test_app.py (fixture: checked_in_booking,
+  which checks in the todays_booking fixture via staff_token first) for
+  success by the owning student, success when Staff calls it instead,
+  rejection when the booking was never checked in, 404 on unknown
+  booking, 403 for a non-owner student, and 400 on a second checkout
+  attempt.
+
+Story 5.1 (2026-08-11):
+- Implemented Offline Payment Recording
+  (models.py: new Payment model; resources/payments.py:
+  StaffPaymentListResource; POST /staff/payments).
+- dbSchema.docx's payments table includes a membership_id column;
+  omitted here since, per the existing membership_id == student_id
+  convention (section 15 item 1), it would just be a second column
+  holding the same value as student_id. Flag this with the team if a
+  real memberships table gets built later - see section 15 item 12.
+- payment_mode is validated against a fixed set (Cash/UPI/Card, per
+  dbSchema.docx's inline comment) - the first payment-mode-shaped field
+  in the project to get allowlist validation rather than free text.
+- payment_date and recorded_by are always server-set, never accepted
+  from the request body, consistent with created_at/checkin_time/
+  requested_at elsewhere in the app.
+- Added pytest coverage in test_app.py (fixture: payment_student_id) for
+  successful recording, invalid payment_mode, missing/non-positive
+  amount, unknown student_id, and role restriction.
+- Drive-by fix: Story 4.3's overdue_booking fixture computed
+  start_time/end_time as (now - N minutes).time() but kept booking_date
+  pinned to today. Near midnight, now-minus-90-minutes wraps to
+  yesterday and .time() silently drops the date change, leaving a
+  start_time that's actually still hours in the future relative to
+  today's date - the fixture stopped producing an overdue booking and
+  every no-show test using it failed. Fixed by dating the fixture's
+  booking yesterday with a fixed 10:00-11:00 slot, which is always in
+  the past regardless of wall-clock time. Caught by chance running this
+  story's tests right after midnight.
+
+Story 5.2 (2026-08-12):
+- Implemented Payment History
+  (resources/payments.py: StudentPaymentHistoryResource,
+  StaffStudentPaymentHistoryResource; GET /students/me/payments, GET
+  /staff/students/<id>/payments). Kept in payments.py alongside
+  StaffPaymentListResource rather than student_profile.py/
+  staff_students.py, matching the precedent set by bookings.py (which
+  groups StudentBookingHistoryResource and StaffTodayBookingsResource
+  together by resource type rather than by which URL prefix owns them).
+- Both routes order by payment_date descending (newest first), matching
+  StudentBookingHistoryResource's convention, and return an empty list
+  rather than an error for a student with no payments yet.
+- Added pytest coverage in test_app.py (fixture: payment_student, a
+  fresh registered+logged-in student distinct from payment_student_id
+  since this story needs a login token, not just a student_id) for: a
+  student viewing their own history, an empty history for a student
+  with no payments, staff viewing a specific student's history, 404 on
+  an unknown student_id, and role restriction both directions.
+
+Story 6.1 (2026-08-12):
+- Implemented Complaint Submission
+  (models.py: new Complaint model; resources/complaints.py:
+  StudentComplaintListResource; POST /students/me/complaints).
+- Added created_at to the Complaint model even though dbSchema.docx's
+  complaints table doesn't have one - every other story-created table
+  has some form of creation timestamp for ordering/audit, and Story 6.2
+  will need it to list complaints meaningfully. Kept consistent with
+  the project's established pattern of extending the schema modestly
+  where the doc looks like an omission (see section 15 item 13).
+- status defaults to "Open" and is server-set, not accepted from the
+  client, matching the role/status-controlled-server-side pattern used
+  everywhere else (booking status, membership_status, etc.).
+- No GET route in this story - only submission. Story 6.2 (Complaint
+  Management) owns listing/filtering/resolving complaints.
+- Added pytest coverage in test_app.py for: successful submission,
+  missing title, missing description, non-JSON body, and role
+  restriction (staff cannot submit).
+
+========================================================================
+10. NEXT STEPS / OPEN ITEMS
+========================================================================
+
+- Confirm whether membership_id needs a separate Membership table
+- Connect frontend (Vue) to these endpoints
+- Epic 4 (Check-in & Attendance Management) is fully implemented
+  (Stories 4.1-4.4). Epic 5 (Payment Management) is fully implemented
+  (Stories 5.1-5.2). Epic 6: Story 6.1 (Complaint Submission) is done;
+  Stories 6.2 (Complaint Management) and 6.3 (Announcements) remain,
+  along with Story 2.4 (reports/analytics) - see below.
+- Local `dev` is still stale relative to origin/dev - pull before
+  branching further work off it
+- Story 2.4 (Library Reports & Analytics) intentionally deferred - not
+  started. /admin/reports/occupancy and /peak-hours need Epic 4
+  (attendance) data, /revenue needs Epic 5 (payments) data.
+  /admin/reports/memberships could be built now from existing
+  students/membership_plans data but was deferred along with the rest
+  per team decision - revisit once Epics 4-5 land.
+
+========================================================================
+12. COMPLETE API TESTING DATA (EVERY ENDPOINT, STEP BY STEP)
+========================================================================
+
+TEST 1 - Login as Admin
+Method: POST
+URL:    http://localhost:5000/api/auth/login
+Body:
+{
+  "username": "admin",
+  "password": "test-password"
+}
+Expected: 200, save access_token as admin_token
+
+TEST 2 - Create a Staff account (Admin only)
+Method: POST
+URL:    http://localhost:5000/api/admin/staff
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "username": "staff1",
+  "password": "staff123",
+  "email": "staff1@lib.com",
+  "phone": "9876500001"
+}
+Expected: 201
+
+TEST 3 - Login as Staff
+Method: POST
+URL:    http://localhost:5000/api/auth/login
+Body:
+{
+  "username": "staff1",
+  "password": "staff123"
+}
+Expected: 200, save as staff_token
+
+TEST 4 - Get all staff
+Method: GET
+URL:    http://localhost:5000/api/admin/staff
+Auth:   Bearer {{admin_token}}
+Expected: 200
+
+TEST 5 - Get one staff by id
+Method: GET
+URL:    http://localhost:5000/api/admin/staff/2
+Auth:   Bearer {{admin_token}}
+Expected: 200
+Negative: /api/admin/staff/999 -> 404
+
+TEST 6 - Update staff details
+Method: PUT
+URL:    http://localhost:5000/api/admin/staff/2
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "phone": "9999999999"
+}
+Expected: 200
+
+TEST 7 - View membership plans (Story 2.3)
+Method: GET
+URL:    http://localhost:5000/api/admin/membership-plans
+Auth:   Bearer {{admin_token}}
+Expected: 200, Weekly/Monthly/Yearly, each is_active: true
+
+TEST 7b - Create a membership plan (Story 2.3)
+Method: POST
+URL:    http://localhost:5000/api/admin/membership-plans
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "plan_name": "Quarterly",
+  "duration_days": 90,
+  "price": 900
+}
+Expected: 201
+Negative body: { "plan_name": "Bad", "duration_days": -5, "price": 100 } -> 400
+Negative body: { "plan_name": "Bad", "duration_days": 30, "price": -1 } -> 400
+
+TEST 8 - Update a membership plan (Story 2.3)
+Method: PUT
+URL:    http://localhost:5000/api/admin/membership-plans/2
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "price": 350
+}
+Expected: 200
+Negative body: { "price": -50 } -> 400
+Negative: /api/admin/membership-plans/999 -> 404
+
+TEST 8b - Retire a membership plan (Story 2.3)
+Method: DELETE
+URL:    http://localhost:5000/api/admin/membership-plans/4
+Auth:   Bearer {{admin_token}}
+Expected: 200, is_active becomes false
+Negative: call again -> 400 (already retired)
+Negative: /api/admin/membership-plans/999 -> 404
+
+TEST 9 - Staff registers a new student (Story 1.3)
+Method: POST
+URL:    http://localhost:5000/api/staff/students/register
+Auth:   Bearer {{staff_token}}
+Body:
+{
+  "username": "student1",
+  "password": "pass123",
+  "email": "student1@lib.com",
+  "full_name": "Rahul Sharma",
+  "address": "Pune",
+  "plan_id": 2,
+  "phone": "9123456780"
+}
+Expected: 201
+Negative: same username again -> 409
+Negative: remove full_name -> 400
+Negative: "plan_id": 999 -> 404
+
+TEST 10 - Staff views student profile
+Method: GET
+URL:    http://localhost:5000/api/staff/students/1
+Auth:   Bearer {{staff_token}}
+Expected: 200
+Negative: /staff/students/999 -> 404
+
+TEST 10b - Staff verifies student membership validity
+Method: GET
+URL:    http://localhost:5000/api/staff/students/1/verify
+Auth:   Bearer {{staff_token}}
+Expected: 200 { "status": "Pending", "valid": false, "membership_expiry": null }
+
+TEST 11 - Admin lists pending memberships
+Method: GET
+URL:    http://localhost:5000/api/admin/memberships/pending
+Auth:   Bearer {{admin_token}}
+Expected: 200, student1 shows as Pending
+
+TEST 12 - Admin lists all memberships with filter
+Method: GET
+URL:    http://localhost:5000/api/admin/memberships
+Auth:   Bearer {{admin_token}}
+Expected: 200, all students
+
+Method: GET
+URL:    http://localhost:5000/api/admin/memberships?status=Pending
+Expected: 200, filtered results
+(repeat with ?status=Active, ?status=Rejected, ?status=Disapproved)
+
+TEST 13 - Admin approves a membership
+Method: POST
+URL:    http://localhost:5000/api/admin/memberships/1/approve
+Auth:   Bearer {{admin_token}}
+Expected: 200, status becomes Active with expiry date
+Negative: call again -> 400 "already active"
+
+TEST 14 - Admin rejects a membership
+(First register student2 via Test 9 pattern)
+Method: POST
+URL:    http://localhost:5000/api/admin/memberships/2/reject
+Auth:   Bearer {{admin_token}}
+Expected: 200
+Negative: reject an Active student -> 400
+
+TEST 14b - Admin disapproves an active membership
+Method: POST
+URL:    http://localhost:5000/api/admin/memberships/1/disapprove
+Auth:   Bearer {{admin_token}}
+Expected: 200, status becomes Disapproved, expiry cleared
+Negative: call again on a non-Active membership -> 400
+
+TEST 15 - Admin extends/updates a membership
+Method: PUT
+URL:    http://localhost:5000/api/admin/memberships/1
+Auth:   Bearer {{admin_token}}
+Body A:
+{
+  "extend_days": 30
+}
+Body B:
+{
+  "membership_expiry": "2026-12-31"
+}
+Body C:
+{
+  "plan_id": 3
+}
+Negative body:
+{
+  "membership_expiry": "31-12-2026"
+}
+Expected: 400 wrong format
+
+TEST 15b - Admin views and updates operating hours (Story 2.1)
+Method: GET
+URL:    http://localhost:5000/api/admin/settings
+Auth:   Bearer {{admin_token}}
+Expected: 200, default { "open_time": "09:00", "close_time": "21:00", ... }
+
+Method: PUT
+URL:    http://localhost:5000/api/admin/settings
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "open_time": "08:00",
+  "close_time": "22:00"
+}
+Expected: 200
+Negative body: { "open_time": "22:00", "close_time": "08:00" } -> 400 (close before open)
+Negative body: { "open_time": "9am" } -> 400 (bad format)
+Negative: PUT with staff_token -> 403
+
+TEST 15c - Admin manages seat inventory (Story 2.2)
+Method: POST
+URL:    http://localhost:5000/api/admin/seats
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "seat_number": "A1"
+}
+Expected: 201, status defaults to "Available"
+Negative: same seat_number again -> 409
+Negative body: { "seat_number": "A2", "status": "Occupied" } -> 400 (invalid status)
+
+Method: GET
+URL:    http://localhost:5000/api/admin/seats
+Auth:   Bearer {{admin_token}}
+Expected: 200, list including A1
+
+Method: PUT
+URL:    http://localhost:5000/api/admin/seats/1
+Auth:   Bearer {{admin_token}}
+Body:
+{
+  "status": "Maintenance"
+}
+Expected: 200
+Negative: /api/admin/seats/999 -> 404
+Negative: POST/GET/PUT with staff_token -> 403
+
+TEST 16 - (removed) The old generic /students CRUD endpoints (list/get/
+approve/reject/disapprove at /students/...) were removed - they duplicated
+Story 1.2 (admin_memberships.py) and Story 1.3 (staff_students.py). Use
+those instead. See TESTs 9-15 above.
+
+TEST 17 - Login as Student and test self-service profile (Story 1.4/1.5)
+Method: POST
+URL:    http://localhost:5000/api/auth/login
+Body:
+{
+  "username": "student1",
+  "password": "pass123"
+}
+Expected: 200, save as student_token
+
+Method: GET
+URL:    http://localhost:5000/api/students/me
+Auth:   Bearer {{student_token}}
+Expected: 200, includes membership_status/membership_expiry/membership_valid
+Negative: GET /api/profile with student_token -> 403 (students must use /students/me)
+
+Method: PUT
+URL:    http://localhost:5000/api/students/me
+Auth:   Bearer {{student_token}}
+Body:
+{
+  "phone": "9000011111",
+  "address": "Mumbai"
+}
+Expected: 200
+
+TEST 18 - Reset password
+Method: POST
+URL:    http://localhost:5000/api/auth/reset-password
+Auth:   Bearer {{student_token}}
+Body:
+{
+  "old_password": "pass123",
+  "new_password": "newpass456"
+}
+Expected: 200
+Then re-login with new password to confirm.
+
+TEST 19 - Role restriction tests (all must return 403)
+GET /api/admin/staff with student_token -> 403
+GET /api/admin/memberships/pending with staff_token -> 403
+POST /api/staff/students/register with student_token -> 403
+GET /api/profile with student_token -> 403
+
+TEST 20 - Bad request / missing JSON tests
+POST /api/auth/login with Body set to Text (not JSON) -> 400
+POST /api/auth/login with Body: {} -> 400
+
+TEST 21 - Seat availability search (Story 3.1)
+Method: GET
+URL:    http://localhost:5000/api/seats/availability?date=2026-09-01&start_time=10:00&end_time=11:00
+Auth:   Bearer {{admin_token}} (or staff_token/student_token - any role)
+Expected: 200, 20 seats available (fresh DB)
+
+TEST 22 - Book a seat (Story 3.2)
+Method: POST
+URL:    http://localhost:5000/api/bookings
+Auth:   Bearer {{student_token}}
+Body: { "seat_id": 1, "date": "2026-09-01", "start_time": "10:00", "end_time": "11:00" }
+Expected: 201, response includes a checkin_code
+Negative: same seat_id/date with overlapping time -> 409
+
+TEST 23 - Student requests a booking extension (Story 3.7)
+Method: POST
+URL:    http://localhost:5000/api/students/me/bookings/1/extension-request
+Auth:   Bearer {{student_token}}
+Body: { "requested_end_time": "11:30" }
+Expected: 201, extension_request status "Pending"
+Negative: call again while still Pending -> 409
+Negative body: { "requested_end_time": "10:30" } (before current end) -> 400
+Negative: student2's token on student1's booking -> 404
+
+TEST 24 - Staff views pending extension requests (Story 3.7)
+Method: GET
+URL:    http://localhost:5000/api/staff/extension-requests
+Auth:   Bearer {{staff_token}}
+Expected: 200, includes the request from TEST 23 with seat_number/full_name
+
+TEST 25 - Staff approves an extension, same seat (Story 3.7)
+Method: POST
+URL:    http://localhost:5000/api/staff/extension-requests/1/approve
+Auth:   Bearer {{staff_token}}
+Body: none
+Expected: 200, booking.end_time becomes "11:30"
+Negative: call again on the same (now Approved) request -> 400
+
+TEST 25b - Staff approves an extension that requires seat reassignment
+(First: have another student book the same seat for the time right
+after the first booking's end_time, so a same-seat extension clashes.)
+Method: POST
+URL:    http://localhost:5000/api/staff/extension-requests/<id>/approve
+Auth:   Bearer {{staff_token}}
+Body: none
+Expected: 409 (current seat unavailable for the extension)
+
+Method: POST
+URL:    http://localhost:5000/api/staff/extension-requests/<id>/approve
+Auth:   Bearer {{staff_token}}
+Body: { "seat_id": <a different free seat_id> }
+Expected: 200, booking.seat_id changes to the new seat and end_time extends
+Negative body: { "seat_id": <a seat that's also busy> } -> 409
+
+TEST 26 - Staff rejects an extension request (Story 3.7)
+Method: POST
+URL:    http://localhost:5000/api/staff/extension-requests/<id>/reject
+Auth:   Bearer {{staff_token}}
+Expected: 200, status becomes "Rejected", underlying booking unchanged
+Negative: call again -> 400 (already resolved)
+
+TEST 27 - extension_limit_minutes enforcement (Story 3.7)
+(Requires setting library_settings.extension_limit_minutes - no admin
+route exposes this yet, so set it directly in the DB for this test.)
+Method: POST
+URL:    http://localhost:5000/api/students/me/bookings/<booking_id>/extension-request
+Auth:   Bearer {{student_token}}
+Body: { "requested_end_time": <more than the configured limit past current end_time> }
+Expected: 400 "Requested extension exceeds the maximum allowed (...)"
+
+TEST 28 - Role restriction tests for Story 3.7 (all must return 403)
+POST /api/students/me/bookings/<id>/extension-request with staff_token -> 403
+GET  /api/staff/extension-requests with student_token -> 403
+POST /api/staff/extension-requests/<id>/approve with student_token -> 403
+
+TEST 29 - Staff checks in a student (Story 4.1/4.2)
+(First book a seat for TODAY'S date, e.g. via TEST 22's pattern with
+"date" set to today.)
+Method: POST
+URL:    http://localhost:5000/api/staff/checkin
+Auth:   Bearer {{staff_token}}
+Body: { "checkin_code": "<checkin_code from the today-dated booking>" }
+Expected: 201, booking.status becomes "Checked-In", response includes
+seat_number/full_name
+Negative: call again with the same checkin_code -> 400 (no longer Confirmed)
+Negative body: {} -> 400 (checkin_code required)
+Negative body: { "checkin_code": "BOGUSCODE" } -> 404
+Negative: checkin_code from a booking dated in the future -> 400
+Negative: checkin_code from a Cancelled booking -> 400
+Negative: with student_token -> 403
+
+TEST 30 - Staff lists no-show candidates (Story 4.3)
+(First create a Confirmed booking whose date/start_time is already in
+the past, e.g. today's date with a start_time earlier than now, and
+leave it un-checked-in.)
+Method: GET
+URL:    http://localhost:5000/api/staff/bookings/no-show-candidates
+Auth:   Bearer {{staff_token}}
+Expected: 200, includes grace_minutes (0 unless configured), and the
+overdue booking with seat_number/full_name/username/minutes_overdue
+Negative: a future-dated Confirmed booking does not appear in the list
+Negative: with student_token -> 403
+
+TEST 31 - Staff marks a booking No-Show (Story 4.3)
+Method: POST
+URL:    http://localhost:5000/api/staff/bookings/<booking_id>/no-show
+Auth:   Bearer {{staff_token}}
+Expected: 200, booking.status becomes "No-Show"
+Negative: call again on the same booking -> 400 (no longer Confirmed)
+Negative: /api/staff/bookings/999/no-show -> 404
+Negative: a booking still within the grace period (e.g. set
+library_settings.no_show_grace_minutes very high first) -> 400
+Negative: a Cancelled booking -> 400
+Negative: with student_token -> 403
+Then: confirm the same seat/slot can be booked again by another student
+(the seat was released).
+
+TEST 32 - Student checks out of a study session (Story 4.4)
+(First check in via TEST 29's pattern so the booking is Checked-In.)
+Method: POST
+URL:    http://localhost:5000/api/bookings/<booking_id>/checkout
+Auth:   Bearer {{student_token}}
+Expected: 200, booking.status becomes "Completed", attendance.checkout_time set
+Negative: call again -> 400 (no longer Checked-In)
+Negative: /api/bookings/999/checkout -> 404
+Negative: checkout a booking that was never checked in (still Confirmed) -> 400
+Negative: a different student's token on this booking -> 403
+Also verify: staff_token/admin_token can check out on the student's behalf -> 200
+
+TEST 33 - Staff records an offline payment (Story 5.1)
+Method: POST
+URL:    http://localhost:5000/api/staff/payments
+Auth:   Bearer {{staff_token}}
+Body:
+{
+  "student_id": 1,
+  "amount": 500,
+  "payment_mode": "Cash"
+}
+Expected: 201, response includes payment_date/recorded_by set by the server
+Negative body: { "student_id": 1, "amount": 500, "payment_mode": "Cheque" } -> 400
+Negative body: { "student_id": 1, "payment_mode": "UPI" } -> 400 (amount missing)
+Negative body: { "student_id": 1, "amount": -50, "payment_mode": "Cash" } -> 400
+Negative: "student_id": 999 -> 404
+Negative: with student_token -> 403
+
+TEST 34 - Payment history (Story 5.2)
+Method: GET
+URL:    http://localhost:5000/api/students/me/payments
+Auth:   Bearer {{student_token}}
+Expected: 200, total_payments/payments array (empty list if none recorded)
+
+Method: GET
+URL:    http://localhost:5000/api/staff/students/1/payments
+Auth:   Bearer {{staff_token}}
+Expected: 200, total_payments/payments array, plus full_name
+Negative: /api/staff/students/999/payments -> 404
+Negative: GET /students/me/payments with staff_token -> 403
+Negative: GET /staff/students/1/payments with student_token -> 403
+
+TEST 35 - Student submits a complaint (Story 6.1)
+Method: POST
+URL:    http://localhost:5000/api/students/me/complaints
+Auth:   Bearer {{student_token}}
+Body:
+{
+  "title": "Noisy neighbors",
+  "description": "Students at the next table were talking loudly."
+}
+Expected: 201, status defaults to "Open"
+Negative body: { "description": "..." } -> 400 (title missing)
+Negative body: { "title": "..." } -> 400 (description missing)
+Negative: with staff_token -> 403
+
+CHECKLIST
+[ ] Admin login works
+[ ] Staff creation + login works
+[ ] Staff list/detail/update works
+[ ] Membership plans list works
+[ ] Membership plan create works (validates duration_days/price)
+[ ] Membership plan edit works (any of plan_name/duration_days/price)
+[ ] Membership plan retire (DELETE) works, blocks double-retire
+[ ] Staff can register new student
+[ ] Staff can view student profile
+[ ] Staff can verify a student's membership validity
+[ ] Admin can list pending memberships
+[ ] Admin can filter memberships by status
+[ ] Admin can approve membership
+[ ] Admin can reject membership (only from Pending)
+[ ] Admin can disapprove membership (only from Active)
+[ ] Admin can extend/update membership
+[ ] Admin can view library settings
+[ ] Admin can update operating hours (close_time after open_time enforced)
+[ ] Admin can add a seat (unique seat_number enforced)
+[ ] Admin can list seats
+[ ] Admin can update a seat's status (Available/Maintenance only)
+[ ] Student login + /students/me GET/PUT works
+[ ] Student is blocked (403) from /profile
+[ ] Password reset + re-login works
+[ ] All 403 role-restriction tests pass
+[ ] Bad JSON / missing body returns 400 correctly
+[ ] Seat availability search excludes inactive seats and overlapping bookings
+[ ] Booking creation generates a unique checkin_code, blocks overlapping slots
+[ ] Student can request an extension on their own Confirmed booking
+[ ] Duplicate Pending extension request on the same booking is blocked (409)
+[ ] Staff can list pending extension requests with student/seat context
+[ ] Staff approve extends the same seat when it's free for the extra time
+[ ] Staff approve returns 409 (not a silent failure) when the same seat clashes
+[ ] Staff approve with seat_id reassigns the booking to a different free seat
+[ ] Staff reject leaves the underlying booking untouched
+[ ] Already-resolved extension requests can't be approved/rejected again
+[ ] extension_limit_minutes, when set, is enforced on the student's request
+[ ] Staff can check in a student via a valid today-dated checkin_code
+[ ] Check-in creates an attendance row and flips booking status to Checked-In
+[ ] Duplicate check-in on the same booking is blocked (400)
+[ ] Check-in rejects an unknown checkin_code (404)
+[ ] Check-in rejects a future-dated or Cancelled booking (400)
+[ ] Students are blocked (403) from POST /staff/checkin
+[ ] Staff can list no-show candidates (overdue Confirmed bookings only)
+[ ] No-show candidates list excludes future-dated bookings
+[ ] Staff can mark an overdue Confirmed booking as No-Show
+[ ] No-show marking frees the seat for a new booking in that slot
+[ ] No-show is rejected while still within the configured grace period
+[ ] No-show rejects an unknown booking_id (404) or non-Confirmed booking (400)
+[ ] Students are blocked (403) from both no-show endpoints
+[ ] The owning student can check out a Checked-In booking
+[ ] Staff/Admin can check out a booking on the student's behalf
+[ ] Checkout is rejected for a booking that was never checked in (400)
+[ ] Checkout rejects an unknown booking_id (404)
+[ ] A non-owner student is blocked (403) from checking out someone else's booking
+[ ] A second checkout attempt on the same booking is blocked (400)
+[ ] Staff can record a payment with a valid payment_mode
+[ ] Payment recording rejects an invalid payment_mode (400)
+[ ] Payment recording rejects missing/non-positive amount (400)
+[ ] Payment recording rejects an unknown student_id (404)
+[ ] Students are blocked (403) from recording payments
+[ ] A student can view their own payment history (empty list when none recorded)
+[ ] Staff can view a specific student's payment history
+[ ] Payment history rejects an unknown student_id (404)
+[ ] Staff are blocked (403) from GET /students/me/payments
+[ ] Students are blocked (403) from GET /staff/students/<id>/payments
+[ ] Student can submit a complaint (status defaults to "Open")
+[ ] Complaint submission rejects missing title or description (400)
+[ ] Staff are blocked (403) from submitting a complaint
+
+========================================================================
+13. DATABASE SCHEMA (ERD SUMMARY)
+========================================================================
+
+TABLE: users
+--------------------------------------------------------------------
+Column          Type            Notes
+user_id         Integer PK      auto-increment
+username        String(100)     unique, required
+password_hash   String(255)     hashed with Werkzeug generate_password_hash
+email           String(150)     required
+id_type         String(255)     optional (see Field Reference below)
+id_number       String(255)     optional (see Field Reference below)
+phone           String(20)      optional
+role            String(20)      "Admin" / "Staff" / "Student"
+status          Boolean         True = active account, False = deactivated
+
+TABLE: membership_plans
+--------------------------------------------------------------------
+Column          Type            Notes
+plan_id         Integer PK      auto-increment
+plan_name       String(100)     "Weekly" / "Monthly" / "Yearly" (seeded)
+duration_days   Integer         used to calculate membership_expiry on approve
+price           Numeric(10,2)   editable via PUT /admin/membership-plans/<id>
+is_active       Boolean         True by default; DELETE /admin/membership-plans/<id>
+                                sets this False (soft-retire, not a real row delete -
+                                added beyond dbSchema.docx since students.plan_id
+                                still references retired plans and "retire" implies
+                                soft-delete, not hard delete)
+
+TABLE: students
+--------------------------------------------------------------------
+Column              Type            Notes
+student_id          Integer PK      auto-increment
+user_id             Integer FK      -> users.user_id (1-to-1 with a User row)
+full_name           String(150)     required
+address             Text            optional
+membership_status   String(20)      Pending / Active / Rejected / Disapproved
+plan_id             Integer FK      -> membership_plans.plan_id (nullable)
+membership_expiry   Date            set automatically when Admin approves
+
+TABLE: seats
+--------------------------------------------------------------------
+Column          Type            Notes
+seat_id         Integer PK      auto-increment
+seat_number     String(20)      unique, required (e.g. "A1")
+seat_type       String(50)      optional, free text (e.g. "Standard") - not
+                                validated against a fixed list
+is_active       Boolean         True by default; False excludes the seat from
+                                availability search/booking (see section 15
+                                item 8 for why this replaced status)
+
+Admin CRUD via POST/GET/PUT /admin/seats (Story 2.2). No DELETE route -
+taking a seat out of service is done by setting is_active to false.
+20 sample seats (S01-S20) are auto-seeded on first app run.
+
+TABLE: bookings
+--------------------------------------------------------------------
+Column          Type            Notes
+booking_id      Integer PK      auto-increment
+user_id         Integer FK      -> users.user_id (the student who booked)
+seat_id         Integer FK      -> seats.seat_id
+booking_date    Date            required
+start_time      Time            required
+end_time        Time            required, must be after start_time
+checkin_code    String(20)      unique, auto-generated (secrets.token_hex)
+status          String(20)      "Confirmed" / "Checked-In" / "Cancelled" /
+                                "No-Show" / "Completed", defaults to
+                                Confirmed (Checked-In: Story 4.1/4.2,
+                                No-Show: Story 4.3, Completed: Story 4.4
+                                - this is now the full dbSchema.docx
+                                booking_status enum, Booked-vs-Confirmed
+                                naming drift aside, see section 15 item 8)
+created_at      DateTime        set on creation
+
+Managed via /bookings, /students/me/bookings, /staff/bookings/*,
+/staff/checkin (Stories 3.1-3.7, 4.1-4.4).
+
+TABLE: attendance
+--------------------------------------------------------------------
+Column          Type            Notes
+attendance_id   Integer PK      auto-increment
+booking_id      Integer FK      -> bookings.booking_id
+checkin_time    DateTime        set when staff verifies the checkin_code
+checkout_time   DateTime        nullable; set via POST
+                                /bookings/<id>/checkout (Story 4.4)
+verified_by     Integer FK      -> users.user_id, the staff/admin who
+                                checked the student in
+
+Created via POST /staff/checkin (Story 4.1/4.2), closed via POST
+/bookings/<id>/checkout (Story 4.4). One row per successful check-in;
+a booking can only be checked in once since the underlying
+Booking's status leaves "Confirmed" the moment attendance is recorded,
+and only Confirmed bookings are eligible for check-in.
+
+TABLE: extension_requests
+--------------------------------------------------------------------
+Column                  Type            Notes
+extension_request_id    Integer PK      auto-increment
+booking_id              Integer FK      -> bookings.booking_id
+requested_end_time      Time            the new end_time the student is
+                                        asking for (dbSchema.docx models this
+                                        as datetime; stored as Time here to
+                                        match Booking.end_time's own type -
+                                        see section 15 item 9)
+status                  String(20)      "Pending" / "Approved" / "Rejected"
+requested_at            DateTime        set on creation, used to order the
+                                        staff queue oldest-first
+approved_by             Integer FK      -> users.user_id, set on approve OR
+                                        reject (whichever staff/admin acted)
+
+Managed via /students/me/bookings/<id>/extension-request and
+/staff/extension-requests/* (Story 3.7). Approving does not create a
+new booking - it mutates the existing Booking row's end_time (and
+seat_id, if the staff member reassigns to a different seat).
+
+TABLE: payments
+--------------------------------------------------------------------
+Column          Type            Notes
+payment_id      Integer PK      auto-increment
+student_id      Integer FK      -> students.student_id
+amount          Numeric(10,2)   required, must be positive
+payment_mode    String(20)      "Cash" / "UPI" / "Card" only (validated,
+                                unlike most other free-text fields)
+payment_date    DateTime        server-set to now on creation - not
+                                accepted from the request body
+recorded_by     Integer FK      -> users.user_id, the staff/admin who
+                                recorded the payment
+
+Created via POST /staff/payments (Story 5.1). dbSchema.docx's payments
+table also has a membership_id FK; omitted here because, under the
+existing membership_id == student_id convention (see IMPORTANT note
+below), it would just duplicate student_id - see section 15 item 12.
+Read via GET /students/me/payments and GET /staff/students/<id>/payments
+(Story 5.2).
+
+TABLE: complaints
+--------------------------------------------------------------------
+Column          Type            Notes
+complaint_id    Integer PK      auto-increment
+student_id      Integer FK      -> students.student_id
+title           String(200)     required
+description     Text            required (see section 5.17)
+status          String(20)      defaults to "Open"; Story 6.2 (not yet
+                                implemented) will add further values
+                                and the staff workflow to change them
+resolved_by     Integer FK      -> users.user_id, nullable; set by
+                                Story 6.2 when a staff/admin resolves
+                                the complaint - always null for now
+created_at      DateTime        set on creation; not in dbSchema.docx,
+                                added for ordering/audit consistent
+                                with every other story-created table -
+                                see section 15 item 13
+
+Created via POST /students/me/complaints (Story 6.1). No GET/PUT route
+yet - those belong to Story 6.2 (Complaint Management).
+
+TABLE: library_settings
+--------------------------------------------------------------------
+Column                    Type            Notes
+setting_id                Integer PK      auto-increment
+open_time                 Time            set via PUT /admin/settings (Story 2.1)
+close_time                Time            set via PUT /admin/settings (Story 2.1)
+total_seats                Integer         not yet managed by any story - null
+no_show_grace_minutes      Integer         managed by Story 4.3 - when set (non-
+                                           null), a Confirmed booking becomes a
+                                           no-show candidate this many minutes
+                                           after its start_time; null defaults to
+                                           0 (candidate as soon as start_time
+                                           passes). No PUT /admin/settings
+                                           support for it yet - only settable
+                                           directly in the DB or a future admin
+                                           route
+cancellation_period        Integer         not yet managed by any story - null
+max_booking_days_ahead     Integer         not yet managed by any story - null
+extension_limit_minutes    Integer         managed by Story 3.7 - when set (non-
+                                           null), caps how many extra minutes a
+                                           student may request in one extension-
+                                           request call. Still null/unenforced
+                                           until an Admin sets it (no PUT
+                                           /admin/settings support for it yet -
+                                           only settable directly in the DB or a
+                                           future admin route)
+updated_by                Integer FK      -> users.user_id, set on every PUT
+updated_at                DateTime        set on every PUT
+
+Single-row table: one default row (09:00-21:00) is auto-seeded on first
+app run in app.py:seed_data(). There is no POST/DELETE for this table -
+Admin only ever edits the one existing row via PUT /admin/settings.
+
+RELATIONSHIPS
+--------------------------------------------------------------------
+users (1) ----- (1) students        [every Student row links to one User row]
+membership_plans (1) ----- (many) students  [many students can share one plan]
+users (1) ----- (many) library_settings.updated_by  [tracks which admin last changed settings]
+users (1) ----- (many) bookings     [a user can have many bookings over time]
+seats (1) ----- (many) bookings     [a seat can be booked many times, never overlapping while Confirmed]
+bookings (1) ----- (many) extension_requests  [a booking can accumulate multiple requests over time, only one Pending at once]
+users (1) ----- (many) extension_requests.approved_by  [tracks which staff/admin resolved each request]
+bookings (1) ----- (many) attendance  [in practice one per booking, since check-in is only allowed once per Confirmed booking]
+users (1) ----- (many) attendance.verified_by  [tracks which staff/admin performed the check-in]
+students (1) ----- (many) payments  [a student can have many recorded payments over time]
+users (1) ----- (many) payments.recorded_by  [tracks which staff/admin recorded each payment]
+students (1) ----- (many) complaints  [a student can submit multiple complaints over time]
+users (1) ----- (many) complaints.resolved_by  [will track which staff/admin resolved each complaint, once Story 6.2 exists]
+
+IMPORTANT: There is currently NO separate "memberships" table. The admin
+membership routes (/api/admin/memberships/...) reuse student_id as the
+membership_id, and payments.membership_id (present in dbSchema.docx) is
+dropped for the same reason (section 15 item 12). If your project brief
+requires a separate membership history table (e.g. to track multiple
+past memberships per student), this needs a new model - flag this with
+your team before final submission.
+
+========================================================================
+14. FIELD REFERENCE (WHAT EACH FIELD MEANS)
+========================================================================
+
+username           - login identifier, must be unique across all roles
+password            - plain text on input only, stored as hashed password_hash
+email               - contact email, required for all users
+id_type             - type of ID proof submitted (e.g. "Aadhar", "College ID",
+                      "Passport") - free text, not validated against a fixed list
+id_number           - the actual ID proof number matching id_type
+phone               - contact number, optional, no format validation currently
+role                - controls access: Admin / Staff / Student (set by system,
+                      not by the client - never accept "role" from request body)
+status (User)       - true = can log in, false = deactivated (staff only route
+                      to deactivate exists; no reactivate route yet)
+full_name           - student's display name, required at registration
+address             - student's address, optional, free text
+membership_status   - one of: Pending, Active, Rejected, Disapproved
+                      Pending    -> just registered, awaiting admin decision
+                      Active     -> approved, has a valid membership_expiry
+                      Rejected   -> admin rejected the pending request
+                      Disapproved-> was Active, admin later disapproved it
+plan_id             - links student to a MembershipPlan; can be null if no
+                      plan chosen yet
+membership_expiry   - calculated as today + plan.duration_days on approval;
+                      can be manually extended/set via admin PUT route
+duration_days       - defines how long a plan lasts once approved
+price               - plan cost, editable by Admin only, stored as decimal
+seat_type           - free text seat category (e.g. "Standard"), not validated
+                      against a fixed list, purely informational for now
+is_active (Seat)    - true = bookable, false = out of service (see section
+                      15 item 8)
+checkin_code        - auto-generated unique code returned when a booking is
+                      created; will be what Epic 4's check-in flow verifies
+                      against, once built
+booking status      - "Confirmed", "Checked-In", "Cancelled", "No-Show"
+                      (Story 4.3), or "Completed" (Story 4.4, set by
+                      POST /bookings/<id>/checkout)
+checkin_time        - set on the attendance row when staff verifies a
+                      student's checkin_code (Story 4.1/4.2)
+checkout_time       - set on the attendance row when the student (or
+                      Staff/Admin on their behalf) calls POST
+                      /bookings/<id>/checkout (Story 4.4)
+verified_by         - the staff/admin user_id who performed the check-in
+no_show_grace_minutes - minutes after a Confirmed booking's start_time
+                      before it becomes eligible to be marked No-Show;
+                      null/unset behaves as 0 (Story 4.3)
+minutes_overdue     - computed, not stored; how far past the no-show
+                      cutoff a candidate booking is, returned by
+                      GET /staff/bookings/no-show-candidates
+requested_end_time  - the new end_time a student is asking for on an
+                      extension request; must be after the booking's current
+                      end_time and, if extension_limit_minutes is set, within
+                      that many minutes of it
+extension request   - one of: Pending, Approved, Rejected
+status                Pending  -> just submitted, awaiting staff decision
+                      Approved -> staff extended the booking (same seat or
+                                 reassigned to a different one)
+                      Rejected -> staff declined the request; the original
+                                 booking is untouched
+amount              - the payment value; must be a positive number
+                      (Story 5.1)
+payment_mode        - one of: Cash, UPI, Card - how the offline payment
+                      was collected (Story 5.1)
+payment_date        - when the payment was recorded; always server-set
+                      to the current time, never accepted from the
+                      client (Story 5.1)
+recorded_by         - the staff/admin user_id who recorded the payment
+complaint title      - short required summary of the issue (Story 6.1)
+complaint description - required details of the issue (Story 6.1)
+complaint status     - defaults to "Open" on submission; server-set,
+                      not client-settable. Story 6.2 will define what
+                      other values exist and how staff transition
+                      between them
+resolved_by (complaint) - staff/admin user_id who resolved the
+                      complaint; always null until Story 6.2 exists
+
+========================================================================
+15. DESIGN ASSUMPTIONS AND KNOWN LIMITATIONS
+========================================================================
+
+1. membership_id == student_id
+   The admin membership routes assume one membership per student, so
+   membership_id is just the student's student_id. There is no history
+   of past memberships if a student re-registers after being rejected.
+
+2. No password reset via email
+   ResetPasswordResource requires the OLD password to be known. There is
+   no "forgot password" flow (no email/OTP reset) implemented yet.
+
+3. No refresh token
+   Access tokens expire after 8 hours (JWT_ACCESS_TOKEN_EXPIRES in
+   config.py) and the user must log in again - there is no refresh
+   token endpoint currently.
+
+4. No staff reactivation route, no plan un-retire route
+   Staff can be deactivated (POST /admin/staff/<id>/deactivate) but
+   there is no "reactivate" endpoint yet. Same gap for membership plans:
+   DELETE /admin/membership-plans/<id> retires a plan but there is no
+   route to set is_active back to true.
+
+5. role is server-controlled
+   The client should never send "role" in any request body - it is
+   always set internally (Staff registration always creates role=Student,
+   admin staff creation always creates role=Staff, etc). If a request
+   body includes "role", it is currently ignored, not rejected - confirm
+   this is acceptable for your project or add explicit rejection.
+
+6. No pagination
+   GET /admin/staff, GET /admin/memberships, GET /admin/membership-plans,
+   GET /admin/seats all return the full list with no page/limit
+   parameters. Fine for small datasets in a college project, but note
+   this if scaling later.
+
+7. SQLite only in dev
+   config.py defaults to SQLite (app.db). For production or team-shared
+   testing, DATABASE_URL env variable can point to Postgres/MySQL instead,
+   but this hasn't been tested with this project yet.
+
+8. Seat model uses is_active/seat_type, not dbSchema.docx's status field
+   dbSchema.docx specifies seats.status as "Available"/"Maintenance".
+   Two branches of this project independently built a Seat model: Epic
+   2.2's used that status field; Epic 3's (seat availability/booking)
+   used is_active (bool) + seat_type instead, and all the booking logic
+   (availability search, clash detection, walk-in auto-assignment) reads
+   is_active. When these were merged for Story 3.7, is_active/seat_type
+   was kept as canonical - rewriting the booking code to match the
+   schema doc instead would have touched far more logic across
+   resources/bookings.py. Functionally equivalent: is_active=false means
+   the same thing "Maintenance" did. Flag this drift from dbSchema.docx
+   with the team; if it matters for grading/spec compliance, the fix is
+   confined to resources/seats.py's admin endpoints.
+
+9. extension_requests.requested_end_time is Time, not datetime
+   dbSchema.docx models this column as datetime. It's stored as Time
+   here instead, matching Booking.start_time/end_time's own type (bookings
+   already split date and time into separate columns rather than using
+   combined datetimes). Kept consistent with the existing Booking model
+   rather than the schema doc's literal type.
+
+10. no_show_grace_minutes defaults to 0 when unset
+    Unlike extension_limit_minutes (Story 3.7), which is simply
+    unenforced (no cap) until an Admin sets it, Story 4.3 treats a null
+    no_show_grace_minutes as 0 rather than "no-show never applies" -
+    the no-show endpoints are the entire point of that story, so they
+    need to work without any DB setup. Confirm this default is
+    acceptable, or set no_show_grace_minutes directly in the DB (no
+    admin route exposes it yet - same gap as extension_limit_minutes).
+
+11. A booking's seat is released at check-in, not checkout
+    Every overlap/availability query (booking creation, modification,
+    seat availability search, walk-in auto-assignment, extension
+    approval) filters on Booking.status == "Confirmed". A booking
+    already stops blocking its slot the moment Story 4.1's check-in
+    flips it to "Checked-In" - well before Story 4.4's checkout flips
+    it again to "Completed". Story 4.3's "mark no-show, release seat"
+    and Story 4.4's "record checkout, free seat" wording both describe
+    this same status-leaves-Confirmed mechanism, but for a Checked-In
+    booking the seat was administratively free from check-in onward;
+    checkout's role is closing the attendance record and marking the
+    session finished, not the seat release itself.
+
+12. payments.membership_id (dbSchema.docx) is not stored
+    dbSchema.docx's payments table has both student_id and
+    membership_id FKs. Since there is no separate memberships table
+    (item 1 above - membership_id is just student_id), a membership_id
+    column on payments would always hold the exact same value as
+    student_id. Rather than add a redundant column, Story 5.1's Payment
+    model only has student_id. If a real memberships table gets built
+    later, add membership_id to Payment at the same time.
+
+13. Complaint.created_at added beyond dbSchema.docx
+    dbSchema.docx's complaints table has no timestamp column. Every
+    other table this project has built on top of the schema doc
+    (bookings, attendance, extension_requests, payments) has some form
+    of creation timestamp, used for ordering and audit. Complaint gets
+    one too (created_at, DateTime, server-set) so Story 6.2 can list
+    complaints in a sensible order without a later migration. This is
+    additive only - it doesn't change or remove anything dbSchema.docx
+    specifies.
+
+========================================================================
+16. ENVIRONMENT VARIABLES (OPTIONAL, FOR PRODUCTION SETUP)
+========================================================================
+
+config.py reads these from environment variables, with defaults if unset:
+
+SECRET_KEY        - Flask session secret (default: "change-me-in-production")
+DATABASE_URL      - SQLAlchemy DB URI (default: "sqlite:///app.db")
+JWT_SECRET_KEY    - JWT signing secret (default: "jwt-change-me-in-production")
+
+For local development, the defaults are fine and no .env file is needed.
+
+For any real deployment, set these before running the app:
+
+Windows (PowerShell):
+    $env:SECRET_KEY="your-real-secret"
+    $env:JWT_SECRET_KEY="your-real-jwt-secret"
+    $env:DATABASE_URL="your-real-database-url"
+    python app.py
+
+Or create a .env file and load it with python-dotenv (not yet added to
+requirements.txt - install python-dotenv and add load_dotenv() in
+config.py if you want this).
+
+========================================================================
+END OF GUIDE
+========================================================================

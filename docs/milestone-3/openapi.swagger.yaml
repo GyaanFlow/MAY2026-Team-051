@@ -1,0 +1,1606 @@
+openapi: 3.0.3
+info:
+  title: ZenStudy - Study Library Management System API
+  description: |
+    Backend API for ZenStudy, a Study Library Management System
+    (Team DeerInTheCode, Team-051, IITM BS Software Engineering Project May-2026).
+
+    Documents the APIs implemented so far:
+    - Epic 1: User & Membership Management - Stories 1.1-1.5 (complete)
+    - Epic 2: System Administration & Configuration - Stories 2.1-2.3 (complete)
+
+    Story 2.4 and Epics 3-6 are planned per proposedListOfApis.docx but not
+    yet implemented, and are excluded from this document.
+
+    All endpoints except POST /auth/login require a JWT bearer token
+    (Authorization: Bearer <access_token>) obtained from login; the token
+    embeds the caller's role (Admin/Staff/Student) and expires after 8 hours.
+
+    Two error shapes appear in this API: business errors return
+    {"message": "..."} (ErrorResponse); auth errors raised by
+    Flask-JWT-Extended before an endpoint runs (missing/expired/malformed
+    token) return {"msg": "..."} (JWTErrorResponse) with status 401 or 422,
+    on every protected endpoint.
+
+    User stories covered in this specification:
+    - As an Admin, I want to create, update, and deactivate library staff accounts, so that only authorized staff members can access the system.
+    - As an Admin, I want to approve and manage student memberships, so that only eligible students can use the study library.
+    - As a Library Staff, I want to register new students and verify their memberships, so that students can access the study library without delays.
+    - As a student, I want to securely log in, reset my password, and view my membership details and validity, so that I can manage my account and know my membership status and renewal date.
+    - As a Student, I want to update my personal details, so that my contact information remains up-to-date.
+    - As an Admin, I want to configure the operating hours of the study library, so that students can only book and access the library during working hours.
+    - As an Admin, I want to set booking limits, including the number of available seats, so that occupancy is managed efficiently.
+    - As an Admin, I want to create and manage membership plans, so that students can subscribe to the plan that best suits their needs.
+
+    API mapping summary:
+    - Authentication: /auth/*
+    - Admin/Staff profile: /profile
+    - Staff management: /admin/staff*
+    - Membership management: /admin/memberships*
+    - Student registration: /staff/students*
+    - Student self-service: /students/me
+    - Library settings: /admin/settings
+    - Seat inventory: /admin/seats*
+    - Membership plans: /admin/membership-plans*
+  version: 1.0.0
+  license:
+    name: Educational use only - IITM BS Software Engineering Project May-2026
+servers:
+- url: http://localhost:5000/api
+  description: Local development server
+security:
+- bearerAuth: []
+x-user-stories:
+- id: US-1.1
+  actor: Admin
+  story: As an Admin, I want to create, update, and deactivate library staff
+    accounts, so that only authorized staff members can access the system.
+  api_mapping:
+  - path: /admin/staff
+    method: get
+    operationId: listStaff
+  - path: /admin/staff/{user_id}
+    method: get
+    operationId: getStaff
+  - path: /admin/staff
+    method: post
+    operationId: createStaff
+  - path: /admin/staff/{user_id}
+    method: put
+    operationId: updateStaff
+  - path: /admin/staff/{user_id}/deactivate
+    method: post
+    operationId: deactivateStaff
+- id: US-1.2
+  actor: Admin
+  story: As an Admin, I want to approve and manage student memberships, so
+    that only eligible students can use the study library.
+  api_mapping:
+  - path: /admin/memberships/pending
+    method: get
+    operationId: listPendingMemberships
+  - path: /admin/memberships
+    method: get
+    operationId: listMemberships
+  - path: /admin/memberships/{membership_id}/approve
+    method: post
+    operationId: approveMembership
+  - path: /admin/memberships/{membership_id}/reject
+    method: post
+    operationId: rejectMembership
+  - path: /admin/memberships/{membership_id}/disapprove
+    method: post
+    operationId: disapproveMembership
+  - path: /admin/memberships/{membership_id}
+    method: put
+    operationId: updateMembership
+- id: US-1.3
+  actor: Library Staff
+  story: As a Library Staff, I want to register new students and verify
+    their memberships, so that students can access the study library
+    without delays.
+  api_mapping:
+  - path: /staff/students/register
+    method: post
+    operationId: registerStudent
+  - path: /staff/students/{student_id}
+    method: get
+    operationId: getStudentByStaff
+  - path: /staff/students/{student_id}/verify
+    method: get
+    operationId: verifyStudentMembership
+- id: US-1.4
+  actor: Student
+  story: As a student, I want to securely log in to my account, reset my
+    password if needed, and view my membership details and validity, so
+    that I can securely access the system, manage my account, and know my
+    membership status and renewal date.
+  api_mapping:
+  - path: /auth/login
+    method: post
+    operationId: login
+  - path: /auth/reset-password
+    method: post
+    operationId: resetPassword
+  - path: /students/me
+    method: get
+    operationId: getStudentMe
+- id: US-1.5
+  actor: Student
+  story: As a Student, I want to update my personal details, so that my
+    contact information remains up-to-date.
+  api_mapping:
+  - path: /students/me
+    method: put
+    operationId: updateStudentMe
+- id: US-2.1
+  actor: Admin
+  story: As an Admin, I want to configure the operating hours of the study
+    library, so that students can only book and access the library during
+    working hours.
+  api_mapping:
+  - path: /admin/settings
+    method: get
+    operationId: getLibrarySettings
+  - path: /admin/settings
+    method: put
+    operationId: updateLibrarySettings
+- id: US-2.2
+  actor: Admin
+  story: As an Admin, I want to set booking limits, including the number of
+    available seats, so that occupancy is managed efficiently.
+  api_mapping:
+  - path: /admin/seats
+    method: get
+    operationId: listSeats
+  - path: /admin/seats
+    method: post
+    operationId: createSeat
+  - path: /admin/seats/{seat_id}
+    method: put
+    operationId: updateSeatStatus
+- id: US-2.3
+  actor: Admin
+  story: As an Admin, I want to create and manage membership plans, so that
+    students can subscribe to the plan that best suits their needs.
+  api_mapping:
+  - path: /admin/membership-plans
+    method: get
+    operationId: listMembershipPlans
+  - path: /admin/membership-plans
+    method: post
+    operationId: createMembershipPlan
+  - path: /admin/membership-plans/{plan_id}
+    method: put
+    operationId: updateMembershipPlan
+  - path: /admin/membership-plans/{plan_id}
+    method: delete
+    operationId: retireMembershipPlan
+x-api-mapping:
+  Authentication:
+  - post /auth/login
+  - post /auth/reset-password
+  Profile:
+  - get /profile
+  - put /profile
+  Staff Management:
+  - get /admin/staff
+  - post /admin/staff
+  - get /admin/staff/{user_id}
+  - put /admin/staff/{user_id}
+  - post /admin/staff/{user_id}/deactivate
+  Student Membership Management:
+  - get /admin/memberships/pending
+  - get /admin/memberships
+  - post /admin/memberships/{membership_id}/approve
+  - post /admin/memberships/{membership_id}/reject
+  - post /admin/memberships/{membership_id}/disapprove
+  - put /admin/memberships/{membership_id}
+  Student Registration:
+  - post /staff/students/register
+  - get /staff/students/{student_id}
+  - get /staff/students/{student_id}/verify
+  Student Self-Service:
+  - get /students/me
+  - put /students/me
+  Membership Plans:
+  - get /admin/membership-plans
+  - post /admin/membership-plans
+  - put /admin/membership-plans/{plan_id}
+  - delete /admin/membership-plans/{plan_id}
+  Library Settings:
+  - get /admin/settings
+  - put /admin/settings
+  Seat Inventory:
+  - get /admin/seats
+  - post /admin/seats
+  - put /admin/seats/{seat_id}
+paths:
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Log in and obtain a JWT access token
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Request body is not JSON, or username/password missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid username or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Account is deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Change own password (requires current password)
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Request body is not JSON, or old_password/new_password missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: old_password does not match the account's current password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user no longer exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /profile:
+    get:
+      tags: [Profile]
+      summary: Get own profile (Admin/Staff only)
+      description: Students get 403 here and must use GET /students/me instead.
+      operationId: getMyProfile
+      responses:
+        '200':
+          description: Own profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '403':
+          description: Caller's role is Student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user no longer exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Profile]
+      summary: Update own email/phone (Admin/Staff only)
+      operationId: updateMyProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Request body is not JSON, or email present but empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller's role is Student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user no longer exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/staff:
+    get:
+      tags: [Staff Management]
+      summary: List all staff accounts
+      operationId: listStaff
+      responses:
+        '200':
+          description: Array of staff users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Staff Management]
+      summary: Create a new staff account
+      operationId: createStaff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffCreateRequest'
+      responses:
+        '201':
+          description: Staff account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Request body is not JSON, or username/password/email missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/staff/{user_id}:
+    get:
+      tags: [Staff Management]
+      summary: Get a staff member by id
+      operationId: getStaff
+      parameters:
+      - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Staff member found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No staff member with this user_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Staff Management]
+      summary: Update a staff member's details
+      description: All fields optional; only keys present in the body are updated.
+      operationId: updateStaff
+      parameters:
+      - $ref: '#/components/parameters/UserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaffUpdateRequest'
+      responses:
+        '200':
+          description: Staff member updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Request body is not JSON, or email/password present but empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No staff member with this user_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/staff/{user_id}/deactivate:
+    post:
+      tags: [Staff Management]
+      summary: Deactivate a staff account
+      description: There is no reactivate endpoint yet.
+      operationId: deactivateStaff
+      parameters:
+      - $ref: '#/components/parameters/UserIdPath'
+      responses:
+        '200':
+          description: Staff member deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffDeactivateResponse'
+        '400':
+          description: Staff member is already deactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No staff member with this user_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/memberships/pending:
+    get:
+      tags: [Student Membership Management]
+      summary: List memberships awaiting approval
+      operationId: listPendingMemberships
+      responses:
+        '200':
+          description: Array of students with membership_status=Pending
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudentResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/memberships:
+    get:
+      tags: [Student Membership Management]
+      summary: List/filter all student memberships
+      operationId: listMemberships
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [Pending, Active, Rejected, Disapproved]
+      responses:
+        '200':
+          description: Array of students, optionally filtered by status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudentResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/memberships/{membership_id}/approve:
+    post:
+      tags: [Student Membership Management]
+      summary: Approve a student's membership
+      description: membership_id is the student's student_id; there is no
+        separate memberships table. Sets membership_expiry to today +
+        the assigned plan's duration_days.
+      operationId: approveMembership
+      parameters:
+      - $ref: '#/components/parameters/MembershipIdPath'
+      responses:
+        '200':
+          description: Membership approved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipActionResponse'
+        '400':
+          description: Membership is already Active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No student with this membership_id, or the assigned plan no longer exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/memberships/{membership_id}/reject:
+    post:
+      tags: [Student Membership Management]
+      summary: Reject a pending membership request
+      description: Only allowed while membership_status is Pending.
+      operationId: rejectMembership
+      parameters:
+      - $ref: '#/components/parameters/MembershipIdPath'
+      responses:
+        '200':
+          description: Membership rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipActionResponse'
+        '400':
+          description: membership_status is not Pending
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No student with this membership_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/memberships/{membership_id}/disapprove:
+    post:
+      tags: [Student Membership Management]
+      summary: Disapprove a currently active membership
+      description: Only allowed while membership_status is Active.
+      operationId: disapproveMembership
+      parameters:
+      - $ref: '#/components/parameters/MembershipIdPath'
+      responses:
+        '200':
+          description: Membership disapproved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipActionResponse'
+        '400':
+          description: membership_status is not Active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No student with this membership_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/memberships/{membership_id}:
+    put:
+      tags: [Student Membership Management]
+      summary: Extend or modify an existing membership
+      description: plan_id, extend_days, and membership_expiry are
+        independent and optional; extend_days adds to the current expiry
+        (or today, if none set).
+      operationId: updateMembership
+      parameters:
+      - $ref: '#/components/parameters/MembershipIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipUpdateRequest'
+      responses:
+        '200':
+          description: Membership updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipActionResponse'
+        '400':
+          description: Request body is not JSON, extend_days is not numeric,
+            or membership_expiry is not YYYY-MM-DD
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No student with this membership_id, or the given plan_id does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /staff/students/register:
+    post:
+      tags: [Student Registration]
+      summary: Register a new student
+      description: Creates a users row (role=Student) and a linked students
+        row; membership_status starts Pending, awaiting admin approval.
+      operationId: registerStudent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentRegisterRequest'
+      responses:
+        '201':
+          description: Student registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentRegisterResponse'
+        '400':
+          description: Request body is not JSON, or username/password/email/full_name missing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is neither Staff nor Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: plan_id was supplied but does not match an existing plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: username already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /staff/students/{student_id}:
+    get:
+      tags: [Student Registration]
+      summary: View a student's profile and membership status
+      operationId: getStudentByStaff
+      parameters:
+      - $ref: '#/components/parameters/StudentIdPath'
+      responses:
+        '200':
+          description: Student profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaffStudentDetailResponse'
+        '403':
+          description: Caller is neither Staff nor Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No student with this student_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /staff/students/{student_id}/verify:
+    get:
+      tags: [Student Registration]
+      summary: Verify a student's membership validity at check-in
+      description: valid is true only when membership_status is Active and
+        membership_expiry is today or later.
+      operationId: verifyStudentMembership
+      parameters:
+      - $ref: '#/components/parameters/StudentIdPath'
+      responses:
+        '200':
+          description: Membership validity result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifyMembershipResponse'
+        '403':
+          description: Caller is neither Staff nor Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No student with this student_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /students/me:
+    get:
+      tags: [Student Self-Service]
+      summary: Get own profile and membership status
+      operationId: getStudentMe
+      responses:
+        '200':
+          description: Own student profile, including computed membership_valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentMeResponse'
+        '403':
+          description: Caller's role is not Student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user has no linked students row
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Student Self-Service]
+      summary: Update own contact details
+      description: All fields optional; only keys present in the body are updated.
+      operationId: updateStudentMe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StudentMeUpdateRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudentMeUpdateResponse'
+        '400':
+          description: Request body is not JSON, or email/full_name present but empty
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller's role is not Student
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Authenticated user has no linked students row
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/membership-plans:
+    get:
+      tags: [Membership Plans]
+      summary: List all membership plans
+      description: Includes retired plans - check is_active.
+      operationId: listMembershipPlans
+      responses:
+        '200':
+          description: Array of membership plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MembershipPlanResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Membership Plans]
+      summary: Create a new membership plan
+      operationId: createMembershipPlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipPlanCreateRequest'
+      responses:
+        '201':
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPlanResponse'
+        '400':
+          description: Request body is not JSON, plan_name missing, or
+            duration_days/price missing, non-numeric, or out of range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/membership-plans/{plan_id}:
+    put:
+      tags: [Membership Plans]
+      summary: Edit an existing membership plan
+      description: All fields optional; only keys present in the body are updated.
+      operationId: updateMembershipPlan
+      parameters:
+      - $ref: '#/components/parameters/PlanIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipPlanUpdateRequest'
+      responses:
+        '200':
+          description: Plan updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPlanResponse'
+        '400':
+          description: Request body is not JSON, or a present field is
+            empty, non-numeric, or out of range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No plan with this plan_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Membership Plans]
+      summary: Retire a membership plan
+      description: Soft-deletes the plan (is_active=false) since students
+        already on it still reference it. No un-retire endpoint yet.
+      operationId: retireMembershipPlan
+      parameters:
+      - $ref: '#/components/parameters/PlanIdPath'
+      responses:
+        '200':
+          description: Plan retired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembershipPlanRetireResponse'
+        '400':
+          description: Plan is already retired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No plan with this plan_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/settings:
+    get:
+      tags: [Library Settings]
+      summary: Get current library operating hours and configuration
+      description: total_seats, no_show_grace_minutes, cancellation_period,
+        max_booking_days_ahead, and extension_limit_minutes remain null
+        until the stories that own them are implemented.
+      operationId: getLibrarySettings
+      responses:
+        '200':
+          description: Library settings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibrarySettingsResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No settings row exists yet (auto-seeded on first app run)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      tags: [Library Settings]
+      summary: Update library operating hours
+      description: At least one of open_time/close_time is required
+        (24-hour HH:MM); close_time must be after open_time.
+      operationId: updateLibrarySettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibrarySettingsUpdateRequest'
+      responses:
+        '200':
+          description: Operating hours updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibrarySettingsUpdateResponse'
+        '400':
+          description: Request body is not JSON, neither field supplied, a
+            time is not HH:MM, or close_time is not after open_time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No settings row exists yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/seats:
+    get:
+      tags: [Seat Inventory]
+      summary: List all seats with their status
+      operationId: listSeats
+      responses:
+        '200':
+          description: Array of seats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SeatResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags: [Seat Inventory]
+      summary: Add a new seat to inventory
+      description: status is optional and defaults to Available.
+      operationId: createSeat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeatCreateRequest'
+      responses:
+        '201':
+          description: Seat created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeatResponse'
+        '400':
+          description: Request body is not JSON, seat_number missing, or
+            status is neither Available nor Maintenance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: seat_number already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /admin/seats/{seat_id}:
+    put:
+      tags: [Seat Inventory]
+      summary: Change a seat's status
+      description: Only status is updated; seat_number is not renameable here.
+      operationId: updateSeatStatus
+      parameters:
+      - $ref: '#/components/parameters/SeatIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeatUpdateRequest'
+      responses:
+        '200':
+          description: Seat updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeatUpdateResponse'
+        '400':
+          description: Request body is not JSON, status missing, or status
+            is neither Available nor Maintenance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an Admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No seat with this seat_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT access token from POST /auth/login, sent as
+        "Authorization: Bearer <access_token>". Missing/expired tokens
+        return 401; malformed headers return 422 - both with a
+        JWTErrorResponse body, raised before endpoint code runs.
+
+  parameters:
+    UserIdPath:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: integer
+    MembershipIdPath:
+      name: membership_id
+      in: path
+      required: true
+      schema:
+        type: integer
+    StudentIdPath:
+      name: student_id
+      in: path
+      required: true
+      schema:
+        type: integer
+    PlanIdPath:
+      name: plan_id
+      in: path
+      required: true
+      schema:
+        type: integer
+    SeatIdPath:
+      name: seat_id
+      in: path
+      required: true
+      schema:
+        type: integer
+
+  schemas:
+    ErrorResponse:
+      type: object
+      description: Business-error shape returned by app resource code.
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    JWTErrorResponse:
+      type: object
+      description: Error shape returned by Flask-JWT-Extended for token errors.
+      required: [msg]
+      properties:
+        msg:
+          type: string
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    ResetPasswordRequest:
+      type: object
+      required: [old_password, new_password]
+      properties:
+        old_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+
+    UserResponse:
+      type: object
+      properties:
+        user_id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+        id_type:
+          type: string
+          nullable: true
+        id_number:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [Admin, Staff, Student]
+        status:
+          type: boolean
+
+    ProfileUpdateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+
+    StaffCreateRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        email:
+          type: string
+        id_type:
+          type: string
+        id_number:
+          type: string
+        phone:
+          type: string
+
+    StaffUpdateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        id_type:
+          type: string
+        id_number:
+          type: string
+        phone:
+          type: string
+        password:
+          type: string
+          format: password
+
+    StaffDeactivateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    StudentResponse:
+      type: object
+      properties:
+        student_id:
+          type: integer
+        user_id:
+          type: integer
+        full_name:
+          type: string
+        address:
+          type: string
+          nullable: true
+        membership_status:
+          type: string
+          enum: [Pending, Active, Rejected, Disapproved]
+        plan_id:
+          type: integer
+          nullable: true
+        membership_expiry:
+          type: string
+          format: date
+          nullable: true
+
+    StudentMeResponse:
+      allOf:
+      - $ref: '#/components/schemas/StudentResponse'
+      - type: object
+        properties:
+          username:
+            type: string
+          email:
+            type: string
+          phone:
+            type: string
+            nullable: true
+          membership_valid:
+            type: boolean
+
+    StudentMeUpdateRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        phone:
+          type: string
+        full_name:
+          type: string
+        address:
+          type: string
+
+    StudentMeUpdateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        student:
+          $ref: '#/components/schemas/StudentResponse'
+
+    StudentRegisterRequest:
+      type: object
+      required: [username, password, email, full_name]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        email:
+          type: string
+        full_name:
+          type: string
+        address:
+          type: string
+        plan_id:
+          type: integer
+          nullable: true
+        id_type:
+          type: string
+        id_number:
+          type: string
+        phone:
+          type: string
+
+    StudentRegisterResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        student:
+          $ref: '#/components/schemas/StudentResponse'
+
+    StaffStudentDetailResponse:
+      allOf:
+      - $ref: '#/components/schemas/StudentResponse'
+      - type: object
+        properties:
+          email:
+            type: string
+          phone:
+            type: string
+            nullable: true
+          username:
+            type: string
+
+    VerifyMembershipResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [Pending, Active, Rejected, Disapproved]
+        valid:
+          type: boolean
+        membership_expiry:
+          type: string
+          format: date
+          nullable: true
+
+    MembershipActionResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        student:
+          $ref: '#/components/schemas/StudentResponse'
+
+    MembershipUpdateRequest:
+      type: object
+      properties:
+        plan_id:
+          type: integer
+          nullable: true
+        extend_days:
+          type: integer
+        membership_expiry:
+          type: string
+          format: date
+
+    MembershipPlanCreateRequest:
+      type: object
+      required: [plan_name, duration_days, price]
+      properties:
+        plan_name:
+          type: string
+        duration_days:
+          type: integer
+          minimum: 1
+        price:
+          type: number
+          format: float
+          minimum: 0
+
+    MembershipPlanUpdateRequest:
+      type: object
+      properties:
+        plan_name:
+          type: string
+        duration_days:
+          type: integer
+          minimum: 1
+        price:
+          type: number
+          format: float
+          minimum: 0
+
+    MembershipPlanResponse:
+      type: object
+      properties:
+        plan_id:
+          type: integer
+        plan_name:
+          type: string
+        duration_days:
+          type: integer
+          nullable: true
+        price:
+          type: number
+          format: float
+          nullable: true
+        is_active:
+          type: boolean
+
+    MembershipPlanRetireResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        plan:
+          $ref: '#/components/schemas/MembershipPlanResponse'
+
+    LibrarySettingsResponse:
+      type: object
+      properties:
+        setting_id:
+          type: integer
+        open_time:
+          type: string
+          nullable: true
+        close_time:
+          type: string
+          nullable: true
+        total_seats:
+          type: integer
+          nullable: true
+        no_show_grace_minutes:
+          type: integer
+          nullable: true
+        cancellation_period:
+          type: integer
+          nullable: true
+        max_booking_days_ahead:
+          type: integer
+          nullable: true
+        extension_limit_minutes:
+          type: integer
+          nullable: true
+        updated_by:
+          type: integer
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    LibrarySettingsUpdateRequest:
+      type: object
+      properties:
+        open_time:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+        close_time:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+
+    LibrarySettingsUpdateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        settings:
+          $ref: '#/components/schemas/LibrarySettingsResponse'
+
+    SeatCreateRequest:
+      type: object
+      required: [seat_number]
+      properties:
+        seat_number:
+          type: string
+        status:
+          type: string
+          enum: [Available, Maintenance]
+          default: Available
+
+    SeatResponse:
+      type: object
+      properties:
+        seat_id:
+          type: integer
+        seat_number:
+          type: string
+        status:
+          type: string
+          enum: [Available, Maintenance]
+
+    SeatUpdateRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [Available, Maintenance]
+
+    SeatUpdateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        seat:
+          $ref: '#/components/schemas/SeatResponse'

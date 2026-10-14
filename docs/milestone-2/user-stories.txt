@@ -1,0 +1,194 @@
+USER STORIES
+
+(The following user stories follow the S.M.A.R.T. guidelines (Specific, Measurable, Achievable, Relevant, Time-bound) format:
+As a [User], I want [Action], So that [Benefit].)
+
+
+Epic 1: User & Membership Management
+
+Story 1.1: Staff Account Management
+
+• As an Admin,
+• I want to create, update, and deactivate library staff accounts,
+• So that only authorized staff members can access the system.
+
+
+Story 1.2: Student Membership Management
+
+• As an Admin,
+• I want to approve and manage student memberships,
+• So that only eligible students can use the study library.
+
+
+Story 1.3: Student Registration
+
+• As a Library Staff,
+• I want to register new students and verify their memberships,
+• So that students can access the study library without delays.
+
+
+Story 1.4: Student Account & Membership Information
+
+• As a Student,
+• I want to securely log in to my account, reset my password if needed, and view my membership details and validity,
+• So that I can securely access the system, manage my account, and know my membership status and renewal date.
+
+
+Story 1.5: Profile Management
+
+• As a Student,
+• I want to update my personal details,
+• So that my contact information remains up-to-date.
+
+
+
+Epic 2: System Administration & Configuration
+
+Story 2.1: Operating Hours Configuration
+
+• As an Admin,
+• I want to configure the operating hours of the study library,
+• So that students can only book and access the library during working hours.
+
+
+Story 2.2: Booking Limit Configuration
+
+• As an Admin,
+• I want to set booking limits, including the number of available seats,
+• So that occupancy is managed efficiently.
+
+
+Story 2.3: Membership Plan Management
+
+• As an Admin,
+• I want to create and manage membership plans,
+• So that students can subscribe to the plan that best suits their needs.
+
+
+Story 2.4: Library Reports & Analytics
+
+• As an Admin,
+• I want to view reports and statistics on occupancy, peak hours, memberships, and revenue,
+• So that I can make informed operational decisions.
+
+
+Epic 3: Booking & Seat Management
+
+Story 3.1: Real-Time Seat Availability
+
+• As a Student,
+• I want to view real-time seat and study room availability,
+• So that I can choose an available space.
+
+
+Story 3.2: Advance Booking
+
+• As a Student,
+• I want to book study seats or rooms in advance,
+• So that I can reserve a study space before arriving.
+
+
+Story 3.3: Booking Modification
+
+• As a Student,
+• I want to modify or cancel my booking within the permitted time,
+• So that I can adjust my reservation if my plans change.
+
+
+Story 3.4: Booking & Attendance History
+
+• As a Student,
+• I want to view my booking and attendance history,
+• So that I can review my study sessions.
+
+
+Story 3.5: Daily Booking Overview
+
+• As a Library Staff,
+• I want to view daily bookings and expected arrivals,
+• So that I can prepare for incoming students.
+
+
+Story 3.6: Walk-In Admission
+
+• As a Library Staff,
+• I want to handle same-day walk-in admissions by assigning available seats,
+• So that students without reservations can use the facility.
+
+
+Story 3.7: Extension Approval & Seat Allocation
+
+• As a Library Staff,
+• I want to review extension requests and either extend the current booking or assign a new available seat,
+• So that students can continue their study sessions while ensuring efficient seat utilization.
+
+
+Epic 4: Check-in & Attendance Management
+
+Story 4.1: Student Check-In
+
+• As a Student,
+• I want to present my unique check-in code to the library staff,
+• So that my attendance can be verified before I access the study library.
+
+
+Story 4.2: Check-In Verification
+
+• As a Library Staff,
+• I want to verify booking details using the student's check-in code,
+• So that only students with valid bookings are checked in.
+
+
+Story 4.3: No-Show Management
+
+• As a Library Staff,
+• I want to mark no-show bookings after the waiting period and release reserved seats,
+• So that unused seats become available to other students.
+
+
+Story 4.4: Study Session Check-Out
+
+• As a Student,
+• I want to check out after completing my study session,
+• So that my attendance is recorded accurately and my seat becomes available for other students.
+
+
+Epic 5: Payment Management
+
+
+Story 5.1: Offline Payment Recording
+
+• As a Library Staff,
+• I want to record student payments and specify the payment mode, such as Cash, UPI, or Card,
+• So that all transactions are documented accurately.
+
+
+Story 5.2: Payment History
+
+• As a Student,
+• I want to view my payment history,
+• So that I can keep track of all my library transactions.
+
+
+Epic 6: Complaints & Communication
+
+
+Story 6.1: Complaint Submission
+
+• As a Student,
+• I want to raise complaints to the library staff,
+• So that my issues can be addressed promptly.
+
+
+Story 6.2: Complaint Management
+
+• As a Library Staff,
+• I want to view and resolve student complaints,
+• So that reported issues are handled efficiently and in a timely manner.
+
+
+Story 6.3: Announcements & Notifications
+
+• As an Admin,
+• I want to create and manage announcements and notifications,
+• So that important information can be communicated to all users.
