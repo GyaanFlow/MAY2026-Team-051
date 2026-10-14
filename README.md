@@ -11,7 +11,8 @@
 [![Frontend](https://img.shields.io/badge/Frontend-Vue%203%20SPA-42b883.svg)](https://vuejs.org/)
 [![Database](https://img.shields.io/badge/Database-SQLAlchemy%20%2F%20SQLite-red.svg)](https://www.sqlalchemy.org/)
 [![Tests](https://img.shields.io/badge/Tests-123%20Passed-brightgreen.svg)]()
-[![License](https://img.shields.io/badge/License-MIT-purple.svg)]()
+[![CI](https://github.com/GyaanFlow/MAY2026-Team-051/actions/workflows/ci.yml/badge.svg)](https://github.com/GyaanFlow/MAY2026-Team-051/actions)
+[![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
 </div>
 

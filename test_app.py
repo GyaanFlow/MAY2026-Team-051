@@ -9,7 +9,7 @@ class TestConfig:
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    JWT_SECRET_KEY = "test-secret-key"
+    JWT_SECRET_KEY = "test-secret-key-32-bytes-minimum-length!"
 
 @pytest.fixture
 def app():
